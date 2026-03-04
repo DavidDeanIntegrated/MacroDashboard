@@ -3,12 +3,12 @@ import {
   getAccount,
   getPositions,
   getOrders,
-  getPortfolioSummary,
   getHistoricalBars,
   getSnapshot,
   submitOrder,
   cancelOrder,
 } from '@/lib/alpaca';
+import { getHoldingsPortfolio } from '@/lib/holdings';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
       }
 
       case 'portfolio': {
-        const summary = await getPortfolioSummary();
+        const summary = await getHoldingsPortfolio();
         return NextResponse.json(summary);
       }
 

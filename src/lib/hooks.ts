@@ -87,28 +87,19 @@ export function useMacroRegime() {
 
 export function usePortfolio() {
   return useApi<{
-    equity: number;
-    cash: number;
-    buyingPower: number;
     portfolioValue: number;
     dayChange: number;
     dayChangePercent: number;
     positions: Array<{
       symbol: string;
       qty: number;
-      avgEntry: number;
       currentPrice: number;
       marketValue: number;
-      costBasis: number;
-      unrealizedPL: number;
-      unrealizedPLPercent: number;
-      intradayPL: number;
-      intradayPLPercent: number;
       weight: number;
-      side: string;
+      dayChange: number;
+      dayChangePercent: number;
+      category: string;
     }>;
-    totalUnrealizedPL: number;
-    totalUnrealizedPLPercent: number;
   }>('/api/alpaca?action=portfolio', { refreshInterval: 60000 });
 }
 
