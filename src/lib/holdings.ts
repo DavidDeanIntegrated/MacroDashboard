@@ -60,13 +60,25 @@ export interface HoldingsPortfolio {
 async function fetchBtcPrice(): Promise<{ price: number; prevClose: number }> {
   return withCache('holdings:btc-price', TTL.QUOTES, async () => {
     try {
-      const data = await fetchJson<{ data: { amount: string } }>(
-        'https://api.coinbase.com/v2/prices/BTC-USD/spot',
-        { provider: 'Coinbase' }
-      );
-      const price = parseFloat(data.data.amount);
-      // Coinbase doesn't give prev close, approximate with buy/sell spread
-      return { price, prevClose: price };
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yStr = yesterday.toISOString().split('T')[0]; // YYYY-MM-DD
+
+      const [spotRes, prevRes] = await Promise.all([
+        fetchJson<{ data: { amount: string } }>(
+          'https://api.coinbase.com/v2/prices/BTC-USD/spot',
+          { provider: 'Coinbase' }
+        ),
+        fetchJson<{ data: { amount: string } }>(
+          `https://api.coinbase.com/v2/prices/BTC-USD/spot?date=${yStr}`,
+          { provider: 'Coinbase' }
+        ),
+      ]);
+
+      return {
+        price: parseFloat(spotRes.data.amount),
+        prevClose: parseFloat(prevRes.data.amount),
+      };
     } catch {
       return { price: 0, prevClose: 0 };
     }
