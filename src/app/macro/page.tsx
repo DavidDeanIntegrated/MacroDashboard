@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Card, CardTitle, MetricCard, StatRow } from '@/components/ui/Card';
+import { Card, CardTitle, MetricCard } from '@/components/ui/Card';
 import { LoadingPage, ErrorState } from '@/components/ui/Loading';
-import { RegimeBadge } from '@/components/ui/Badge';
+import { Badge, RegimeBadge } from '@/components/ui/Badge';
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart';
 import { YieldCurveChart } from '@/components/charts/YieldCurveChart';
 import { useApi, useYieldCurve } from '@/lib/hooks';
@@ -61,16 +61,143 @@ function getChange(data: Array<{ date: string; value: number }>, periods = 1): n
   return data[data.length - 1].value - data[data.length - 1 - periods].value;
 }
 
+// Indicator metadata for interactive dropdowns
+interface IndicatorInfo {
+  key: string;
+  label: string;
+  description: string;
+  regimeSignal: (value: number) => { regime: string; badge: 'green' | 'orange' | 'red' | 'blue' | 'neutral'; explanation: string };
+}
+
+const INDICATOR_INFO: Record<string, IndicatorInfo> = {
+  FEDFUNDS: {
+    key: 'FEDFUNDS',
+    label: FRED_SERIES_NAMES['FEDFUNDS'],
+    description:
+      'The interest rate at which banks lend to each other overnight. Set by the Federal Reserve, it is the most important lever for monetary policy — rippling through mortgages, corporate debt, and all borrowing costs.',
+    regimeSignal: (v) => {
+      if (v < 1)
+        return { regime: 'Crisis / Deflation', badge: 'blue', explanation: 'Near-zero rates signal emergency conditions. The Fed has exhausted conventional tools and may be using QE.' };
+      if (v < 2.5)
+        return { regime: 'Goldilocks', badge: 'green', explanation: 'Moderately low rates support asset valuations and economic growth without overheating.' };
+      if (v < 4.5)
+        return { regime: 'Reflation', badge: 'orange', explanation: 'Rates are elevated — the Fed is tightening to combat inflation. Watch for yield curve inversion and slowing growth.' };
+      return { regime: 'Restrictive / Stagflation risk', badge: 'red', explanation: 'Very high rates compress multiples and raise recession risk. This level historically precedes downturns.' };
+    },
+  },
+  DGS2: {
+    key: 'DGS2',
+    label: FRED_SERIES_NAMES['DGS2'],
+    description:
+      'The yield on 2-year government bonds. This is the most rate-sensitive Treasury and closely tracks expectations for near-term Fed policy. It leads the curve — when the 2Y rises above the 10Y, the curve inverts.',
+    regimeSignal: (v) => {
+      if (v < 1)
+        return { regime: 'Deflation / Crisis', badge: 'blue', explanation: 'Ultra-low short rates reflect expectations of prolonged easing or recession.' };
+      if (v < 3)
+        return { regime: 'Goldilocks', badge: 'green', explanation: 'Moderate 2Y yield suggests the market expects stable, accommodative policy.' };
+      if (v < 4.5)
+        return { regime: 'Reflation', badge: 'orange', explanation: 'Elevated 2Y yield shows the market pricing in more hikes or sustained tightness.' };
+      return { regime: 'Stagflation risk', badge: 'red', explanation: 'Very high short-term yields signal aggressive tightening expectations. Often precedes inversions and recessions.' };
+    },
+  },
+  DGS10: {
+    key: 'DGS10',
+    label: FRED_SERIES_NAMES['DGS10'],
+    description:
+      'The benchmark "risk-free" rate used to discount nearly every financial asset. Reflects long-term growth and inflation expectations. When it rises, equity multiples compress; when it falls, bonds rally.',
+    regimeSignal: (v) => {
+      if (v < 1.5)
+        return { regime: 'Deflation / Crisis', badge: 'blue', explanation: 'Ultra-low long rates signal a flight to safety. Investors accept near-zero returns for security.' };
+      if (v < 3.5)
+        return { regime: 'Goldilocks', badge: 'green', explanation: 'Moderate long rates support equity valuations with a reasonable discount rate.' };
+      if (v < 4.5)
+        return { regime: 'Reflation', badge: 'orange', explanation: 'Elevated yields reflect inflation expectations or rising term premium. Compressing equity multiples.' };
+      return { regime: 'Restrictive', badge: 'red', explanation: 'High long rates compete with equities for capital and raise government borrowing costs. Unsustainable above 5% for long.' };
+    },
+  },
+  T10Y2Y: {
+    key: 'T10Y2Y',
+    label: FRED_SERIES_NAMES['T10Y2Y'],
+    description:
+      'The yield curve slope — the difference between 10Y and 2Y yields. The single most reliable recession predictor. Every U.S. recession since 1955 was preceded by an inversion. The un-inversion is when recession typically starts.',
+    regimeSignal: (v) => {
+      if (v < -0.3)
+        return { regime: 'Recession warning', badge: 'red', explanation: 'Deeply inverted curve. Historically signals recession within 6-24 months. Markets may not have priced in the risk yet.' };
+      if (v < 0.1)
+        return { regime: 'Late cycle', badge: 'orange', explanation: 'Flat or slightly inverted curve. The economy is at a turning point — either heading into slowdown or the Fed is about to pivot.' };
+      if (v < 1.5)
+        return { regime: 'Goldilocks', badge: 'green', explanation: 'Normal positive slope. Banks can lend profitably, credit flows freely, and growth expectations are healthy.' };
+      return { regime: 'Early recovery', badge: 'blue', explanation: 'Very steep curve typically occurs after Fed cuts — signals early recovery from recession. Bullish for cyclicals and banks.' };
+    },
+  },
+  CPIYOY: {
+    key: 'CPIYOY',
+    label: 'CPI YoY Inflation',
+    description:
+      'The rate at which consumer prices are rising. The Fed targets 2%. Too high erodes purchasing power and forces tightening; too low (deflation) signals weak demand and can spiral into a debt crisis.',
+    regimeSignal: (v) => {
+      if (v < 0)
+        return { regime: 'Deflation / Depression', badge: 'blue', explanation: 'Falling prices signal demand collapse. Consumers delay purchases, revenues shrink, debt burdens increase in real terms.' };
+      if (v < 2.5)
+        return { regime: 'Goldilocks', badge: 'green', explanation: 'Inflation in the Fed\'s comfort zone. No pressure to tighten. Supports steady growth and equity multiples.' };
+      if (v < 4)
+        return { regime: 'Reflation', badge: 'orange', explanation: 'Inflation above target but manageable. The Fed is likely tightening. Favors commodities and value over growth.' };
+      return { regime: 'Stagflation risk', badge: 'red', explanation: 'High inflation forces aggressive tightening, compresses margins, and erodes real returns. Historically very bearish for 60/40 portfolios.' };
+    },
+  },
+  UNRATE: {
+    key: 'UNRATE',
+    label: FRED_SERIES_NAMES['UNRATE'],
+    description:
+      'A lagging indicator — by the time unemployment rises meaningfully, recession has usually begun. The Sahm Rule triggers when the 3-month average rises 0.50% above its 12-month low.',
+    regimeSignal: (v) => {
+      if (v > 8)
+        return { regime: 'Depression / Crisis', badge: 'red', explanation: 'Severe labor market deterioration. Requires massive fiscal stimulus. Historically, equities are near bottoms at these levels.' };
+      if (v > 5.5)
+        return { regime: 'Recession', badge: 'orange', explanation: 'Unemployment at recessionary levels. The Fed is likely cutting aggressively. Defensive positioning and duration tend to outperform.' };
+      if (v > 4.3)
+        return { regime: 'Late cycle / Softening', badge: 'neutral', explanation: 'Labor market softening from a strong base. Watch for Sahm Rule trigger. The cycle may be turning.' };
+      return { regime: 'Expansion', badge: 'green', explanation: 'Tight labor market supports consumer spending and wage growth. Favorable for risk assets when paired with moderate inflation.' };
+    },
+  },
+  BAMLH0A0HYM2: {
+    key: 'BAMLH0A0HYM2',
+    label: FRED_SERIES_NAMES['BAMLH0A0HYM2'],
+    description:
+      'The extra yield investors demand for risky corporate bonds over Treasuries. Measures credit stress and risk appetite in real time. Bond markets often lead equities — widening spreads are an early warning.',
+    regimeSignal: (v) => {
+      if (v > 8)
+        return { regime: 'Crisis / Panic', badge: 'red', explanation: 'Credit markets freezing. Companies can\'t refinance, defaults spike. The Fed typically intervenes with emergency facilities at these levels.' };
+      if (v > 5)
+        return { regime: 'Stress / Bear', badge: 'orange', explanation: 'Growing risk aversion. Weaker companies struggle to borrow. Often precedes equity sell-offs. Reduce credit exposure.' };
+      if (v > 3.5)
+        return { regime: 'Neutral', badge: 'neutral', explanation: 'Credit conditions are normal. Not signaling stress, but not excessively loose either.' };
+      return { regime: 'Risk-on / Bull', badge: 'green', explanation: 'Very tight spreads indicate strong risk appetite and easy credit. Supportive of equity bull markets, but can signal complacency.' };
+    },
+  },
+};
+
 export default function MacroPage() {
   const { data, error, loading, refresh } = useApi<MacroDashboard>('/api/fred?action=dashboard');
   const { data: yieldCurve } = useYieldCurve();
   const [period, setPeriod] = useState<ChartPeriod>('3Y');
+  const [expandedIndicator, setExpandedIndicator] = useState<string | null>(null);
 
   if (loading) return <LoadingPage />;
   if (error) return <ErrorState message={error} onRetry={refresh} />;
   if (!data) return null;
 
   const regime = data.regime;
+
+  const indicators = [
+    { info: INDICATOR_INFO['FEDFUNDS'], data: data.fedFunds, suffix: '%' },
+    { info: INDICATOR_INFO['DGS2'], data: data.t2y, suffix: '%' },
+    { info: INDICATOR_INFO['DGS10'], data: data.t10y, suffix: '%' },
+    { info: INDICATOR_INFO['T10Y2Y'], data: data.t10y2y, suffix: '%' },
+    { info: INDICATOR_INFO['CPIYOY'], data: data.cpiYoY, suffix: '%' },
+    { info: INDICATOR_INFO['UNRATE'], data: data.unemployment, suffix: '%' },
+    { info: INDICATOR_INFO['BAMLH0A0HYM2'], data: data.highYieldSpread, suffix: '%' },
+  ];
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -241,34 +368,150 @@ export default function MacroPage() {
         </Card>
       </div>
 
-      {/* Macro Indicators Table */}
+      {/* Market Regime Scenarios */}
+      <Card>
+        <CardTitle>Market Regime Scenarios</CardTitle>
+        <p className="text-xs text-black/45 mt-1 mb-4">
+          How different macro environments affect asset allocation
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="border border-accent-green/20 rounded-xl p-4 bg-accent-green/[0.03]">
+            <div className="flex items-center gap-2 mb-2">
+              <Badge variant="green">Goldilocks</Badge>
+            </div>
+            <p className="text-xs text-black/55 mb-2">
+              Moderate growth, contained inflation, accommodative policy.
+            </p>
+            <div className="text-xs text-black/40 space-y-0.5">
+              <p>CPI 1.5-2.5% | Unemp &lt;4.5% | HY Spread &lt;3.5%</p>
+              <p className="text-black/55 font-medium mt-1">
+                Favors: Growth stocks, small caps, HY bonds
+              </p>
+            </div>
+          </div>
+
+          <div className="border border-accent-orange/20 rounded-xl p-4 bg-accent-orange/[0.03]">
+            <div className="flex items-center gap-2 mb-2">
+              <Badge variant="orange">Reflation</Badge>
+            </div>
+            <p className="text-xs text-black/55 mb-2">
+              Rising inflation with solid growth. Economy running hot.
+            </p>
+            <div className="text-xs text-black/40 space-y-0.5">
+              <p>CPI 3-5% | Unemp &lt;4.5% | Fed hiking</p>
+              <p className="text-black/55 font-medium mt-1">
+                Favors: Commodities, value, energy, TIPS
+              </p>
+            </div>
+          </div>
+
+          <div className="border border-accent-red/20 rounded-xl p-4 bg-accent-red/[0.03]">
+            <div className="flex items-center gap-2 mb-2">
+              <Badge variant="red">Stagflation</Badge>
+            </div>
+            <p className="text-xs text-black/55 mb-2">
+              High inflation + rising unemployment. Worst for 60/40.
+            </p>
+            <div className="text-xs text-black/40 space-y-0.5">
+              <p>CPI 4%+ | Unemp rising | HY Spread 6%+</p>
+              <p className="text-black/55 font-medium mt-1">
+                Favors: Gold, commodities, cash, short duration
+              </p>
+            </div>
+          </div>
+
+          <div className="border border-accent-blue/20 rounded-xl p-4 bg-accent-blue/[0.03]">
+            <div className="flex items-center gap-2 mb-2">
+              <Badge variant="blue">Deflation / Contraction</Badge>
+            </div>
+            <p className="text-xs text-black/55 mb-2">
+              Demand collapsing, prices falling. Fed cuts to zero + QE.
+            </p>
+            <div className="text-xs text-black/40 space-y-0.5">
+              <p>CPI &lt;1% | Unemp rising sharply | HY Spread 8%+</p>
+              <p className="text-black/55 font-medium mt-1">
+                Favors: Long Treasuries, cash, defensive equities
+              </p>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Interactive Key Indicators Summary */}
       <Card>
         <CardTitle>Key Indicators Summary</CardTitle>
-        <div className="mt-2">
-          {[
-            { label: FRED_SERIES_NAMES['FEDFUNDS'], data: data.fedFunds, suffix: '%' },
-            { label: FRED_SERIES_NAMES['DGS2'], data: data.t2y, suffix: '%' },
-            { label: FRED_SERIES_NAMES['DGS10'], data: data.t10y, suffix: '%' },
-            { label: FRED_SERIES_NAMES['T10Y2Y'], data: data.t10y2y, suffix: '%' },
-            { label: 'CPI YoY Inflation', data: data.cpiYoY, suffix: '%' },
-            { label: FRED_SERIES_NAMES['UNRATE'], data: data.unemployment, suffix: '%' },
-            { label: FRED_SERIES_NAMES['BAMLH0A0HYM2'], data: data.highYieldSpread, suffix: '%' },
-          ].map((indicator) => {
+        <p className="text-xs text-black/40 mt-1 mb-2">Click any indicator to see its significance and regime signal</p>
+        <div>
+          {indicators.map((indicator) => {
             const latest = getLatest(indicator.data);
             const change = getChange(indicator.data);
+            const isExpanded = expandedIndicator === indicator.info.key;
+            const signal = indicator.info.regimeSignal(latest);
+
             return (
-              <StatRow
-                key={indicator.label}
-                label={indicator.label}
-                value={`${latest.toFixed(2)}${indicator.suffix}`}
-                valueColor={
-                  change > 0.1
-                    ? 'text-accent-red'
-                    : change < -0.1
-                      ? 'text-accent-green'
-                      : 'text-black/85'
-                }
-              />
+              <div key={indicator.info.key}>
+                <button
+                  onClick={() =>
+                    setExpandedIndicator(isExpanded ? null : indicator.info.key)
+                  }
+                  className="w-full flex items-center justify-between py-3 px-1 border-b border-black/[0.04] last:border-0 hover:bg-black/[0.02] transition-colors rounded-lg cursor-pointer text-left"
+                >
+                  <div className="flex items-center gap-2">
+                    <svg
+                      className={`w-3.5 h-3.5 text-black/30 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                    <span className="text-sm text-black/65 font-medium">{indicator.info.label}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Badge variant={signal.badge}>{signal.regime}</Badge>
+                    <span
+                      className={`text-sm font-semibold tabular-nums ${
+                        change > 0.1
+                          ? 'text-accent-red'
+                          : change < -0.1
+                            ? 'text-accent-green'
+                            : 'text-black/85'
+                      }`}
+                    >
+                      {latest.toFixed(2)}{indicator.suffix}
+                    </span>
+                  </div>
+                </button>
+
+                {/* Expandable detail */}
+                {isExpanded && (
+                  <div className="ml-6 mr-1 mb-3 mt-1 p-4 bg-black/[0.02] rounded-xl border border-black/[0.04] animate-fade-in">
+                    <p className="text-sm text-black/60 leading-relaxed mb-3">
+                      {indicator.info.description}
+                    </p>
+                    <div className={`rounded-lg p-3 border ${
+                      signal.badge === 'green'
+                        ? 'bg-accent-green/[0.05] border-accent-green/15'
+                        : signal.badge === 'red'
+                          ? 'bg-accent-red/[0.05] border-accent-red/15'
+                          : signal.badge === 'orange'
+                            ? 'bg-accent-orange/[0.05] border-accent-orange/15'
+                            : signal.badge === 'blue'
+                              ? 'bg-accent-blue/[0.05] border-accent-blue/15'
+                              : 'bg-black/[0.03] border-black/[0.06]'
+                    }`}>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Badge variant={signal.badge}>{signal.regime}</Badge>
+                        <span className="text-xs text-black/40">Current reading: {latest.toFixed(2)}%</span>
+                      </div>
+                      <p className="text-xs text-black/60 leading-relaxed">
+                        {signal.explanation}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
