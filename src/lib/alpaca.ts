@@ -211,6 +211,38 @@ export async function getSnapshot(symbol: string): Promise<AlpacaSnapshot> {
   );
 }
 
+// ─── News (Alpaca Data API) ───
+
+export interface AlpacaNewsItem {
+  id: number;
+  headline: string;
+  summary: string;
+  author: string;
+  created_at: string;
+  updated_at: string;
+  url: string;
+  source: string;
+  symbols: string[];
+  images: Array<{ size: string; url: string }>;
+}
+
+export async function getNews(
+  symbols?: string[],
+  limit = 20
+): Promise<AlpacaNewsItem[]> {
+  const params = new URLSearchParams({ limit: limit.toString(), sort: 'desc' });
+  if (symbols && symbols.length > 0) {
+    params.set('symbols', symbols.join(','));
+  }
+  const cacheKey = `alpaca:news:${symbols?.join(',') || 'general'}:${limit}`;
+  return withCache(cacheKey, TTL.NEWS, () =>
+    fetchJson<{ news: AlpacaNewsItem[] }>(
+      `${config.alpaca.dataUrl}/v1beta1/news?${params}`,
+      { headers: alpacaHeaders(), provider: 'Alpaca' }
+    ).then((res) => res.news)
+  );
+}
+
 // ─── Portfolio Analytics ───
 
 export interface PortfolioSummary {

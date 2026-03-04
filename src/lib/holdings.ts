@@ -1,7 +1,7 @@
 // Static portfolio holdings — manually maintained
 // Update quantities here when rebalancing
 
-import { getQuote } from './finnhub';
+import { getSnapshot } from './alpaca';
 import { fetchJson } from './fetcher';
 import { withCache, TTL } from './cache';
 
@@ -78,8 +78,11 @@ async function fetchPrice(symbol: string): Promise<{ price: number; prevClose: n
     return fetchBtcPrice();
   }
   try {
-    const quote = await getQuote(symbol);
-    return { price: quote.price, prevClose: quote.prevClose };
+    const snapshot = await getSnapshot(symbol);
+    return {
+      price: snapshot.latestTrade.p,
+      prevClose: snapshot.prevDailyBar.c,
+    };
   } catch {
     return { price: 0, prevClose: 0 };
   }

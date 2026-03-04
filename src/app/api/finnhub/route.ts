@@ -8,6 +8,7 @@ import {
   getEarnings,
   getInsiderTransactions,
 } from '@/lib/finnhub';
+import { getNews as getAlpacaNews } from '@/lib/alpaca';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -31,14 +32,35 @@ export async function GET(request: NextRequest) {
 
       case 'news': {
         const symbol = searchParams.get('symbol');
-        if (symbol) {
-          const days = parseInt(searchParams.get('days') || '7');
-          const news = await getCompanyNews(symbol, days);
-          return NextResponse.json(news);
+        // Try Finnhub first, fall back to Alpaca news
+        try {
+          if (symbol) {
+            const days = parseInt(searchParams.get('days') || '7');
+            const finnhubNews = await getCompanyNews(symbol, days);
+            if (finnhubNews && finnhubNews.length > 0) {
+              return NextResponse.json(finnhubNews);
+            }
+          } else {
+            const category = (searchParams.get('category') || 'general') as 'general' | 'forex' | 'crypto';
+            const finnhubNews = await getMarketNews(category);
+            if (finnhubNews && finnhubNews.length > 0) {
+              return NextResponse.json(finnhubNews);
+            }
+          }
+        } catch {
+          // Finnhub failed, fall through to Alpaca
         }
-        const category = (searchParams.get('category') || 'general') as 'general' | 'forex' | 'crypto';
-        const news = await getMarketNews(category);
-        return NextResponse.json(news);
+        // Alpaca news fallback
+        const alpacaNews = await getAlpacaNews(symbol ? [symbol] : undefined, 20);
+        const normalized = alpacaNews.map((item) => ({
+          headline: item.headline,
+          summary: item.summary,
+          source: item.source,
+          url: item.url,
+          datetime: Math.floor(new Date(item.created_at).getTime() / 1000),
+          image: item.images?.[0]?.url || '',
+        }));
+        return NextResponse.json(normalized);
       }
 
       case 'candles': {
