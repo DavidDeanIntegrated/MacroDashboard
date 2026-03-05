@@ -5,9 +5,21 @@ import { Card, CardTitle, MetricCard } from '@/components/ui/Card';
 import { LoadingPage, ErrorState, EmptyState } from '@/components/ui/Loading';
 import { Badge, TrendIndicator } from '@/components/ui/Badge';
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart';
+import { AllocationPieChart } from '@/components/charts/AllocationPieChart';
 import { usePortfolio, useStockBars } from '@/lib/hooks';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/format';
 import { CATEGORY_CONFIG } from '@/lib/holdings';
+
+// Map badge variants to hex colors for the pie chart
+const BADGE_COLORS: Record<string, string> = {
+  blue: '#007AFF',
+  purple: '#AF52DE',
+  orange: '#FF9500',
+  green: '#34C759',
+  yellow: '#E6A700',
+  red: '#FF3B30',
+  neutral: '#8E8E93',
+};
 
 const categoryBadge = (category: string) => {
   const config = CATEGORY_CONFIG[category];
@@ -66,38 +78,14 @@ export default function PortfolioPage() {
       {/* Allocation Breakdown */}
       <Card>
         <CardTitle>Allocation by Category</CardTitle>
-        <div className="mt-4 flex flex-wrap gap-3">
-          {categoryAllocations.map(([category, weight]) => (
-            <div key={category} className="flex items-center gap-2">
-              <Badge variant={categoryBadge(category)}>{category}</Badge>
-              <span className="text-sm font-medium text-black/65 tabular-nums">
-                {weight.toFixed(1)}%
-              </span>
-            </div>
-          ))}
-        </div>
-        {/* Allocation bar */}
-        <div className="mt-4 h-3 rounded-full overflow-hidden flex bg-black/[0.04]">
-          {categoryAllocations.map(([category, weight]) => {
-            const colorMap: Record<string, string> = {
-              blue: 'bg-accent-blue',
-              purple: 'bg-accent-purple',
-              orange: 'bg-accent-orange',
-              green: 'bg-accent-green',
-              yellow: 'bg-accent-yellow',
-              red: 'bg-accent-red',
-              neutral: 'bg-black/20',
-            };
-            const badge = categoryBadge(category);
-            return (
-              <div
-                key={category}
-                className={`${colorMap[badge] || 'bg-black/20'} transition-all`}
-                style={{ width: `${weight}%` }}
-                title={`${category}: ${weight.toFixed(1)}%`}
-              />
-            );
-          })}
+        <div className="mt-4">
+          <AllocationPieChart
+            data={categoryAllocations.map(([category, weight]) => ({
+              name: category,
+              value: weight,
+              color: BADGE_COLORS[categoryBadge(category)] || '#8E8E93',
+            }))}
+          />
         </div>
       </Card>
 
