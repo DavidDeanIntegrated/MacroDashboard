@@ -118,7 +118,21 @@ export default function PortfolioPage() {
       {/* Portfolio Value Chart */}
       <Card>
         <div className="flex items-center justify-between mb-4">
-          <CardTitle>Portfolio Value</CardTitle>
+          <div>
+            <CardTitle>Portfolio Value</CardTitle>
+            {portfolioChartData && portfolioChartData.length >= 2 && (() => {
+              const first = portfolioChartData[0].value;
+              const last = portfolioChartData[portfolioChartData.length - 1].value;
+              const change = last - first;
+              const changePct = first > 0 ? (change / first) * 100 : 0;
+              const isUp = change >= 0;
+              return (
+                <p className={`text-sm font-medium mt-1 ${isUp ? 'text-accent-green' : 'text-accent-red'}`}>
+                  {isUp ? '+' : ''}{formatCurrency(change)} ({isUp ? '+' : ''}{changePct.toFixed(2)}%) · {portfolioChartPeriod}
+                </p>
+              );
+            })()}
+          </div>
           <div className="flex gap-1">
             {PORTFOLIO_CHART_PERIODS.map((p) => (
               <button
@@ -142,6 +156,7 @@ export default function PortfolioPage() {
             height={300}
             gradientId="portfolio-value"
             valueFormatter={(v) => formatCurrency(v)}
+            autoScale
           />
         ) : (
           <div className="flex items-center justify-center h-[300px] text-black/25 text-sm">

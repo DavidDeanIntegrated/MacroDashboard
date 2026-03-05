@@ -21,6 +21,7 @@ interface TimeSeriesChartProps {
   valueFormatter?: (value: number) => string;
   dateFormatter?: (date: string) => string;
   compact?: boolean;
+  autoScale?: boolean;
 }
 
 export function TimeSeriesChart({
@@ -33,6 +34,7 @@ export function TimeSeriesChart({
   valueFormatter = (v) => v.toFixed(2),
   dateFormatter,
   compact = false,
+  autoScale = false,
 }: TimeSeriesChartProps) {
   if (!data || data.length === 0) {
     return (
@@ -92,6 +94,7 @@ export function TimeSeriesChart({
 
         {showAxis && (
           <YAxis
+            domain={autoScale ? ['auto', 'auto'] : undefined}
             tick={{ fontSize: 11, fill: 'rgba(0,0,0,0.35)' }}
             axisLine={false}
             tickLine={false}

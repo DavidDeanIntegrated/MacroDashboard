@@ -195,19 +195,29 @@ const PERIOD_DAYS: Record<PortfolioChartPeriod, number> = {
 
 async function fetchBtcDailyBars(days: number): Promise<Map<string, number>> {
   const map = new Map<string, number>();
+  const granularity = 86400; // daily
+  const maxCandles = 290; // Coinbase limit is 300; use 290 for safety
   try {
-    const end = Math.floor(Date.now() / 1000);
-    const start = end - days * 86400;
-    const granularity = 86400; // daily
-    const data = await fetchJson<number[][]>(
-      `https://api.exchange.coinbase.com/products/BTC-USD/candles?start=${start}&end=${end}&granularity=${granularity}`,
-      { provider: 'Coinbase' }
-    );
-    // Coinbase returns [time, low, high, open, close, volume] newest-first
-    for (const candle of data) {
-      const date = new Date(candle[0] * 1000).toISOString().split('T')[0];
-      map.set(date, candle[4]); // close price
+    // Paginate in chunks of maxCandles days
+    const now = Math.floor(Date.now() / 1000);
+    const earliest = now - days * 86400;
+    const fetches: Promise<void>[] = [];
+
+    for (let chunkEnd = now; chunkEnd > earliest; chunkEnd -= maxCandles * granularity) {
+      const chunkStart = Math.max(earliest, chunkEnd - maxCandles * granularity);
+      const url = `https://api.exchange.coinbase.com/products/BTC-USD/candles?start=${chunkStart}&end=${chunkEnd}&granularity=${granularity}`;
+      fetches.push(
+        fetchJson<number[][]>(url, { provider: 'Coinbase' }).then((data) => {
+          // Coinbase returns [time, low, high, open, close, volume] newest-first
+          for (const candle of data) {
+            const date = new Date(candle[0] * 1000).toISOString().split('T')[0];
+            map.set(date, candle[4]); // close price
+          }
+        })
+      );
     }
+
+    await Promise.all(fetches);
   } catch {
     // BTC bars unavailable — will be omitted from totals
   }
