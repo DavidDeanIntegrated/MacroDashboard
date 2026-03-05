@@ -105,27 +105,27 @@ async function fetchPrice(symbol: string): Promise<PriceData> {
     const btc = await fetchBtcPrice();
     return { ...empty, price: btc.price, prevClose: btc.prevClose };
   }
-  // Try Polygon first (richer data), fall back to Alpaca
+  // Try Alpaca first (reliable for live prices), fall back to Polygon
   try {
-    const snap = await getPolygonSnapshot(symbol);
+    const snap = await getAlpacaSnapshot(symbol);
     return {
-      price: snap.price,
-      prevClose: snap.prevClose,
-      open: snap.open,
-      high: snap.high,
-      low: snap.low,
-      volume: snap.volume,
+      price: snap.latestTrade.p,
+      prevClose: snap.prevDailyBar.c,
+      open: snap.dailyBar?.o || 0,
+      high: snap.dailyBar?.h || 0,
+      low: snap.dailyBar?.l || 0,
+      volume: snap.dailyBar?.v || 0,
     };
   } catch {
     try {
-      const snap = await getAlpacaSnapshot(symbol);
+      const snap = await getPolygonSnapshot(symbol);
       return {
-        price: snap.latestTrade.p,
-        prevClose: snap.prevDailyBar.c,
-        open: snap.dailyBar?.o || 0,
-        high: snap.dailyBar?.h || 0,
-        low: snap.dailyBar?.l || 0,
-        volume: snap.dailyBar?.v || 0,
+        price: snap.price,
+        prevClose: snap.prevClose,
+        open: snap.open,
+        high: snap.high,
+        low: snap.low,
+        volume: snap.volume,
       };
     } catch {
       return empty;
