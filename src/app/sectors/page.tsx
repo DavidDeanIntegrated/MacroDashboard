@@ -106,6 +106,107 @@ export default function SectorsPage() {
     return { label: 'Mixed', badge: 'neutral' as const, text: 'No clear sector leadership pattern. Markets may be in transition.' };
   })();
 
+  // ─── REGIME FIT SCORES ───
+  // For each macro regime, compute how well the "expected leader" sectors are
+  // actually outperforming SPY. Score = average excess return of leader ETFs,
+  // normalized to 0-100 scale where 100 = all leaders beating SPY by 10%+.
+  const regimeDefinitions = [
+    {
+      name: 'Goldilocks',
+      badge: 'green' as const,
+      border: 'border-accent-green/20',
+      bg: 'bg-accent-green/[0.03]',
+      barColor: 'bg-accent-green',
+      description: 'Moderate growth, low inflation, easy policy.',
+      leaders: ['XLK', 'XLY', 'XLC'],
+      leaderLabel: 'XLK, XLY, XLC (growth & consumer)',
+      interpretation: {
+        high: 'Growth and consumer discretionary sectors are strongly outperforming — markets are pricing in a favorable economic backdrop with healthy earnings growth and manageable inflation.',
+        mid: 'Some growth leadership but not dominant — the market sees moderate tailwinds but isn\'t fully in "risk-on" mode.',
+        low: 'Growth sectors are underperforming — the market doesn\'t see a goldilocks environment right now. Look for rotation into defensive or value.',
+      },
+    },
+    {
+      name: 'Reflation',
+      badge: 'orange' as const,
+      border: 'border-accent-orange/20',
+      bg: 'bg-accent-orange/[0.03]',
+      barColor: 'bg-accent-orange',
+      description: 'Rising inflation, strong growth, tightening.',
+      leaders: ['XLE', 'XLB', 'XLF'],
+      leaderLabel: 'XLE, XLB, XLF (commodities & financials)',
+      interpretation: {
+        high: 'Energy, materials, and financials dominating — strong signal of rising inflation expectations and commodity demand. Pricing power matters most in this environment.',
+        mid: 'Some commodity/financial strength — inflation expectations are building but not yet dominant. Monitor CPI and commodity prices for confirmation.',
+        low: 'Commodity and financial sectors lagging — the market doesn\'t see a reflationary impulse. Inflation expectations may be well-anchored or declining.',
+      },
+    },
+    {
+      name: 'Stagflation',
+      badge: 'red' as const,
+      border: 'border-accent-red/20',
+      bg: 'bg-accent-red/[0.03]',
+      barColor: 'bg-accent-red',
+      description: 'High inflation, slowing growth.',
+      leaders: ['XLE', 'XLP', 'XLU'],
+      leaderLabel: 'XLE, XLP, XLU (energy & defensives)',
+      interpretation: {
+        high: 'Energy outperforming alongside defensive sectors — a classic stagflation signature. The market is pricing in persistent inflation with slowing growth. This is the hardest environment for portfolios.',
+        mid: 'Some defensive + energy leadership — mixed signals. Inflation may be sticky while growth is uncertain. Watch the yield curve for confirmation.',
+        low: 'No stagflation pattern — either growth is healthy (goldilocks/reflation) or we\'re in a deflationary bust. Neither energy nor defensives are leading.',
+      },
+    },
+    {
+      name: 'Deflation / Contraction',
+      badge: 'blue' as const,
+      border: 'border-accent-blue/20',
+      bg: 'bg-accent-blue/[0.03]',
+      barColor: 'bg-accent-blue',
+      description: 'Falling prices, demand collapsing, rate cuts.',
+      leaders: ['XLU', 'XLP', 'XLRE'],
+      leaderLabel: 'XLU, XLP, XLRE (defensives & duration)',
+      interpretation: {
+        high: 'Pure defensives and rate-sensitive sectors leading — markets are positioning for economic contraction and rate cuts. Capital preservation is the priority. Duration assets (bonds, REITs) benefit from falling rates.',
+        mid: 'Some flight to safety — the market is hedging downside risk but hasn\'t fully capitulated. Monitor credit spreads and leading indicators.',
+        low: 'No deflationary positioning — the market sees growth and/or inflation ahead, not contraction. Risk assets are preferred over safety.',
+      },
+    },
+  ];
+
+  // Build a lookup: symbol → excess return over SPY for the selected period
+  const excessReturns: Record<string, number> = {};
+  for (const s of sectorReturns) {
+    excessReturns[s.symbol] = s.returns[selectedPeriod] - spyReturns[selectedPeriod];
+  }
+
+  const regimeScores = regimeDefinitions.map((regime) => {
+    // Average excess return of leader sectors
+    const leaderExcess = regime.leaders.map((sym) => excessReturns[sym] || 0);
+    const avgExcess = leaderExcess.reduce((a, b) => a + b, 0) / leaderExcess.length;
+
+    // Also factor in: are ALL leaders positive (outperforming)?
+    const leadersOutperforming = leaderExcess.filter((e) => e > 0).length;
+    const breadth = leadersOutperforming / regime.leaders.length; // 0 to 1
+
+    // Raw score: average excess return scaled. +10% excess → 100, 0% → 50, -10% → 0
+    const rawFromExcess = Math.max(0, Math.min(100, (avgExcess + 10) * 5));
+    // Breadth bonus: if all leaders outperform, boost; if none do, penalize
+    const breadthMultiplier = 0.5 + breadth * 0.5; // 0.5 to 1.0
+
+    const score = Math.round(Math.max(0, Math.min(100, rawFromExcess * breadthMultiplier)));
+
+    const interpretationLevel = score >= 60 ? 'high' : score >= 35 ? 'mid' : 'low';
+
+    return {
+      ...regime,
+      score,
+      avgExcess,
+      breadth,
+      leaderExcess,
+      interpretation: regime.interpretation[interpretationLevel],
+    };
+  }).sort((a, b) => b.score - a.score);
+
   // Build normalized comparison chart data
   const chartSectors = sorted.slice(0, 5); // Top 5 sectors
   const normalizedData: Array<{ date: string; [key: string]: string | number }> = [];
@@ -260,41 +361,69 @@ export default function SectorsPage() {
         </Card>
       )}
 
-      {/* Regime Context */}
+      {/* Regime Fit Scores */}
       <Card>
-        <CardTitle>Sector Rotation & Macro Regimes</CardTitle>
-        <p className="text-xs text-black/45 mt-1 mb-4">
-          Which sectors tend to lead in each macro environment
+        <CardTitle>Sector Rotation & Macro Regimes — Fit Scores</CardTitle>
+        <p className="text-xs text-black/45 mt-1 mb-2">
+          How well current sector leadership matches each macro regime ({selectedPeriod} data)
+        </p>
+        <p className="text-xs text-black/35 mb-4">
+          Score = 0-100 based on whether a regime&apos;s expected leader sectors are outperforming SPY. Higher score = stronger match to that regime&apos;s signature.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="border border-accent-green/20 rounded-xl p-4 bg-accent-green/[0.03]">
-            <div className="flex items-center gap-2 mb-2">
-              <Badge variant="green">Goldilocks</Badge>
+          {regimeScores.map((regime) => (
+            <div key={regime.name} className={`border ${regime.border} rounded-xl p-4 ${regime.bg}`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Badge variant={regime.badge}>{regime.name}</Badge>
+                  {regime.score === Math.max(...regimeScores.map((r) => r.score)) && regime.score > 50 && (
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-black/40">Best Fit</span>
+                  )}
+                </div>
+                <span className={`text-2xl font-bold tabular-nums ${
+                  regime.score >= 60 ? 'text-black/85' : regime.score >= 35 ? 'text-black/55' : 'text-black/30'
+                }`}>
+                  {regime.score}
+                </span>
+              </div>
+
+              {/* Score bar */}
+              <div className="relative h-2 bg-black/[0.06] rounded-full mb-3 overflow-hidden">
+                <div
+                  className={`absolute inset-y-0 left-0 rounded-full transition-all ${regime.barColor}`}
+                  style={{ width: `${regime.score}%`, opacity: 0.6 }}
+                />
+              </div>
+
+              <p className="text-xs text-black/55 mb-2">{regime.description}</p>
+              <p className="text-xs text-black/75 font-medium mb-2">Leaders: {regime.leaderLabel}</p>
+
+              {/* Leader breakdown */}
+              <div className="flex gap-2 mb-3">
+                {regime.leaders.map((sym, i) => {
+                  const excess = regime.leaderExcess[i];
+                  return (
+                    <span
+                      key={sym}
+                      className={`text-[10px] font-semibold px-2 py-0.5 rounded-md tabular-nums ${
+                        excess > 2 ? 'bg-accent-green/15 text-green-700' :
+                        excess > 0 ? 'bg-accent-green/[0.06] text-green-600' :
+                        excess > -2 ? 'bg-accent-red/[0.06] text-red-600' :
+                        'bg-accent-red/15 text-red-700'
+                      }`}
+                    >
+                      {sym} {excess > 0 ? '+' : ''}{excess.toFixed(1)}%
+                    </span>
+                  );
+                })}
+              </div>
+
+              {/* Interpretation */}
+              <p className="text-xs text-black/50 leading-relaxed italic">
+                {regime.interpretation}
+              </p>
             </div>
-            <p className="text-xs text-black/55 mb-1">Moderate growth, low inflation, easy policy.</p>
-            <p className="text-xs text-black/75 font-medium">Leaders: XLK, XLY, XLC (growth & consumer)</p>
-          </div>
-          <div className="border border-accent-orange/20 rounded-xl p-4 bg-accent-orange/[0.03]">
-            <div className="flex items-center gap-2 mb-2">
-              <Badge variant="orange">Reflation</Badge>
-            </div>
-            <p className="text-xs text-black/55 mb-1">Rising inflation, strong growth, tightening.</p>
-            <p className="text-xs text-black/75 font-medium">Leaders: XLE, XLB, XLF (commodities & financials)</p>
-          </div>
-          <div className="border border-accent-red/20 rounded-xl p-4 bg-accent-red/[0.03]">
-            <div className="flex items-center gap-2 mb-2">
-              <Badge variant="red">Stagflation</Badge>
-            </div>
-            <p className="text-xs text-black/55 mb-1">High inflation, slowing growth.</p>
-            <p className="text-xs text-black/75 font-medium">Leaders: XLE, XLP, XLU (energy & defensives)</p>
-          </div>
-          <div className="border border-accent-blue/20 rounded-xl p-4 bg-accent-blue/[0.03]">
-            <div className="flex items-center gap-2 mb-2">
-              <Badge variant="blue">Deflation / Contraction</Badge>
-            </div>
-            <p className="text-xs text-black/55 mb-1">Falling prices, demand collapsing, rate cuts.</p>
-            <p className="text-xs text-black/75 font-medium">Leaders: XLU, XLP, XLRE (defensives & duration)</p>
-          </div>
+          ))}
         </div>
       </Card>
     </div>
