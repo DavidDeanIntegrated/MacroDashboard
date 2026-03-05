@@ -246,6 +246,27 @@ export default function PortfolioPage() {
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr className="border-t border-black/[0.08] bg-black/[0.02]">
+                  <td className="px-4 py-3 text-sm font-semibold text-black/85">Total</td>
+                  <td className="px-4 py-3" />
+                  <td className="px-4 py-3" />
+                  <td className="px-4 py-3" />
+                  <td className="px-4 py-3 text-sm font-semibold text-black/85 tabular-nums">
+                    {formatCurrency(portfolio.portfolioValue)}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-black/55 tabular-nums">100%</td>
+                  <td className="px-4 py-3" />
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1.5">
+                      <TrendIndicator value={portfolio.dayChangePercent} />
+                      <span className={`text-xs tabular-nums ${portfolio.dayChange >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+                        ({portfolio.dayChange >= 0 ? '+' : ''}{formatCurrency(portfolio.dayChange)})
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
