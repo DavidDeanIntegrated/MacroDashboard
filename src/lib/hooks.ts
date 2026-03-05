@@ -227,6 +227,12 @@ export function useEarnings(symbol: string | null) {
   }>>(symbol ? `/api/finnhub?action=earnings&symbol=${symbol}` : null);
 }
 
+export function usePortfolioChart(period: string = '1Y') {
+  return useApi<Array<{ date: string; value: number }>>(
+    `/api/alpaca?action=portfolio-chart&period=${period}`
+  );
+}
+
 // ─── Polygon Hooks ───
 
 export function usePolygonAggregates(

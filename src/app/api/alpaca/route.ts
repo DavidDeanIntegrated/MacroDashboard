@@ -8,7 +8,8 @@ import {
   submitOrder,
   cancelOrder,
 } from '@/lib/alpaca';
-import { getHoldingsPortfolio } from '@/lib/holdings';
+import { getHoldingsPortfolio, getPortfolioChart } from '@/lib/holdings';
+import type { PortfolioChartPeriod } from '@/lib/holdings';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -51,6 +52,12 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(bars);
       }
 
+      case 'portfolio-chart': {
+        const period = (searchParams.get('period') || '1Y') as PortfolioChartPeriod;
+        const chart = await getPortfolioChart(period);
+        return NextResponse.json(chart);
+      }
+
       case 'snapshot': {
         const symbol = searchParams.get('symbol');
         if (!symbol) {
@@ -62,7 +69,7 @@ export async function GET(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Invalid action. Use: account, positions, orders, portfolio, bars, snapshot' },
+          { error: 'Invalid action. Use: account, positions, orders, portfolio, portfolio-chart, bars, snapshot' },
           { status: 400 }
         );
     }

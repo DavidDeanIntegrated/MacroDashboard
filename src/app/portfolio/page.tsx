@@ -6,7 +6,7 @@ import { LoadingPage, ErrorState, EmptyState } from '@/components/ui/Loading';
 import { Badge, TrendIndicator } from '@/components/ui/Badge';
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart';
 import { AllocationPieChart } from '@/components/charts/AllocationPieChart';
-import { usePortfolio, usePolygonAggregates, usePolygonRSI, usePortfolioDividends } from '@/lib/hooks';
+import { usePortfolio, usePortfolioChart, usePolygonAggregates, usePolygonRSI, usePortfolioDividends } from '@/lib/hooks';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/format';
 import { CATEGORY_CONFIG, HOLDINGS } from '@/lib/holdings';
 import type { PolygonTimeframe } from '@/lib/polygon';
@@ -34,6 +34,8 @@ const FREQ_LABELS: Record<number, string> = {
   12: 'Monthly',
 };
 
+const PORTFOLIO_CHART_PERIODS = ['1M', '3M', '6M', '1Y'] as const;
+
 const CHART_TIMEFRAMES: { label: string; value: PolygonTimeframe }[] = [
   { label: '1D', value: '1min' },
   { label: '1W', value: '5min' },
@@ -52,6 +54,8 @@ function getRSIBadge(rsiData: Array<{ date: string; value: number }> | null) {
 
 export default function PortfolioPage() {
   const { data: portfolio, error, loading, refresh } = usePortfolio();
+  const [portfolioChartPeriod, setPortfolioChartPeriod] = useState<string>('1Y');
+  const { data: portfolioChartData } = usePortfolioChart(portfolioChartPeriod);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [chartTimeframe, setChartTimeframe] = useState<PolygonTimeframe>('1day');
   const { data: chartData } = usePolygonAggregates(selectedSymbol, chartTimeframe);
@@ -110,6 +114,41 @@ export default function PortfolioPage() {
           changeLabel="weight"
         />
       </div>
+
+      {/* Portfolio Value Chart */}
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <CardTitle>Portfolio Value</CardTitle>
+          <div className="flex gap-1">
+            {PORTFOLIO_CHART_PERIODS.map((p) => (
+              <button
+                key={p}
+                onClick={() => setPortfolioChartPeriod(p)}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                  portfolioChartPeriod === p
+                    ? 'bg-black/[0.08] text-black/85'
+                    : 'text-black/40 hover:text-black/65 hover:bg-black/[0.03]'
+                }`}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
+        {portfolioChartData && portfolioChartData.length > 0 ? (
+          <TimeSeriesChart
+            data={portfolioChartData}
+            color="#007AFF"
+            height={300}
+            gradientId="portfolio-value"
+            valueFormatter={(v) => formatCurrency(v)}
+          />
+        ) : (
+          <div className="flex items-center justify-center h-[300px] text-black/25 text-sm">
+            {portfolioChartData ? 'No chart data available' : 'Loading portfolio chart...'}
+          </div>
+        )}
+      </Card>
 
       {/* Allocation Breakdown */}
       <Card>

@@ -1,7 +1,7 @@
 // Static portfolio holdings — manually maintained
 // Update quantities here when rebalancing
 
-import { getSnapshot as getAlpacaSnapshot } from './alpaca';
+import { getSnapshot as getAlpacaSnapshot, getHistoricalBars } from './alpaca';
 import { getSnapshot as getPolygonSnapshot } from './polygon';
 import { fetchJson } from './fetcher';
 import { withCache, TTL } from './cache';
@@ -180,4 +180,101 @@ export async function getHoldingsPortfolio(): Promise<HoldingsPortfolio> {
     dayChangePercent: prevTotal > 0 ? (dayChange / prevTotal) * 100 : 0,
     positions,
   };
+}
+
+// ─── Portfolio Historical Chart ───
+
+export type PortfolioChartPeriod = '1M' | '3M' | '6M' | '1Y';
+
+const PERIOD_DAYS: Record<PortfolioChartPeriod, number> = {
+  '1M': 30,
+  '3M': 90,
+  '6M': 180,
+  '1Y': 365,
+};
+
+async function fetchBtcDailyBars(days: number): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  try {
+    const end = Math.floor(Date.now() / 1000);
+    const start = end - days * 86400;
+    const granularity = 86400; // daily
+    const data = await fetchJson<number[][]>(
+      `https://api.exchange.coinbase.com/products/BTC-USD/candles?start=${start}&end=${end}&granularity=${granularity}`,
+      { provider: 'Coinbase' }
+    );
+    // Coinbase returns [time, low, high, open, close, volume] newest-first
+    for (const candle of data) {
+      const date = new Date(candle[0] * 1000).toISOString().split('T')[0];
+      map.set(date, candle[4]); // close price
+    }
+  } catch {
+    // BTC bars unavailable — will be omitted from totals
+  }
+  return map;
+}
+
+export async function getPortfolioChart(
+  period: PortfolioChartPeriod = '1Y'
+): Promise<Array<{ date: string; value: number }>> {
+  const days = PERIOD_DAYS[period];
+  const start = new Date();
+  start.setDate(start.getDate() - days);
+  const startStr = start.toISOString().split('T')[0];
+
+  const stockSymbols = HOLDINGS.filter((h) => h.symbol !== 'BTC');
+  const btcHolding = HOLDINGS.find((h) => h.symbol === 'BTC');
+
+  // Fetch all bars in parallel
+  const [stockBars, btcBars] = await Promise.all([
+    Promise.all(
+      stockSymbols.map((h) =>
+        getHistoricalBars(h.symbol, '1Day', startStr, undefined, days + 10)
+          .then((bars) => ({ symbol: h.symbol, bars }))
+          .catch(() => ({ symbol: h.symbol, bars: [] as Array<{ date: string; close: number }> }))
+      )
+    ),
+    btcHolding ? fetchBtcDailyBars(days + 10) : Promise.resolve(new Map<string, number>()),
+  ]);
+
+  // Build a map: date → { symbol → close }
+  const dateMap = new Map<string, Map<string, number>>();
+
+  for (const { symbol, bars } of stockBars) {
+    for (const bar of bars) {
+      const date = bar.date.split('T')[0];
+      if (!dateMap.has(date)) dateMap.set(date, new Map());
+      dateMap.get(date)!.set(symbol, bar.close);
+    }
+  }
+
+  // Merge BTC
+  if (btcHolding) {
+    Array.from(btcBars.entries()).forEach(([date, close]) => {
+      if (!dateMap.has(date)) dateMap.set(date, new Map());
+      dateMap.get(date)!.set('BTC', close);
+    });
+  }
+
+  // Sort dates and compute portfolio value per day
+  const sortedDates = Array.from(dateMap.keys()).sort();
+
+  const result: Array<{ date: string; value: number }> = [];
+  for (const date of sortedDates) {
+    const prices = dateMap.get(date)!;
+    let total = 0;
+    let hasData = false;
+    for (const h of HOLDINGS) {
+      const price = prices.get(h.symbol);
+      if (price !== undefined) {
+        total += h.qty * price;
+        hasData = true;
+      }
+    }
+    if (hasData) {
+      result.push({ date, value: Math.round(total * 100) / 100 });
+    }
+  }
+
+  return result;
 }
