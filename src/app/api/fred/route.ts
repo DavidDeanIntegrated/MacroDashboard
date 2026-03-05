@@ -76,6 +76,7 @@ export async function GET(request: NextRequest) {
           unemployment: FRED_SERIES.UNEMPLOYMENT,
           highYieldSpread: FRED_SERIES.HIGH_YIELD_SPREAD,
           industrialProduction: FRED_SERIES.INDUSTRIAL_PRODUCTION,
+          vix: FRED_SERIES.VIX,
         };
 
         const entries = Object.entries(seriesMap);

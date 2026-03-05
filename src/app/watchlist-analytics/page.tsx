@@ -5,7 +5,7 @@ import { Card, CardTitle, MetricCard } from '@/components/ui/Card';
 import { LoadingPage } from '@/components/ui/Loading';
 import { Badge } from '@/components/ui/Badge';
 import { TimeSeriesChart, MultiSeriesChart } from '@/components/charts/TimeSeriesChart';
-import { useMultiAggregates } from '@/lib/hooks';
+import { useMultiAggregates, useApi } from '@/lib/hooks';
 import { WATCHLIST, WATCHLIST_CATEGORY_CONFIG } from '@/lib/holdings';
 
 type AnalyticsPeriod = '1M' | '3M' | '6M' | '1Y';
@@ -69,6 +69,99 @@ function corrColor(r: number): string {
   return 'bg-accent-blue/25 text-blue-800';
 }
 
+// ─── Bottom Timing Score ───
+interface BottomScoreBreakdown {
+  total: number;
+  drawdownPts: number;
+  volSpikePts: number;
+  volumePts: number;
+  vixPts: number;
+  hySpreadPts: number;
+  pricePositionPts: number;
+  volMeanReversionPts: number;
+  grade: 'Extreme Capitulation' | 'Heavy Selling' | 'Moderate Distress' | 'Mild Weakness' | 'No Signal';
+  gradeColor: string;
+}
+
+function computeBottomScore(
+  stock: {
+    drawdown: number;
+    volPercentile: number;
+    pricePosition: number;
+    currentVol: number;
+    medianVol: number;
+  },
+  volumes: number[],
+  vixLevel: number | null,
+  hySpread: number | null,
+  allRollingVols: number[],
+): BottomScoreBreakdown {
+  const dd = Math.abs(stock.drawdown);
+  const drawdownPts = dd > 30 ? 20 : dd > 25 ? 17 : dd > 20 ? 14 : dd > 15 ? 10 : dd > 10 ? 5 : 0;
+
+  const vp = stock.volPercentile;
+  const volSpikePts = vp > 0.95 ? 15 : vp > 0.90 ? 12 : vp > 0.75 ? 8 : vp > 0.60 ? 4 : 0;
+
+  let volumePts = 0;
+  if (volumes.length >= 20) {
+    const avgVol = volumes.slice(0, -5).reduce((a, b) => a + b, 0) / (volumes.length - 5);
+    const recentMax = Math.max(...volumes.slice(-5));
+    const volRatio = avgVol > 0 ? recentMax / avgVol : 0;
+    volumePts = volRatio > 3 ? 15 : volRatio > 2 ? 10 : volRatio > 1.5 ? 5 : 0;
+  }
+
+  let vixPts = 0;
+  if (vixLevel !== null) {
+    vixPts = vixLevel > 40 ? 15 : vixLevel > 30 ? 12 : vixLevel > 25 ? 8 : vixLevel > 20 ? 4 : 0;
+  }
+
+  let hySpreadPts = 0;
+  if (hySpread !== null) {
+    hySpreadPts = hySpread > 8 ? 10 : hySpread > 6 ? 7 : hySpread > 5 ? 5 : hySpread > 4 ? 3 : 0;
+  }
+
+  const pp = stock.pricePosition;
+  const pricePositionPts = pp < 0.10 ? 10 : pp < 0.20 ? 7 : pp < 0.30 ? 4 : 0;
+
+  let volMeanReversionPts = 0;
+  if (allRollingVols.length >= 3) {
+    const recent3 = allRollingVols.slice(-3);
+    const peak = Math.max(...allRollingVols.slice(-10));
+    const current = allRollingVols[allRollingVols.length - 1];
+    const isPastPeak = peak > current && (peak - current) / peak > 0.10;
+    if (isPastPeak && stock.volPercentile > 0.60) {
+      volMeanReversionPts = 15;
+    } else if (stock.volPercentile > 0.90) {
+      volMeanReversionPts = 8;
+    } else if (recent3[2] < recent3[1] && stock.volPercentile > 0.50) {
+      volMeanReversionPts = 5;
+    }
+  }
+
+  const total = drawdownPts + volSpikePts + volumePts + vixPts + hySpreadPts + pricePositionPts + volMeanReversionPts;
+
+  let grade: BottomScoreBreakdown['grade'];
+  let gradeColor: string;
+  if (total >= 75) {
+    grade = 'Extreme Capitulation';
+    gradeColor = 'bg-accent-red/15 text-red-700 border-accent-red/20';
+  } else if (total >= 55) {
+    grade = 'Heavy Selling';
+    gradeColor = 'bg-accent-orange/15 text-orange-700 border-accent-orange/20';
+  } else if (total >= 35) {
+    grade = 'Moderate Distress';
+    gradeColor = 'bg-accent-blue/15 text-blue-700 border-accent-blue/20';
+  } else if (total >= 20) {
+    grade = 'Mild Weakness';
+    gradeColor = 'bg-black/[0.06] text-black/65 border-black/[0.08]';
+  } else {
+    grade = 'No Signal';
+    gradeColor = 'bg-black/[0.04] text-black/45 border-black/[0.06]';
+  }
+
+  return { total, drawdownPts, volSpikePts, volumePts, vixPts, hySpreadPts, pricePositionPts, volMeanReversionPts, grade, gradeColor };
+}
+
 export default function WatchlistAnalyticsPage() {
   const [period, setPeriod] = useState<AnalyticsPeriod>('3M');
 
@@ -85,6 +178,12 @@ export default function WatchlistAnalyticsPage() {
   }, []);
 
   const { data: aggData, loading } = useMultiAggregates(allSymbols, '1day', fromDate);
+
+  // Fetch macro context for bottom scoring
+  const { data: macroData } = useApi<{
+    vix: Array<{ date: string; value: number }>;
+    highYieldSpread: Array<{ date: string; value: number }>;
+  }>('/api/fred?action=dashboard');
 
   if (loading) return <LoadingPage />;
 
@@ -496,7 +595,22 @@ export default function WatchlistAnalyticsPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <MetricCard
+          label="VIX"
+          value={macroData?.vix?.length ? macroData.vix[macroData.vix.length - 1].value.toFixed(1) : '—'}
+          change={(() => {
+            const v = macroData?.vix;
+            if (!v || v.length < 2) return '';
+            const chg = v[v.length - 1].value - v[v.length - 2].value;
+            return `${chg > 0 ? '+' : ''}${chg.toFixed(1)}`;
+          })()}
+          trend={(() => {
+            const v = macroData?.vix;
+            if (!v || v.length < 2) return 'neutral' as const;
+            return v[v.length - 1].value > v[v.length - 2].value ? 'up' as const : 'down' as const;
+          })()}
+        />
         <MetricCard
           label="SPY Volatility"
           value={`${spyAnnualizedVol.toFixed(1)}%`}
@@ -613,6 +727,26 @@ export default function WatchlistAnalyticsPage() {
             <div className="divide-y divide-black/[0.04]">
               {volSignals.map((s) => {
                 const signal = getVolSignal(s);
+                const showBottomScore = signal.signal === 'Capitulation Watch' || signal.signal === 'Potential Buy Zone';
+
+                const bottomScore = showBottomScore ? (() => {
+                  const series = aggData?.find((a) => a.symbol === s.symbol)?.data || [];
+                  const sliced = series.slice(-days);
+                  const volumes = sliced.map((d) => d.volume);
+                  const closes = sliced.map((d) => d.close);
+
+                  const rollingVols: number[] = [];
+                  for (let i = 20; i < closes.length; i++) {
+                    const w = computeReturns(closes.slice(i - 20, i + 1));
+                    rollingVols.push(stdDev(w) * Math.sqrt(252) * 100);
+                  }
+
+                  const vixLevel = macroData?.vix?.length ? macroData.vix[macroData.vix.length - 1].value : null;
+                  const hySpread = macroData?.highYieldSpread?.length ? macroData.highYieldSpread[macroData.highYieldSpread.length - 1].value : null;
+
+                  return computeBottomScore(s, volumes, vixLevel, hySpread, rollingVols);
+                })() : null;
+
                 return (
                   <div key={s.symbol} className="px-6 py-4">
                     <div className="flex items-start justify-between gap-4">
@@ -625,6 +759,61 @@ export default function WatchlistAnalyticsPage() {
                         <p className="text-sm text-black/55 leading-relaxed max-w-2xl">
                           {signal.reason}
                         </p>
+
+                        {/* Bottom Timing Score */}
+                        {bottomScore && (
+                          <div className={`mt-3 rounded-xl border p-4 ${bottomScore.gradeColor}`}>
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold uppercase tracking-wider">Bottom Timing Score</span>
+                                <span className="text-lg font-black tabular-nums">{bottomScore.total}</span>
+                                <span className="text-xs font-medium opacity-60">/ 100</span>
+                              </div>
+                              <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-white/40">{bottomScore.grade}</span>
+                            </div>
+                            <div className="w-full h-2.5 rounded-full bg-black/[0.08] mb-3 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  bottomScore.total >= 75 ? 'bg-accent-red' :
+                                  bottomScore.total >= 55 ? 'bg-accent-orange' :
+                                  bottomScore.total >= 35 ? 'bg-accent-blue' :
+                                  'bg-black/25'
+                                }`}
+                                style={{ width: `${bottomScore.total}%` }}
+                              />
+                            </div>
+                            <div className="grid grid-cols-4 md:grid-cols-7 gap-2 text-[10px]">
+                              <div className="text-center">
+                                <p className="opacity-60 uppercase tracking-wider mb-0.5">Drawdown</p>
+                                <p className="font-bold tabular-nums">{bottomScore.drawdownPts}/20</p>
+                              </div>
+                              <div className="text-center">
+                                <p className="opacity-60 uppercase tracking-wider mb-0.5">Vol Spike</p>
+                                <p className="font-bold tabular-nums">{bottomScore.volSpikePts}/15</p>
+                              </div>
+                              <div className="text-center">
+                                <p className="opacity-60 uppercase tracking-wider mb-0.5">Volume</p>
+                                <p className="font-bold tabular-nums">{bottomScore.volumePts}/15</p>
+                              </div>
+                              <div className="text-center">
+                                <p className="opacity-60 uppercase tracking-wider mb-0.5">VIX</p>
+                                <p className="font-bold tabular-nums">{bottomScore.vixPts}/15</p>
+                              </div>
+                              <div className="text-center">
+                                <p className="opacity-60 uppercase tracking-wider mb-0.5">HY Spread</p>
+                                <p className="font-bold tabular-nums">{bottomScore.hySpreadPts}/10</p>
+                              </div>
+                              <div className="text-center">
+                                <p className="opacity-60 uppercase tracking-wider mb-0.5">Price Pos</p>
+                                <p className="font-bold tabular-nums">{bottomScore.pricePositionPts}/10</p>
+                              </div>
+                              <div className="text-center">
+                                <p className="opacity-60 uppercase tracking-wider mb-0.5">Vol Revert</p>
+                                <p className="font-bold tabular-nums">{bottomScore.volMeanReversionPts}/15</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <div className="shrink-0 text-right space-y-1">
                         <div>
@@ -657,6 +846,87 @@ export default function WatchlistAnalyticsPage() {
                 );
               })}
             </div>
+          </Card>
+
+          {/* Bottom Timing Score Methodology */}
+          <Card>
+            <CardTitle>Bottom Timing Score — Methodology</CardTitle>
+            <p className="text-xs text-black/40 mt-1 mb-4">
+              An evidence-based composite score (0-100) for gauging how close a stock may be to a capitulation bottom. Shown for stocks in &quot;Capitulation Watch&quot; or &quot;Potential Buy Zone.&quot;
+            </p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="rounded-lg border border-black/[0.06] p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-black/50 mb-1">Drawdown Severity (0-20)</p>
+                  <p className="text-xs text-black/55 leading-relaxed">
+                    How far the stock has fallen from its period high. Deeper drawdowns score higher: &gt;30% = 20pts, &gt;25% = 17pts, &gt;20% = 14pts, &gt;15% = 10pts.
+                  </p>
+                </div>
+                <div className="rounded-lg border border-black/[0.06] p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-black/50 mb-1">Volatility Spike (0-15)</p>
+                  <p className="text-xs text-black/55 leading-relaxed">
+                    Current 20-day rolling vol percentile vs history. Top 5% = 15pts, top 10% = 12pts, top 25% = 8pts. Extreme vol spikes historically coincide with capitulation selling.
+                  </p>
+                </div>
+                <div className="rounded-lg border border-black/[0.06] p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-black/50 mb-1">Volume Capitulation (0-15)</p>
+                  <p className="text-xs text-black/55 leading-relaxed">
+                    Recent 5-day max volume vs prior average. &gt;3x average = 15pts, &gt;2x = 10pts, &gt;1.5x = 5pts. Volume spikes indicate forced selling or panic liquidation.
+                  </p>
+                </div>
+                <div className="rounded-lg border border-black/[0.06] p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-black/50 mb-1">VIX Level (0-15)</p>
+                  <p className="text-xs text-black/55 leading-relaxed">
+                    Market-wide fear gauge from CBOE options. &gt;40 = 15pts (extreme panic), &gt;30 = 12pts, &gt;25 = 8pts, &gt;20 = 4pts. High VIX confirms broad market stress, not just stock-specific.
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="rounded-lg border border-black/[0.06] p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-black/50 mb-1">HY Credit Spread (0-10)</p>
+                  <p className="text-xs text-black/55 leading-relaxed">
+                    High yield bond spread over Treasuries. &gt;8% = 10pts (credit crisis), &gt;6% = 7pts, &gt;5% = 5pts. Widening spreads confirm systemic stress — credit markets lead equities.
+                  </p>
+                </div>
+                <div className="rounded-lg border border-black/[0.06] p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-black/50 mb-1">Price Position (0-10)</p>
+                  <p className="text-xs text-black/55 leading-relaxed">
+                    Where the current price sits in the period range. Bottom 10% = 10pts, bottom 20% = 7pts, bottom 30% = 4pts. Near the absolute low of the range adds conviction.
+                  </p>
+                </div>
+                <div className="rounded-lg border border-black/[0.06] p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-black/50 mb-1">Vol Mean Reversion (0-15)</p>
+                  <p className="text-xs text-black/55 leading-relaxed">
+                    Has volatility peaked and started declining? Vol peaked then dropped &gt;10% = 15pts, at extreme = 8pts, starting to decline = 5pts. The best entries are when vol peaks and turns — not while it&apos;s still rising.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-2">
+              <div className="text-center py-2 rounded-lg bg-accent-red/10 border border-accent-red/15">
+                <p className="text-[10px] font-bold text-red-700">75-100</p>
+                <p className="text-[10px] text-red-600">Extreme Capitulation</p>
+              </div>
+              <div className="text-center py-2 rounded-lg bg-accent-orange/10 border border-accent-orange/15">
+                <p className="text-[10px] font-bold text-orange-700">55-74</p>
+                <p className="text-[10px] text-orange-600">Heavy Selling</p>
+              </div>
+              <div className="text-center py-2 rounded-lg bg-accent-blue/10 border border-accent-blue/15">
+                <p className="text-[10px] font-bold text-blue-700">35-54</p>
+                <p className="text-[10px] text-blue-600">Moderate Distress</p>
+              </div>
+              <div className="text-center py-2 rounded-lg bg-black/[0.04] border border-black/[0.06]">
+                <p className="text-[10px] font-bold text-black/60">20-34</p>
+                <p className="text-[10px] text-black/45">Mild Weakness</p>
+              </div>
+              <div className="text-center py-2 rounded-lg bg-black/[0.02] border border-black/[0.04]">
+                <p className="text-[10px] font-bold text-black/40">0-19</p>
+                <p className="text-[10px] text-black/30">No Signal</p>
+              </div>
+            </div>
+            <p className="text-xs text-black/35 mt-4 italic leading-relaxed">
+              This score is a probabilistic framework, not a prediction. Scores above 75 are historically rare and have clustered around major market bottoms (2008-09, March 2020, Q4 2018). A high score means conditions are <span className="font-medium">consistent</span> with capitulation — it does not guarantee the bottom is in. Always scale into positions rather than going all-in, and confirm with fundamental thesis before acting. The strongest signal is when the score peaks and then starts declining (vol mean reversion turning positive).
+            </p>
           </Card>
 
           {/* Framework explanation */}

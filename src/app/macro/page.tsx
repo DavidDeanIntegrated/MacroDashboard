@@ -20,6 +20,7 @@ interface MacroDashboard {
   unemployment: Array<{ date: string; value: number }>;
   highYieldSpread: Array<{ date: string; value: number }>;
   industrialProduction: Array<{ date: string; value: number }>;
+  vix: Array<{ date: string; value: number }>;
   regime: {
     regime: string;
     label: string;
@@ -175,6 +176,23 @@ const INDICATOR_INFO: Record<string, IndicatorInfo> = {
       return { regime: 'Risk-on / Bull', badge: 'green', explanation: 'Very tight spreads indicate strong risk appetite and easy credit. Supportive of equity bull markets, but can signal complacency.' };
     },
   },
+  VIXCLS: {
+    key: 'VIXCLS',
+    label: FRED_SERIES_NAMES['VIXCLS'],
+    description:
+      'The CBOE Volatility Index measures 30-day expected volatility of the S&P 500, derived from options prices. Known as the "fear gauge" — it spikes during panics and crashes. Historically, VIX above 40 has coincided with major market bottoms.',
+    regimeSignal: (v) => {
+      if (v > 40)
+        return { regime: 'Extreme Fear / Capitulation', badge: 'red', explanation: 'VIX above 40 signals panic selling and extreme fear. Historically rare and often marks major bottoms. Contrarian buy signal for long-term investors.' };
+      if (v > 30)
+        return { regime: 'High Fear', badge: 'orange', explanation: 'Elevated fear — markets pricing in significant downside risk. Often seen during corrections. Conditions may be ripe for a reversal if catalysts emerge.' };
+      if (v > 20)
+        return { regime: 'Elevated Caution', badge: 'neutral', explanation: 'Above-average volatility expectations. Market is uncertain but not panicking. Normal during mild pullbacks or ahead of major events.' };
+      if (v > 12)
+        return { regime: 'Calm / Normal', badge: 'green', explanation: 'Low volatility reflects complacency and confidence. Supportive of steady equity gains, but extremely low VIX can precede sharp corrections.' };
+      return { regime: 'Extreme Complacency', badge: 'blue', explanation: 'VIX below 12 signals extreme complacency. Markets are pricing in near-zero risk. Historically, this level precedes volatility spikes and corrections.' };
+    },
+  },
 };
 
 export default function MacroPage() {
@@ -250,6 +268,7 @@ export default function MacroPage() {
     { info: INDICATOR_INFO['CPIYOY'], data: data.cpiYoY, suffix: '%' },
     { info: INDICATOR_INFO['UNRATE'], data: data.unemployment, suffix: '%' },
     { info: INDICATOR_INFO['BAMLH0A0HYM2'], data: data.highYieldSpread, suffix: '%' },
+    { info: INDICATOR_INFO['VIXCLS'], data: data.vix, suffix: '' },
   ];
 
   return (
@@ -374,7 +393,7 @@ export default function MacroPage() {
       </Card>
 
       {/* Key metrics row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <MetricCard
           label="Fed Funds Rate"
           value={`${getLatest(data.fedFunds).toFixed(2)}%`}
@@ -399,6 +418,12 @@ export default function MacroPage() {
           value={`${getLatest(data.highYieldSpread).toFixed(2)}%`}
           change={formatPercent(getChange(data.highYieldSpread))}
           trend={getChange(data.highYieldSpread) > 0 ? 'up' : 'down'}
+        />
+        <MetricCard
+          label="VIX"
+          value={getLatest(data.vix).toFixed(1)}
+          change={formatNumber(getChange(data.vix), { decimals: 1 })}
+          trend={getChange(data.vix) > 0 ? 'up' : 'down'}
         />
       </div>
 
@@ -628,8 +653,22 @@ export default function MacroPage() {
         </Card>
       </div>
 
-      {/* Credit + Industrial Production */}
+      {/* VIX + Credit */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardTitle>VIX — Fear Gauge</CardTitle>
+          <TimeSeriesChart
+            data={filterByPeriod(data.vix, period)}
+            color="#FF3B30"
+            height={250}
+            gradientId="vix"
+            valueFormatter={(v) => v.toFixed(1)}
+          />
+          <p className="text-xs text-black/40 mt-3 leading-relaxed">
+            The CBOE Volatility Index — 30-day expected S&P 500 volatility from options prices. Below 15 = calm/complacent. 20-30 = elevated caution. Above 30 = high fear. Above 40 = extreme panic (historically marks major bottoms).
+          </p>
+        </Card>
+
         <Card>
           <CardTitle>High Yield Credit Spread</CardTitle>
           <TimeSeriesChart
@@ -643,21 +682,22 @@ export default function MacroPage() {
             The premium investors demand for risky corporate bonds over Treasuries. Below 3.5% signals easy credit (risk-on). Above 5-6% signals stress. Above 8% means panic — credit markets are freezing and the Fed typically intervenes.
           </p>
         </Card>
-
-        <Card>
-          <CardTitle>Industrial Production Index</CardTitle>
-          <TimeSeriesChart
-            data={filterByPeriod(data.industrialProduction, period)}
-            color="#34C759"
-            height={250}
-            gradientId="indProd"
-            valueFormatter={(v) => formatNumber(v, { decimals: 1 })}
-          />
-          <p className="text-xs text-black/40 mt-3 leading-relaxed">
-            Measures real output from manufacturing, mining, and utilities. A rising trend confirms expansion; sustained declines signal contraction. Tends to peak before recessions and trough before recoveries.
-          </p>
-        </Card>
       </div>
+
+      {/* Industrial Production */}
+      <Card>
+        <CardTitle>Industrial Production Index</CardTitle>
+        <TimeSeriesChart
+          data={filterByPeriod(data.industrialProduction, period)}
+          color="#34C759"
+          height={250}
+          gradientId="indProd"
+          valueFormatter={(v) => formatNumber(v, { decimals: 1 })}
+        />
+        <p className="text-xs text-black/40 mt-3 leading-relaxed">
+          Measures real output from manufacturing, mining, and utilities. A rising trend confirms expansion; sustained declines signal contraction. Tends to peak before recessions and trough before recoveries.
+        </p>
+      </Card>
 
       {/* Market Regime Scenarios */}
       <Card>

@@ -42,6 +42,9 @@ export const FRED_SERIES = {
   IG_SPREAD: 'BAMLC0A0CM',
   FINANCIAL_CONDITIONS: 'NFCI',
 
+  // Volatility
+  VIX: 'VIXCLS',
+
   // Money supply
   M2: 'M2SL',
 
@@ -81,6 +84,7 @@ export const FRED_SERIES_NAMES: Record<string, string> = {
   BAMLH0A0HYM2: 'High Yield Spread',
   BAMLC0A0CM: 'IG Credit Spread',
   NFCI: 'Financial Conditions',
+  VIXCLS: 'CBOE Volatility Index (VIX)',
   M2SL: 'M2 Money Supply',
   CSUSHPISA: 'Case-Shiller Home Price',
   SAHMREALTIME: 'Sahm Rule Indicator',
