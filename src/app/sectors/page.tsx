@@ -5,7 +5,7 @@ import { Card, CardTitle } from '@/components/ui/Card';
 import { LoadingPage } from '@/components/ui/Loading';
 import { Badge } from '@/components/ui/Badge';
 import { MultiSeriesChart } from '@/components/charts/TimeSeriesChart';
-import { useMultiAggregates, useMacroRegime } from '@/lib/hooks';
+import { useMultiAggregates, useMacroRegime, useYieldCurve, useFredDashboard } from '@/lib/hooks';
 import { RegimeBadge } from '@/components/ui/Badge';
 
 const SECTOR_ETFS = [
@@ -51,6 +51,33 @@ function heatColor(value: number): string {
   return 'bg-accent-red/25 text-red-800';
 }
 
+const REGIME_COLORS: Record<string, string> = {
+  Goldilocks: '#34C759',
+  Reflation: '#FF9500',
+  Stagflation: '#FF3B30',
+  'Deflation / Contraction': '#007AFF',
+};
+
+const REGIME_LEADERS: Record<string, string[]> = {
+  Goldilocks: ['XLK', 'XLY', 'XLC'],
+  Reflation: ['XLE', 'XLB', 'XLF'],
+  Stagflation: ['XLE', 'XLP', 'XLU'],
+  'Deflation / Contraction': ['XLU', 'XLP', 'XLRE'],
+};
+
+function computeRegimeScore(
+  leaders: string[],
+  excessReturns: Record<string, number>
+): number {
+  const leaderExcess = leaders.map((sym) => excessReturns[sym] || 0);
+  const avgExcess = leaderExcess.reduce((a, b) => a + b, 0) / leaderExcess.length;
+  const leadersOutperforming = leaderExcess.filter((e) => e > 0).length;
+  const breadth = leadersOutperforming / leaders.length;
+  const rawFromExcess = Math.max(0, Math.min(100, (avgExcess + 10) * 5));
+  const breadthMultiplier = 0.5 + breadth * 0.5;
+  return Math.round(Math.max(0, Math.min(100, rawFromExcess * breadthMultiplier)));
+}
+
 export default function SectorsPage() {
   const [selectedPeriod, setSelectedPeriod] = useState<HeatmapPeriod>('1M');
 
@@ -72,6 +99,10 @@ export default function SectorsPage() {
 
   // FRED macro regime (economic fundamentals)
   const { data: fredRegime } = useMacroRegime();
+
+  // Leading indicators for monitoring panel
+  const { data: yieldCurve } = useYieldCurve();
+  const { data: fredDashboard } = useFredDashboard();
 
   if (loading) return <LoadingPage />;
 
@@ -265,6 +296,188 @@ export default function SectorsPage() {
       interpretation: regime.interpretation[interpretationLevel],
     };
   }).sort((a, b) => b.score - a.score);
+
+  // ─── CROSS-TIMEFRAME REGIME SCORES (for monitoring panel) ───
+  const regimeNames = Object.keys(REGIME_LEADERS);
+  const crossTimeframeScores: Record<string, Record<HeatmapPeriod, number>> = {};
+  for (const name of regimeNames) {
+    crossTimeframeScores[name] = {} as Record<HeatmapPeriod, number>;
+    for (const p of allPeriods) {
+      const periodExcess: Record<string, number> = {};
+      for (const s of sectorReturns) {
+        periodExcess[s.symbol] = s.returns[p] - spyReturns[p];
+      }
+      crossTimeframeScores[name][p] = computeRegimeScore(REGIME_LEADERS[name], periodExcess);
+    }
+  }
+
+  // Determine timeframe agreement: does the top regime at 1W match 1M and 3M?
+  const topRegimeByPeriod: Record<HeatmapPeriod, string> = {} as Record<HeatmapPeriod, string>;
+  for (const p of allPeriods) {
+    let best = regimeNames[0];
+    let bestScore = 0;
+    for (const name of regimeNames) {
+      if (crossTimeframeScores[name][p] > bestScore) {
+        bestScore = crossTimeframeScores[name][p];
+        best = name;
+      }
+    }
+    topRegimeByPeriod[p] = best;
+  }
+  const timeframeAgreement = (
+    topRegimeByPeriod['1W'] === topRegimeByPeriod['1M'] &&
+    topRegimeByPeriod['1M'] === topRegimeByPeriod['3M']
+  );
+
+  // ─── ROLLING REGIME HISTORY (weekly snapshots from daily data) ───
+  const rollingRegimeData: Array<{ date: string; [key: string]: string | number }> = [];
+  if (spyData.length > 60) {
+    // Sample every 5 trading days over the last ~90 trading days
+    const lookbackBars = Math.min(spyData.length, 90);
+    const startBar = spyData.length - lookbackBars;
+    for (let i = startBar; i < spyData.length; i += 5) {
+      const snapshotDate = spyData[i].date;
+      const point: { date: string; [key: string]: string | number } = { date: snapshotDate };
+      // For each regime, compute score using trailing 30-day returns up to this point
+      const windowDays = 30;
+      for (const name of regimeNames) {
+        const leaderExcess = REGIME_LEADERS[name].map((sym) => {
+          const sData = sectorReturns.find((s) => s.symbol === sym)?.data || [];
+          const symBar = sData.findIndex((d) => d.date >= snapshotDate);
+          const idx = symBar >= 0 ? symBar : sData.length - 1;
+          const start = Math.max(0, idx - windowDays);
+          if (idx <= start || !sData[start] || !sData[idx]) return 0;
+          const symRet = ((sData[idx].close - sData[start].close) / sData[start].close) * 100;
+          const spyIdx = spyData.findIndex((d) => d.date >= snapshotDate);
+          const spyStartIdx = Math.max(0, (spyIdx >= 0 ? spyIdx : spyData.length - 1) - windowDays);
+          const spyEndIdx = spyIdx >= 0 ? spyIdx : spyData.length - 1;
+          if (spyEndIdx <= spyStartIdx || !spyData[spyStartIdx] || !spyData[spyEndIdx]) return 0;
+          const spyRet = ((spyData[spyEndIdx].close - spyData[spyStartIdx].close) / spyData[spyStartIdx].close) * 100;
+          return symRet - spyRet;
+        });
+        const avgExcess = leaderExcess.reduce((a, b) => a + b, 0) / leaderExcess.length;
+        const breadth = leaderExcess.filter((e) => e > 0).length / leaderExcess.length;
+        const raw = Math.max(0, Math.min(100, (avgExcess + 10) * 5));
+        point[name] = Math.round(Math.max(0, Math.min(100, raw * (0.5 + breadth * 0.5))));
+      }
+      rollingRegimeData.push(point);
+    }
+  }
+
+  // ─── LEADING INDICATOR SIGNALS (from FRED data) ───
+  const leadingIndicators: Array<{
+    name: string;
+    value: string;
+    trend: 'up' | 'down' | 'flat';
+    supports: string;
+    contradicts: string;
+    signal: 'supports' | 'contradicts' | 'neutral';
+  }> = [];
+
+  if (fredRegime) {
+    const topSectorRegimeName = regimeScores[0]?.name || '';
+
+    // CPI
+    const cpiSignal = (() => {
+      if (fredRegime.inflationTrend === 'rising') return { supports: 'Reflation, Stagflation', contradicts: 'Goldilocks, Deflation / Contraction' };
+      if (fredRegime.inflationTrend === 'falling') return { supports: 'Goldilocks, Deflation / Contraction', contradicts: 'Reflation, Stagflation' };
+      return { supports: '', contradicts: '' };
+    })();
+    const cpiAlignment = cpiSignal.supports.toLowerCase().includes(topSectorRegimeName.toLowerCase().split(' ')[0])
+      ? 'supports' : cpiSignal.contradicts.toLowerCase().includes(topSectorRegimeName.toLowerCase().split(' ')[0])
+      ? 'contradicts' : 'neutral' as const;
+    leadingIndicators.push({
+      name: 'CPI YoY',
+      value: `${fredRegime.latestInflation.toFixed(1)}%`,
+      trend: fredRegime.inflationTrend === 'rising' ? 'up' : fredRegime.inflationTrend === 'falling' ? 'down' : 'flat',
+      ...cpiSignal,
+      signal: cpiAlignment,
+    });
+
+    // Unemployment
+    const unempSignal = (() => {
+      if (fredRegime.growthTrend === 'decelerating') return { supports: 'Stagflation, Deflation / Contraction', contradicts: 'Goldilocks, Reflation' };
+      if (fredRegime.growthTrend === 'accelerating') return { supports: 'Goldilocks, Reflation', contradicts: 'Stagflation, Deflation / Contraction' };
+      return { supports: '', contradicts: '' };
+    })();
+    const unempAlignment = unempSignal.supports.toLowerCase().includes(topSectorRegimeName.toLowerCase().split(' ')[0])
+      ? 'supports' : unempSignal.contradicts.toLowerCase().includes(topSectorRegimeName.toLowerCase().split(' ')[0])
+      ? 'contradicts' : 'neutral' as const;
+    leadingIndicators.push({
+      name: 'Unemployment',
+      value: `${fredRegime.latestUnemployment.toFixed(1)}%`,
+      trend: fredRegime.growthTrend === 'decelerating' ? 'up' : fredRegime.growthTrend === 'accelerating' ? 'down' : 'flat',
+      ...unempSignal,
+      signal: unempAlignment,
+    });
+
+    // Yield curve (10Y-2Y spread)
+    if (yieldCurve) {
+      const t10y = yieldCurve.find((y) => y.id === 'DGS10');
+      const t2y = yieldCurve.find((y) => y.id === 'DGS2');
+      if (t10y && t2y) {
+        const spread = t10y.value - t2y.value;
+        const ycSupports = spread < 0 ? 'Deflation / Contraction, Stagflation' : spread > 0.5 ? 'Goldilocks, Reflation' : '';
+        const ycContradicts = spread < 0 ? 'Goldilocks, Reflation' : spread > 0.5 ? 'Deflation / Contraction' : '';
+        const ycAlignment = ycSupports.toLowerCase().includes(topSectorRegimeName.toLowerCase().split(' ')[0])
+          ? 'supports' : ycContradicts.toLowerCase().includes(topSectorRegimeName.toLowerCase().split(' ')[0])
+          ? 'contradicts' : 'neutral' as const;
+        leadingIndicators.push({
+          name: '10Y-2Y Spread',
+          value: `${spread.toFixed(2)}%`,
+          trend: spread > 0 ? 'up' : spread < 0 ? 'down' : 'flat',
+          supports: ycSupports,
+          contradicts: ycContradicts,
+          signal: ycAlignment,
+        });
+      }
+    }
+
+    // Fed Funds Rate from dashboard
+    if (fredDashboard) {
+      const ffData = fredDashboard['FED_FUNDS'] || fredDashboard['fedFunds'];
+      if (Array.isArray(ffData) && ffData.length > 0) {
+        const latestFF = (ffData as Array<{ value: number }>)[ffData.length - 1].value;
+        const prevFF = ffData.length > 3 ? (ffData as Array<{ value: number }>)[ffData.length - 4].value : latestFF;
+        const ffTrend = latestFF > prevFF + 0.1 ? 'up' : latestFF < prevFF - 0.1 ? 'down' : 'flat' as const;
+        const ffSupports = ffTrend === 'up' ? 'Reflation, Stagflation' : ffTrend === 'down' ? 'Goldilocks, Deflation / Contraction' : '';
+        const ffContradicts = ffTrend === 'up' ? 'Goldilocks, Deflation / Contraction' : ffTrend === 'down' ? 'Reflation' : '';
+        const ffAlignment = ffSupports.toLowerCase().includes(topSectorRegimeName.toLowerCase().split(' ')[0])
+          ? 'supports' : ffContradicts.toLowerCase().includes(topSectorRegimeName.toLowerCase().split(' ')[0])
+          ? 'contradicts' : 'neutral' as const;
+        leadingIndicators.push({
+          name: 'Fed Funds',
+          value: `${latestFF.toFixed(2)}%`,
+          trend: ffTrend,
+          supports: ffSupports,
+          contradicts: ffContradicts,
+          signal: ffAlignment,
+        });
+      }
+    }
+  }
+
+  // ─── SIGNAL CONFIDENCE SCORE ───
+  const topRegime = regimeScores[0];
+  const confidenceFactors = {
+    timeframeAgreement,
+    scoreAbove60: topRegime ? topRegime.score >= 60 : false,
+    fullBreadth: topRegime ? topRegime.breadth === 1 : false,
+    indicatorsSupport: leadingIndicators.filter((i) => i.signal === 'supports').length,
+    indicatorsContradict: leadingIndicators.filter((i) => i.signal === 'contradicts').length,
+    scoreSpread: topRegime && regimeScores[1] ? topRegime.score - regimeScores[1].score : 0,
+  };
+  const confidenceScore = (
+    (confidenceFactors.timeframeAgreement ? 25 : 0) +
+    (confidenceFactors.scoreAbove60 ? 20 : confidenceFactors.scoreSpread > 15 ? 10 : 0) +
+    (confidenceFactors.fullBreadth ? 15 : 0) +
+    (confidenceFactors.indicatorsSupport * 10) +
+    (-confidenceFactors.indicatorsContradict * 10) +
+    (confidenceFactors.scoreSpread > 20 ? 10 : confidenceFactors.scoreSpread > 10 ? 5 : 0)
+  );
+  const clampedConfidence = Math.max(0, Math.min(100, confidenceScore));
+  const confidenceLabel = clampedConfidence >= 70 ? 'High' : clampedConfidence >= 40 ? 'Moderate' : 'Low';
+  const confidenceColor = clampedConfidence >= 70 ? 'text-accent-green' : clampedConfidence >= 40 ? 'text-accent-orange' : 'text-accent-red';
 
   // Build normalized comparison chart data
   const chartSectors = sorted.slice(0, 5); // Top 5 sectors
@@ -624,112 +837,275 @@ export default function SectorsPage() {
         </div>
       </Card>
 
-      {/* Regime Transition Monitoring Guide */}
+      {/* Regime Transition Monitoring Dashboard */}
       <Card>
-        <CardTitle>How to Monitor Regime Transitions</CardTitle>
-        <p className="text-xs text-black/40 mt-1 mb-4">
-          Practical framework for detecting whether sector signals are front-running a macro shift or if economic fundamentals will reassert
+        <div className="flex items-center justify-between mb-1">
+          <CardTitle>How to Monitor Regime Transitions</CardTitle>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-black/35 uppercase tracking-wider">Signal Confidence</span>
+            <span className={`text-lg font-bold tabular-nums ${confidenceColor}`}>{clampedConfidence}</span>
+            <Badge variant={clampedConfidence >= 70 ? 'green' : clampedConfidence >= 40 ? 'orange' : 'red'}>
+              {confidenceLabel}
+            </Badge>
+          </div>
+        </div>
+        <p className="text-xs text-black/40 mb-4">
+          Live data comparing sector signals against economic fundamentals to detect regime transitions
         </p>
 
         <div className="space-y-4">
-          {/* Step 1: Cross-check timeframes */}
+          {/* Step 1: Cross-Timeframe Regime Scores — horizontal grouped bars */}
           <div className="border border-black/[0.06] rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs font-bold text-accent-blue bg-accent-blue/10 w-6 h-6 rounded-full flex items-center justify-center">1</span>
-              <p className="text-sm font-semibold text-black/75">Cross-Check Timeframes</p>
+              <p className="text-sm font-semibold text-black/75">Cross-Timeframe Regime Scores</p>
+              <Badge variant={timeframeAgreement ? 'green' : 'orange'}>
+                {timeframeAgreement ? 'Aligned' : 'Diverging'}
+              </Badge>
             </div>
-            <p className="text-xs text-black/55 leading-relaxed mb-2">
-              Compare sector regime scores across 1W, 1M, and 3M using the period selector above. If the divergence between FRED and sector signals
-              appears only on the 1W view but 1M and 3M still agree with FRED, it may be noise. If all three timeframes show the same divergence,
-              the signal is more credible.
+            <p className="text-xs text-black/50 mb-3">
+              Each regime&apos;s fit score across all timeframes. Consistent scores = durable signal. Divergence between 1W and 3M = possible transition.
             </p>
-            <div className="bg-black/[0.02] rounded-lg p-2.5">
-              <p className="text-[11px] text-black/50 italic">
-                <span className="font-semibold">Rule of thumb:</span> A regime shift typically shows up in 1W first, then 1M confirms within 2-4 weeks. If
-                3M flips, the transition is likely durable.
-              </p>
+
+            {/* Horizontal bar chart for each regime across timeframes */}
+            <div className="space-y-3">
+              {regimeNames.map((name) => (
+                <div key={name}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[11px] font-semibold text-black/60 w-36 shrink-0">{name}</span>
+                    <div className="flex items-center gap-1 text-[10px] text-black/35">
+                      {name === topRegimeByPeriod[selectedPeriod] && (
+                        <span className="font-semibold text-black/50">Current Top</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {(['1W', '1M', '3M', '6M', '1Y'] as HeatmapPeriod[]).map((p) => {
+                      const score = crossTimeframeScores[name][p];
+                      const isTop = topRegimeByPeriod[p] === name;
+                      return (
+                        <div key={p} className="flex-1">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className={`text-[9px] ${p === selectedPeriod ? 'font-bold text-accent-blue' : 'text-black/30'}`}>{p}</span>
+                            <span className={`text-[10px] tabular-nums font-semibold ${isTop ? 'text-black/75' : 'text-black/35'}`}>{score}</span>
+                          </div>
+                          <div className="h-2 bg-black/[0.04] rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{
+                                width: `${score}%`,
+                                backgroundColor: REGIME_COLORS[name],
+                                opacity: isTop ? 0.8 : 0.35,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Winner row */}
+            <div className="mt-3 pt-3 border-t border-black/[0.06]">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-semibold text-black/35 uppercase tracking-wider mr-2">Top regime:</span>
+                {(['1W', '1M', '3M', '6M', '1Y'] as HeatmapPeriod[]).map((p) => (
+                  <div key={p} className="flex-1 text-center">
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                      p === selectedPeriod ? 'bg-accent-blue/10 text-accent-blue' : 'text-black/40'
+                    }`}>
+                      {topRegimeByPeriod[p].split(' ')[0]}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Step 2: Watch the score trajectory */}
+          {/* Step 2: Rolling Regime Score History — multi-line chart */}
           <div className="border border-black/[0.06] rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs font-bold text-accent-blue bg-accent-blue/10 w-6 h-6 rounded-full flex items-center justify-center">2</span>
-              <p className="text-sm font-semibold text-black/75">Track Score Trajectory, Not Levels</p>
+              <p className="text-sm font-semibold text-black/75">Regime Score History (Rolling 30-Day)</p>
             </div>
-            <p className="text-xs text-black/55 leading-relaxed mb-2">
-              A regime score of 45 isn&apos;t bearish if it was 30 last week — it&apos;s <em>improving</em>. The direction of regime fit scores matters
-              more than absolute levels. Check this page weekly and note which regime scores are rising vs. falling. A regime with a score climbing
-              from 35 to 55 over three weeks is more actionable than one sitting at a static 60.
+            <p className="text-xs text-black/50 mb-3">
+              How each regime&apos;s score has evolved over the past ~90 trading days. Rising lines = strengthening signal. Crossovers = regime transition in progress.
             </p>
-            <div className="bg-black/[0.02] rounded-lg p-2.5">
+
+            {rollingRegimeData.length > 3 ? (
+              <MultiSeriesChart
+                data={rollingRegimeData}
+                series={regimeNames.map((name) => ({
+                  key: name,
+                  color: REGIME_COLORS[name],
+                  name,
+                }))}
+                height={220}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-[220px] text-black/25 text-sm">
+                Insufficient data for rolling history
+              </div>
+            )}
+
+            {/* Legend */}
+            <div className="flex items-center gap-4 mt-2 justify-center">
+              {regimeNames.map((name) => (
+                <div key={name} className="flex items-center gap-1.5">
+                  <div className="w-3 h-[3px] rounded-full" style={{ backgroundColor: REGIME_COLORS[name] }} />
+                  <span className="text-[10px] text-black/45">{name.split(' ')[0]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Step 3: Leading Indicator Validation */}
+          <div className="border border-black/[0.06] rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-bold text-accent-blue bg-accent-blue/10 w-6 h-6 rounded-full flex items-center justify-center">3</span>
+              <p className="text-sm font-semibold text-black/75">Leading Indicator Validation</p>
+            </div>
+            <p className="text-xs text-black/50 mb-3">
+              Do economic fundamentals support or contradict the top sector regime signal ({regimeScores[0]?.name || 'N/A'})?
+            </p>
+
+            {leadingIndicators.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {leadingIndicators.map((ind) => (
+                  <div key={ind.name} className={`border rounded-lg p-3 ${
+                    ind.signal === 'supports' ? 'border-accent-green/15 bg-accent-green/[0.02]' :
+                    ind.signal === 'contradicts' ? 'border-accent-red/15 bg-accent-red/[0.02]' :
+                    'border-black/[0.06] bg-black/[0.01]'
+                  }`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] font-semibold text-black/60">{ind.name}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-bold tabular-nums text-black/75">{ind.value}</span>
+                        <span className={`text-xs ${
+                          ind.trend === 'up' ? 'text-accent-red' : ind.trend === 'down' ? 'text-accent-green' : 'text-black/30'
+                        }`}>
+                          {ind.trend === 'up' ? '\u2191' : ind.trend === 'down' ? '\u2193' : '\u2192'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                        ind.signal === 'supports' ? 'bg-accent-green/10 text-accent-green' :
+                        ind.signal === 'contradicts' ? 'bg-accent-red/10 text-accent-red' :
+                        'bg-black/[0.04] text-black/40'
+                      }`}>
+                        {ind.signal === 'supports' ? 'Supports' : ind.signal === 'contradicts' ? 'Contradicts' : 'Neutral'}
+                      </span>
+                      <span className="text-[10px] text-black/35">
+                        {ind.signal === 'supports' && ind.supports ? `Favors: ${ind.supports}` : ''}
+                        {ind.signal === 'contradicts' && ind.contradicts ? `Favors: ${ind.contradicts}` : ''}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-xs text-black/30 italic">Loading economic indicators...</div>
+            )}
+
+            <div className="mt-3 bg-black/[0.02] rounded-lg p-2.5">
               <p className="text-[11px] text-black/50 italic">
-                <span className="font-semibold">Action:</span> Bookmark this page and check weekly. Compare each regime&apos;s score to your mental baseline.
-                Rising scores = capital flowing into that regime&apos;s signature sectors.
+                {(() => {
+                  const sup = leadingIndicators.filter((i) => i.signal === 'supports').length;
+                  const con = leadingIndicators.filter((i) => i.signal === 'contradicts').length;
+                  if (sup > con) return `${sup} of ${leadingIndicators.length} indicators support the sector signal. Fundamentals are confirming the market\u2019s read.`;
+                  if (con > sup) return `${con} of ${leadingIndicators.length} indicators contradict the sector signal. The market may be front-running a shift that hasn\u2019t materialized in data yet \u2014 or it may reverse.`;
+                  return 'Indicators are mixed \u2014 no clear confirmation or contradiction. Wait for more data before committing to the sector signal.';
+                })()}
               </p>
             </div>
           </div>
 
-          {/* Step 3: Validate with leading indicators */}
-          <div className="border border-black/[0.06] rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs font-bold text-accent-blue bg-accent-blue/10 w-6 h-6 rounded-full flex items-center justify-center">3</span>
-              <p className="text-sm font-semibold text-black/75">Validate with Leading Indicators on the Macro Page</p>
-            </div>
-            <p className="text-xs text-black/55 leading-relaxed mb-2">
-              Sector rotation leads FRED data, but other indicators can help you judge whether the market is right. Cross-reference with:
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-              <div className="bg-black/[0.02] rounded-lg p-2.5">
-                <p className="text-[11px] font-semibold text-black/60 mb-1">Yield Curve (Macro page)</p>
-                <p className="text-[11px] text-black/45">Steepening = growth expectations rising. Inverting = recession signal. Compare to sector regime.</p>
-              </div>
-              <div className="bg-black/[0.02] rounded-lg p-2.5">
-                <p className="text-[11px] font-semibold text-black/60 mb-1">CPI Trend (Macro page)</p>
-                <p className="text-[11px] text-black/45">If sectors say Reflation but CPI is trending down, markets may be wrong. Wait for confirmation.</p>
-              </div>
-              <div className="bg-black/[0.02] rounded-lg p-2.5">
-                <p className="text-[11px] font-semibold text-black/60 mb-1">Unemployment Trend (Macro page)</p>
-                <p className="text-[11px] text-black/45">Rising unemployment + sector Stagflation signal = high conviction. Falling unemployment contradicts it.</p>
-              </div>
-              <div className="bg-black/[0.02] rounded-lg p-2.5">
-                <p className="text-[11px] font-semibold text-black/60 mb-1">Credit Spreads &amp; VIX (Analytics page)</p>
-                <p className="text-[11px] text-black/45">Widening spreads confirm defensive rotation. Tightening spreads confirm risk-on signals.</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Step 4: Decide when to act */}
+          {/* Step 4: Signal Confidence Breakdown */}
           <div className="border border-black/[0.06] rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs font-bold text-accent-blue bg-accent-blue/10 w-6 h-6 rounded-full flex items-center justify-center">4</span>
-              <p className="text-sm font-semibold text-black/75">When to Act vs. Wait</p>
+              <p className="text-sm font-semibold text-black/75">Signal Confidence Breakdown</p>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="bg-accent-green/[0.04] border border-accent-green/10 rounded-lg p-3">
-                <p className="text-[11px] font-semibold text-accent-green mb-1.5">Lean into the sector signal when:</p>
-                <ul className="text-[11px] text-black/55 space-y-1 list-disc list-inside">
-                  <li>Multiple timeframes (1W + 1M) agree on the new regime</li>
-                  <li>Leading indicators on Macro page confirm the direction</li>
-                  <li>The top regime score is above 60 and rising</li>
-                  <li>Breadth is strong (all leader ETFs outperforming SPY)</li>
-                </ul>
-              </div>
-              <div className="bg-accent-orange/[0.04] border border-accent-orange/10 rounded-lg p-3">
-                <p className="text-[11px] font-semibold text-accent-orange mb-1.5">Wait for confirmation when:</p>
-                <ul className="text-[11px] text-black/55 space-y-1 list-disc list-inside">
-                  <li>Only the 1W view shows divergence (could be noise)</li>
-                  <li>Multiple regime scores are clustered (within 10 pts of each other)</li>
-                  <li>Leading indicators contradict the sector signal</li>
-                  <li>Breadth is weak (only 1 of 3 leaders outperforming)</li>
-                </ul>
-              </div>
+            <p className="text-xs text-black/50 mb-3">
+              Automated checklist scoring whether the current sector signal is actionable or requires more confirmation.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {[
+                {
+                  label: 'Timeframe agreement (1W + 1M + 3M)',
+                  pass: confidenceFactors.timeframeAgreement,
+                  detail: confidenceFactors.timeframeAgreement
+                    ? `All three point to ${topRegimeByPeriod['1W'].split(' ')[0]}`
+                    : `1W: ${topRegimeByPeriod['1W'].split(' ')[0]}, 1M: ${topRegimeByPeriod['1M'].split(' ')[0]}, 3M: ${topRegimeByPeriod['3M'].split(' ')[0]}`,
+                  weight: '+25',
+                },
+                {
+                  label: 'Top score above 60',
+                  pass: confidenceFactors.scoreAbove60,
+                  detail: `Top score: ${topRegime?.score || 0}`,
+                  weight: '+20',
+                },
+                {
+                  label: 'Full breadth (all leaders outperforming)',
+                  pass: confidenceFactors.fullBreadth,
+                  detail: `${Math.round((topRegime?.breadth || 0) * 100)}% of leaders outperforming SPY`,
+                  weight: '+15',
+                },
+                {
+                  label: 'Leading indicators support signal',
+                  pass: confidenceFactors.indicatorsSupport > confidenceFactors.indicatorsContradict,
+                  detail: `${confidenceFactors.indicatorsSupport} support, ${confidenceFactors.indicatorsContradict} contradict`,
+                  weight: '+10 ea',
+                },
+                {
+                  label: 'Clear separation from #2 regime',
+                  pass: confidenceFactors.scoreSpread > 10,
+                  detail: `Spread: ${confidenceFactors.scoreSpread} pts (#1 vs #2)`,
+                  weight: '+10',
+                },
+              ].map((item) => (
+                <div key={item.label} className={`flex items-start gap-2 p-2.5 rounded-lg ${
+                  item.pass ? 'bg-accent-green/[0.04]' : 'bg-black/[0.02]'
+                }`}>
+                  <span className={`text-sm mt-0.5 ${item.pass ? 'text-accent-green' : 'text-black/20'}`}>
+                    {item.pass ? '\u2713' : '\u2717'}
+                  </span>
+                  <div>
+                    <p className={`text-[11px] font-semibold ${item.pass ? 'text-black/70' : 'text-black/40'}`}>
+                      {item.label} <span className="text-black/25 font-normal">({item.weight})</span>
+                    </p>
+                    <p className="text-[10px] text-black/40">{item.detail}</p>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="bg-black/[0.02] rounded-lg p-2.5 mt-3">
-              <p className="text-[11px] text-black/50 italic">
-                <span className="font-semibold">Key insight:</span> Sector signals front-run FRED data by 2-4 months on average. But about 30% of the time,
-                the initial sector signal reverses — the economy reasserts rather than shifting. Use the framework above to distinguish durable transitions
-                from false starts. When in doubt, position incrementally (tilt, don&apos;t rotate fully) until confirmation arrives.
+
+            <div className={`mt-3 rounded-lg p-3 ${
+              clampedConfidence >= 70 ? 'bg-accent-green/[0.05] border border-accent-green/10' :
+              clampedConfidence >= 40 ? 'bg-accent-orange/[0.05] border border-accent-orange/10' :
+              'bg-accent-red/[0.05] border border-accent-red/10'
+            }`}>
+              <p className="text-xs text-black/60 leading-relaxed">
+                {clampedConfidence >= 70 ? (
+                  <>
+                    <span className="font-semibold text-accent-green">High confidence.</span> Multiple timeframes agree, leading indicators confirm, and the signal
+                    has strong breadth. This is actionable — consider positioning toward the {topRegime?.name} playbook above.
+                  </>
+                ) : clampedConfidence >= 40 ? (
+                  <>
+                    <span className="font-semibold text-accent-orange">Moderate confidence.</span> Some factors support the signal but others are mixed.
+                    Consider a partial tilt toward {topRegime?.name} positioning, but don&apos;t fully rotate until more factors align. Re-check in 1-2 weeks.
+                  </>
+                ) : (
+                  <>
+                    <span className="font-semibold text-accent-red">Low confidence.</span> Signals are conflicting — timeframes disagree, indicators contradict,
+                    or regime scores are clustered. The market hasn&apos;t committed to a direction. Hold current positioning and wait for clearer signals before acting.
+                  </>
+                )}
               </p>
             </div>
           </div>
