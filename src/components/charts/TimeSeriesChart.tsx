@@ -20,6 +20,7 @@ interface TimeSeriesChartProps {
   gradientId?: string;
   valueFormatter?: (value: number) => string;
   dateFormatter?: (date: string) => string;
+  xAxisFormatter?: (date: string) => string;
   compact?: boolean;
   autoScale?: boolean;
 }
@@ -33,6 +34,7 @@ export function TimeSeriesChart({
   gradientId = 'chartGradient',
   valueFormatter = (v) => v.toFixed(2),
   dateFormatter,
+  xAxisFormatter,
   compact = false,
   autoScale = false,
 }: TimeSeriesChartProps) {
@@ -55,13 +57,13 @@ export function TimeSeriesChart({
     }
   });
 
-  const formatXAxis = (d: string) => {
+  const formatXAxis = xAxisFormatter || ((d: string) => {
     try {
       return format(parseISO(d), 'MMM yy');
     } catch {
       return d;
     }
-  };
+  });
 
   return (
     <ResponsiveContainer width="100%" height={height}>

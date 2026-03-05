@@ -157,6 +157,14 @@ export default function PortfolioPage() {
             gradientId="portfolio-value"
             valueFormatter={(v) => formatCurrency(v)}
             autoScale
+            {...(portfolioChartPeriod === '1D' ? {
+              xAxisFormatter: (d: string) => {
+                try { return new Date(d).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); } catch { return d; }
+              },
+              dateFormatter: (d: string) => {
+                try { return new Date(d).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' }); } catch { return d; }
+              },
+            } : {})}
           />
         ) : (
           <div className="flex items-center justify-center h-[300px] text-black/25 text-sm">
