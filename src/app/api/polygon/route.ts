@@ -101,6 +101,29 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(data);
       }
 
+      case 'multi-aggregates': {
+        // Fetch aggregates for multiple symbols at once — used for overlays, sector heatmaps, etc.
+        const symbols = searchParams.get('symbols')?.split(',') || [];
+        if (symbols.length === 0) {
+          return NextResponse.json({ error: 'Missing symbols' }, { status: 400 });
+        }
+        const timeframe = (searchParams.get('timeframe') || '1day') as PolygonTimeframe;
+        const from = searchParams.get('from') || undefined;
+        const to = searchParams.get('to') || undefined;
+        const limit = parseInt(searchParams.get('limit') || '500');
+        const results = await Promise.all(
+          symbols.map(async (sym) => {
+            try {
+              const data = await getAggregates(sym.trim(), timeframe, from, to, limit);
+              return { symbol: sym.trim(), data };
+            } catch {
+              return { symbol: sym.trim(), data: [] };
+            }
+          })
+        );
+        return NextResponse.json(results);
+      }
+
       case 'portfolio-dividends': {
         // Fetch dividends for multiple symbols at once
         const symbols = searchParams.get('symbols')?.split(',') || [];
@@ -124,7 +147,7 @@ export async function GET(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Invalid action. Use: aggregates, snapshot, sma, ema, rsi, macd, dividends, details, portfolio-dividends' },
+          { error: 'Invalid action. Use: aggregates, snapshot, sma, ema, rsi, macd, dividends, details, multi-aggregates, portfolio-dividends' },
           { status: 400 }
         );
     }

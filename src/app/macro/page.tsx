@@ -4,10 +4,10 @@ import { useState } from 'react';
 import { Card, CardTitle, MetricCard } from '@/components/ui/Card';
 import { LoadingPage, ErrorState } from '@/components/ui/Loading';
 import { Badge, RegimeBadge } from '@/components/ui/Badge';
-import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart';
+import { TimeSeriesChart, MultiSeriesChart } from '@/components/charts/TimeSeriesChart';
 import { YieldCurveChart } from '@/components/charts/YieldCurveChart';
-import { useApi, useYieldCurve } from '@/lib/hooks';
-import { formatPercent, formatNumber } from '@/lib/format';
+import { useApi, useYieldCurve, useMultiAggregates, usePolygonSMA } from '@/lib/hooks';
+import { formatPercent, formatNumber, formatCurrency } from '@/lib/format';
 import { FRED_SERIES_NAMES } from '@/lib/fred';
 
 interface MacroDashboard {
@@ -183,6 +183,17 @@ export default function MacroPage() {
   const [period, setPeriod] = useState<ChartPeriod>('3Y');
   const [expandedIndicator, setExpandedIndicator] = useState<string | null>(null);
 
+  // Market context overlays — SPY & QQQ
+  const lookbackDays = periodMap[period] * 30; // rough days from months
+  const fromDate = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - Math.min(lookbackDays, 365 * 3));
+    return d.toISOString().split('T')[0];
+  })();
+  const { data: benchmarkData } = useMultiAggregates(['SPY', 'QQQ'], '1day', fromDate);
+  const { data: spySma50 } = usePolygonSMA('SPY', 50);
+  const { data: spySma200 } = usePolygonSMA('SPY', 200);
+
   if (loading) return <LoadingPage />;
   if (error) return <ErrorState message={error} onRetry={refresh} />;
   if (!data) return null;
@@ -311,6 +322,134 @@ export default function MacroPage() {
           </p>
         </Card>
       </div>
+
+      {/* Market Context Overlays */}
+      {benchmarkData && benchmarkData.length > 0 && (() => {
+        const spyData = benchmarkData.find((b) => b.symbol === 'SPY')?.data || [];
+        const qqqData = benchmarkData.find((b) => b.symbol === 'QQQ')?.data || [];
+
+        // Compute performance stats
+        const perfStats = (data: typeof spyData) => {
+          if (data.length < 2) return { price: 0, change1D: 0, changePeriod: 0 };
+          const last = data[data.length - 1];
+          const prev = data[data.length - 2];
+          const first = data[0];
+          return {
+            price: last.close,
+            change1D: ((last.close - prev.close) / prev.close) * 100,
+            changePeriod: ((last.close - first.close) / first.close) * 100,
+          };
+        };
+        const spyStats = perfStats(spyData);
+        const qqqStats = perfStats(qqqData);
+
+        // Merge SPY price + SMA into chart data
+        const spyChartData = spyData.map((d) => {
+          const sma50Point = spySma50?.find((s) => s.date.split('T')[0] === d.date.split('T')[0]);
+          const sma200Point = spySma200?.find((s) => s.date.split('T')[0] === d.date.split('T')[0]);
+          return {
+            date: d.date,
+            SPY: d.close,
+            ...(sma50Point ? { SMA50: sma50Point.value } : {}),
+            ...(sma200Point ? { SMA200: sma200Point.value } : {}),
+          };
+        });
+
+        // Normalize SPY vs QQQ for comparison (base = 100)
+        const spyBase = spyData.length > 0 ? spyData[0].close : 1;
+        const qqqBase = qqqData.length > 0 ? qqqData[0].close : 1;
+        const minLen = Math.min(spyData.length, qqqData.length);
+        const comparisonData: Array<{ date: string; [k: string]: string | number }> = [];
+        for (let i = 0; i < minLen; i++) {
+          if (spyData[i].date.split('T')[0] === qqqData[i].date.split('T')[0]) {
+            comparisonData.push({
+              date: spyData[i].date,
+              SPY: +((spyData[i].close / spyBase) * 100).toFixed(2),
+              QQQ: +((qqqData[i].close / qqqBase) * 100).toFixed(2),
+            });
+          }
+        }
+
+        return (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-semibold text-black/75 tracking-tight mb-1">Market Context</h3>
+              <p className="text-xs text-black/40">Benchmark performance and moving averages via Polygon.io</p>
+            </div>
+
+            {/* Benchmark metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <MetricCard
+                label="SPY"
+                value={formatCurrency(spyStats.price)}
+                change={formatPercent(spyStats.change1D)}
+                changeLabel="today"
+                trend={spyStats.change1D >= 0 ? 'up' : 'down'}
+              />
+              <MetricCard
+                label="SPY Period"
+                value={formatPercent(spyStats.changePeriod)}
+                change={period}
+                changeLabel="period"
+                trend={spyStats.changePeriod >= 0 ? 'up' : 'down'}
+              />
+              <MetricCard
+                label="QQQ"
+                value={formatCurrency(qqqStats.price)}
+                change={formatPercent(qqqStats.change1D)}
+                changeLabel="today"
+                trend={qqqStats.change1D >= 0 ? 'up' : 'down'}
+              />
+              <MetricCard
+                label="QQQ Period"
+                value={formatPercent(qqqStats.changePeriod)}
+                change={period}
+                changeLabel="period"
+                trend={qqqStats.changePeriod >= 0 ? 'up' : 'down'}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* SPY + Moving Averages */}
+              <Card>
+                <CardTitle>SPY — Price + Moving Averages</CardTitle>
+                {spyChartData.length > 0 && (
+                  <MultiSeriesChart
+                    data={spyChartData}
+                    series={[
+                      { key: 'SPY', color: '#007AFF', name: 'SPY' },
+                      { key: 'SMA50', color: '#FF9500', name: '50-day SMA' },
+                      { key: 'SMA200', color: '#FF3B30', name: '200-day SMA' },
+                    ]}
+                    height={280}
+                  />
+                )}
+                <p className="text-xs text-black/40 mt-3 leading-relaxed">
+                  Price above both SMAs = bullish trend. Price below 200-day SMA = bear market territory. 50-day crossing below 200-day = &quot;death cross&quot; (bearish). Crossing above = &quot;golden cross&quot; (bullish).
+                </p>
+              </Card>
+
+              {/* SPY vs QQQ normalized */}
+              <Card>
+                <CardTitle>SPY vs QQQ — Relative Performance</CardTitle>
+                {comparisonData.length > 0 && (
+                  <MultiSeriesChart
+                    data={comparisonData}
+                    series={[
+                      { key: 'SPY', color: '#007AFF', name: 'SPY (indexed)' },
+                      { key: 'QQQ', color: '#AF52DE', name: 'QQQ (indexed)' },
+                    ]}
+                    height={280}
+                  />
+                )}
+                <p className="text-xs text-black/40 mt-3 leading-relaxed">
+                  Normalized to 100 at start of period. When QQQ leads, growth/tech is in favor (risk-on). When SPY leads, broad market / value is outperforming (risk-off rotation).
+                </p>
+              </Card>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Inflation */}
       <Card>

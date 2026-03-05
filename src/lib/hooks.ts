@@ -275,6 +275,22 @@ export function usePolygonSMA(symbol: string | null, window = 50) {
   );
 }
 
+export function useMultiAggregates(
+  symbols: string[],
+  timeframe: string = '1day',
+  from?: string,
+  to?: string
+) {
+  const syms = symbols.join(',');
+  const params = new URLSearchParams({ action: 'multi-aggregates', symbols: syms, timeframe });
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  return useApi<Array<{
+    symbol: string;
+    data: Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }>;
+  }>>(syms ? `/api/polygon?${params.toString()}` : null);
+}
+
 export function usePortfolioDividends(symbols: string[]) {
   const syms = symbols.filter((s) => s !== 'BTC').join(',');
   return useApi<Array<{
