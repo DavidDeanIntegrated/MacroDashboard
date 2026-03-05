@@ -257,28 +257,25 @@ export async function getPortfolioChart(
   }
 
   // Sort dates and compute portfolio value per day,
-  // carrying forward the last known price for each symbol (handles weekends/holidays)
+  // carrying forward the last known price for each symbol (handles weekends/holidays).
+  // Skip early dates where not all holdings have appeared yet to avoid artificial dips.
   const sortedDates = Array.from(dateMap.keys()).sort();
   const lastKnown = new Map<string, number>();
+  const totalHoldings = HOLDINGS.length;
 
   const result: Array<{ date: string; value: number }> = [];
   for (const date of sortedDates) {
     const prices = dateMap.get(date)!;
-    // Update last-known prices for symbols that have data today
     prices.forEach((price, symbol) => lastKnown.set(symbol, price));
 
+    // Only emit once we have prices for all holdings
+    if (lastKnown.size < totalHoldings) continue;
+
     let total = 0;
-    let hasData = false;
     for (const h of HOLDINGS) {
-      const price = lastKnown.get(h.symbol);
-      if (price !== undefined) {
-        total += h.qty * price;
-        hasData = true;
-      }
+      total += h.qty * (lastKnown.get(h.symbol) || 0);
     }
-    if (hasData) {
-      result.push({ date, value: Math.round(total * 100) / 100 });
-    }
+    result.push({ date, value: Math.round(total * 100) / 100 });
   }
 
   return result;
