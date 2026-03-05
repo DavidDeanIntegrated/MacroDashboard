@@ -96,6 +96,12 @@ export default function SectorsPage() {
   // Sort by selected period return
   const sorted = [...sectorReturns].sort((a, b) => b.returns[selectedPeriod] - a.returns[selectedPeriod]);
 
+  // Latest market data date (from SPY's most recent bar)
+  const latestDataDate = spyData.length > 0 ? spyData[spyData.length - 1].date : null;
+  const formattedDataDate = latestDataDate
+    ? new Date(latestDataDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : null;
+
   // Regime hints based on sector leadership
   const topSectors = sorted.slice(0, 3).map((s) => s.symbol);
   const topSectorNames = sorted.slice(0, 3).map((s) => `${s.symbol} (${s.name})`).join(', ');
@@ -324,7 +330,14 @@ export default function SectorsPage() {
           </div>
         </div>
         <div className="mt-4 pt-3 border-t border-black/[0.06]">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-black/35 mb-2">Why this signal?</p>
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-black/35">Why this signal?</p>
+            {formattedDataDate && (
+              <span className="text-[10px] text-black/30 tabular-nums">
+                Data through {formattedDataDate}
+              </span>
+            )}
+          </div>
           <p className="text-xs text-black/50 leading-relaxed">
             {regimeHint.reasoning}
           </p>
