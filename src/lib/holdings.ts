@@ -1,7 +1,7 @@
 // Static portfolio holdings — manually maintained
 // Update quantities here when rebalancing
 
-import { getSnapshot } from './alpaca';
+import { getSnapshot as getAlpacaSnapshot } from './alpaca';
 import { getSnapshot as getPolygonSnapshot } from './polygon';
 import { fetchJson } from './fetcher';
 import { withCache, TTL } from './cache';
@@ -49,6 +49,10 @@ export interface HoldingPosition {
   dayChange: number;
   dayChangePercent: number;
   category: string;
+  open: number;
+  high: number;
+  low: number;
+  volume: number;
 }
 
 export interface HoldingsPortfolio {
@@ -86,26 +90,45 @@ async function fetchBtcPrice(): Promise<{ price: number; prevClose: number }> {
   });
 }
 
-async function fetchPrice(symbol: string): Promise<{ price: number; prevClose: number }> {
+interface PriceData {
+  price: number;
+  prevClose: number;
+  open: number;
+  high: number;
+  low: number;
+  volume: number;
+}
+
+async function fetchPrice(symbol: string): Promise<PriceData> {
+  const empty: PriceData = { price: 0, prevClose: 0, open: 0, high: 0, low: 0, volume: 0 };
   if (symbol === 'BTC') {
-    return fetchBtcPrice();
+    const btc = await fetchBtcPrice();
+    return { ...empty, price: btc.price, prevClose: btc.prevClose };
   }
-  // Try Alpaca first, fall back to Polygon
+  // Try Polygon first (richer data), fall back to Alpaca
   try {
-    const snapshot = await getSnapshot(symbol);
+    const snap = await getPolygonSnapshot(symbol);
     return {
-      price: snapshot.latestTrade.p,
-      prevClose: snapshot.prevDailyBar.c,
+      price: snap.price,
+      prevClose: snap.prevClose,
+      open: snap.open,
+      high: snap.high,
+      low: snap.low,
+      volume: snap.volume,
     };
   } catch {
     try {
-      const pgSnapshot = await getPolygonSnapshot(symbol);
+      const snap = await getAlpacaSnapshot(symbol);
       return {
-        price: pgSnapshot.price,
-        prevClose: pgSnapshot.prevClose,
+        price: snap.latestTrade.p,
+        prevClose: snap.prevDailyBar.c,
+        open: snap.dailyBar?.o || 0,
+        high: snap.dailyBar?.h || 0,
+        low: snap.dailyBar?.l || 0,
+        volume: snap.dailyBar?.v || 0,
       };
     } catch {
-      return { price: 0, prevClose: 0 };
+      return empty;
     }
   }
 }
@@ -117,7 +140,7 @@ export async function getHoldingsPortfolio(): Promise<HoldingsPortfolio> {
   );
 
   const positions: HoldingPosition[] = HOLDINGS.map((h, i) => {
-    const { price, prevClose } = prices[i];
+    const { price, prevClose, open, high, low, volume } = prices[i];
     const marketValue = h.qty * price;
     const prevValue = h.qty * prevClose;
     const dayChange = marketValue - prevValue;
@@ -132,6 +155,10 @@ export async function getHoldingsPortfolio(): Promise<HoldingsPortfolio> {
       dayChange,
       dayChangePercent,
       category: h.category,
+      open,
+      high,
+      low,
+      volume,
     };
   });
 

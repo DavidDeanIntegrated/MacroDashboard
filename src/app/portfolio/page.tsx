@@ -6,9 +6,10 @@ import { LoadingPage, ErrorState, EmptyState } from '@/components/ui/Loading';
 import { Badge, TrendIndicator } from '@/components/ui/Badge';
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart';
 import { AllocationPieChart } from '@/components/charts/AllocationPieChart';
-import { usePortfolio, useStockBars, usePortfolioDividends } from '@/lib/hooks';
+import { usePortfolio, usePolygonAggregates, usePolygonRSI, usePortfolioDividends } from '@/lib/hooks';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/format';
 import { CATEGORY_CONFIG, HOLDINGS } from '@/lib/holdings';
+import type { PolygonTimeframe } from '@/lib/polygon';
 
 // Map badge variants to hex colors for the pie chart
 const BADGE_COLORS: Record<string, string> = {
@@ -33,10 +34,28 @@ const FREQ_LABELS: Record<number, string> = {
   12: 'Monthly',
 };
 
+const CHART_TIMEFRAMES: { label: string; value: PolygonTimeframe }[] = [
+  { label: '1D', value: '1min' },
+  { label: '1W', value: '5min' },
+  { label: '1M', value: '15min' },
+  { label: '3M', value: '1hour' },
+  { label: '1Y', value: '1day' },
+];
+
+function getRSIBadge(rsiData: Array<{ date: string; value: number }> | null) {
+  if (!rsiData || rsiData.length === 0) return null;
+  const latest = rsiData[rsiData.length - 1].value;
+  if (latest >= 70) return { label: `RSI ${latest.toFixed(0)} · Overbought`, variant: 'red' as const };
+  if (latest <= 30) return { label: `RSI ${latest.toFixed(0)} · Oversold`, variant: 'green' as const };
+  return { label: `RSI ${latest.toFixed(0)}`, variant: 'neutral' as const };
+}
+
 export default function PortfolioPage() {
   const { data: portfolio, error, loading, refresh } = usePortfolio();
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
-  const { data: chartData } = useStockBars(selectedSymbol);
+  const [chartTimeframe, setChartTimeframe] = useState<PolygonTimeframe>('1day');
+  const { data: chartData } = usePolygonAggregates(selectedSymbol, chartTimeframe);
+  const { data: rsiData } = usePolygonRSI(selectedSymbol && selectedSymbol !== 'BTC' ? selectedSymbol : null);
   const { data: dividends } = usePortfolioDividends(HOLDINGS.map((h) => h.symbol));
 
   if (loading) return <LoadingPage />;
@@ -55,16 +74,19 @@ export default function PortfolioPage() {
     return orderA - orderB;
   });
 
+  const selectedPosition = portfolio.positions.find((p) => p.symbol === selectedSymbol);
+  const rsiBadge = getRSIBadge(rsiData);
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
       <div>
         <h2 className="text-2xl font-semibold text-black/85 tracking-tight">Portfolio</h2>
-        <p className="text-sm text-black/45 mt-1">Holdings, allocation, and live pricing</p>
+        <p className="text-sm text-black/45 mt-1">Holdings, allocation, and live pricing via Polygon.io</p>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <MetricCard
           label="Portfolio Value"
           value={formatCurrency(portfolio.portfolioValue)}
@@ -80,6 +102,12 @@ export default function PortfolioPage() {
         <MetricCard
           label="Positions"
           value={portfolio.positions.length.toString()}
+        />
+        <MetricCard
+          label="Top Holding"
+          value={portfolio.positions[0]?.symbol || '—'}
+          change={`${portfolio.positions[0]?.weight.toFixed(1)}%`}
+          changeLabel="weight"
         />
       </div>
 
@@ -114,7 +142,7 @@ export default function PortfolioPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-black/[0.06]">
-                  {['Symbol', 'Category', 'Qty', 'Price', 'Mkt Value', 'Weight', 'Day Chg'].map(
+                  {['Symbol', 'Category', 'Qty', 'Price', 'Mkt Value', 'Weight', 'Volume', 'Day Chg'].map(
                     (h) => (
                       <th
                         key={h}
@@ -155,6 +183,9 @@ export default function PortfolioPage() {
                     <td className="px-4 py-3 text-sm text-black/55 tabular-nums">
                       {pos.weight.toFixed(1)}%
                     </td>
+                    <td className="px-4 py-3 text-sm text-black/45 tabular-nums">
+                      {pos.volume > 0 ? formatNumber(pos.volume, { compact: true }) : '—'}
+                    </td>
                     <td className="px-4 py-3">
                       <TrendIndicator value={pos.dayChangePercent} />
                     </td>
@@ -166,17 +197,68 @@ export default function PortfolioPage() {
         )}
       </Card>
 
-      {/* Selected Position Chart */}
-      {selectedSymbol && chartData && (
+      {/* Selected Position Detail */}
+      {selectedSymbol && selectedPosition && (
         <Card>
-          <CardTitle>{selectedSymbol} — Daily Price</CardTitle>
-          <TimeSeriesChart
-            data={chartData.map((d) => ({ date: d.date, value: d.close }))}
-            color="auto"
-            height={300}
-            gradientId={`pos-${selectedSymbol}`}
-            valueFormatter={(v) => formatCurrency(v)}
-          />
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <CardTitle>{selectedSymbol} — Price Chart</CardTitle>
+              {rsiBadge && (
+                <Badge variant={rsiBadge.variant}>{rsiBadge.label}</Badge>
+              )}
+            </div>
+            <div className="flex gap-1">
+              {CHART_TIMEFRAMES.map((tf) => (
+                <button
+                  key={tf.value}
+                  onClick={() => setChartTimeframe(tf.value)}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                    chartTimeframe === tf.value
+                      ? 'bg-black/[0.08] text-black/85'
+                      : 'text-black/40 hover:text-black/65 hover:bg-black/[0.03]'
+                  }`}
+                >
+                  {tf.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Intraday stats row */}
+          {selectedPosition.open > 0 && (
+            <div className="grid grid-cols-4 gap-4 mb-4 p-3 bg-black/[0.02] rounded-lg">
+              <div>
+                <p className="text-xs text-black/40">Open</p>
+                <p className="text-sm font-medium text-black/75 tabular-nums">{formatCurrency(selectedPosition.open)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-black/40">High</p>
+                <p className="text-sm font-medium text-black/75 tabular-nums">{formatCurrency(selectedPosition.high)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-black/40">Low</p>
+                <p className="text-sm font-medium text-black/75 tabular-nums">{formatCurrency(selectedPosition.low)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-black/40">Volume</p>
+                <p className="text-sm font-medium text-black/75 tabular-nums">{formatNumber(selectedPosition.volume, { compact: true })}</p>
+              </div>
+            </div>
+          )}
+
+          {chartData ? (
+            <TimeSeriesChart
+              data={chartData.map((d) => ({ date: d.date, value: d.close }))}
+              color="auto"
+              height={300}
+              gradientId={`pos-${selectedSymbol}`}
+              valueFormatter={(v) => formatCurrency(v)}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-[300px] text-black/25 text-sm">
+              Loading chart data...
+            </div>
+          )}
         </Card>
       )}
 

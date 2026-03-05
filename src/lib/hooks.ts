@@ -99,6 +99,10 @@ export function usePortfolio() {
       dayChange: number;
       dayChangePercent: number;
       category: string;
+      open: number;
+      high: number;
+      low: number;
+      volume: number;
     }>;
   }>('/api/alpaca?action=portfolio', { refreshInterval: 60000 });
 }
