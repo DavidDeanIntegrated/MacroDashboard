@@ -23,6 +23,15 @@ const navItems = [
     ),
   },
   {
+    label: 'Teaching',
+    href: '/teaching',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.62 48.62 0 0 1 12 20.904a48.62 48.62 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a23.54 23.54 0 0 0-2.688 3.078c.727-.16 1.464-.292 2.209-.396m15.961-2.682a23.54 23.54 0 0 1 2.688 3.078 60.436 60.436 0 0 0-2.209-.396m-13.752-2.682L12 3l7.769 7.147M12 3v7.147" />
+      </svg>
+    ),
+  },
+  {
     label: 'Portfolio',
     href: '/portfolio',
     icon: (
