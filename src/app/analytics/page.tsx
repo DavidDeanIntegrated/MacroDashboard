@@ -160,6 +160,127 @@ export default function AnalyticsPage() {
   const spyDailyVol = stdDev(spyReturns);
   const spyAnnualizedVol = spyDailyVol * Math.sqrt(252) * 100;
 
+  // ─── VOLATILITY SIGNALS ───
+  // For each holding: compare current 20-day vol to its historical median,
+  // and check price position relative to the period high/low.
+  const volSignals = EQUITY_HOLDINGS.map((h) => {
+    const closes = symbolData[h.symbol]?.closes || [];
+    if (closes.length < 30) return null;
+
+    // Current rolling 20-day vol
+    const recentReturns = computeReturns(closes.slice(-21));
+    const currentVol = stdDev(recentReturns) * Math.sqrt(252) * 100;
+
+    // Historical median rolling vol (all 20-day windows)
+    const allRollingVols: number[] = [];
+    for (let i = 20; i < closes.length; i++) {
+      const w = computeReturns(closes.slice(i - 20, i + 1));
+      allRollingVols.push(stdDev(w) * Math.sqrt(252) * 100);
+    }
+    allRollingVols.sort((a, b) => a - b);
+    const medianVol = allRollingVols[Math.floor(allRollingVols.length / 2)] || currentVol;
+    const volPercentile = allRollingVols.filter((v) => v <= currentVol).length / (allRollingVols.length || 1);
+
+    // Price position: how far is current price from period high/low?
+    const periodHigh = Math.max(...closes);
+    const periodLow = Math.min(...closes);
+    const currentPrice = closes[closes.length - 1];
+    const range = periodHigh - periodLow;
+    const pricePosition = range > 0 ? (currentPrice - periodLow) / range : 0.5; // 0 = at low, 1 = at high
+
+    // Price momentum: 20-day return
+    const momentum20d = closes.length >= 21
+      ? ((closes[closes.length - 1] - closes[closes.length - 21]) / closes[closes.length - 21]) * 100
+      : 0;
+
+    // Drawdown from period high
+    const drawdown = ((currentPrice - periodHigh) / periodHigh) * 100;
+
+    return {
+      symbol: h.symbol,
+      category: h.category,
+      currentVol,
+      medianVol,
+      volPercentile,
+      pricePosition,
+      momentum20d,
+      drawdown,
+      currentPrice,
+    };
+  }).filter(Boolean) as Array<{
+    symbol: string;
+    category: string;
+    currentVol: number;
+    medianVol: number;
+    volPercentile: number;
+    pricePosition: number;
+    momentum20d: number;
+    drawdown: number;
+    currentPrice: number;
+  }>;
+
+  // Generate signal for each holding
+  const getVolSignal = (s: typeof volSignals[0]) => {
+    const volExpanded = s.volPercentile > 0.75; // Vol is in the top 25% historically
+    const volContracted = s.volPercentile < 0.25; // Vol is in the bottom 25%
+    const nearLow = s.pricePosition < 0.25; // Price near period low
+    const nearHigh = s.pricePosition > 0.85; // Price near period high
+    const strongMomentum = s.momentum20d > 5;
+    const deepDrawdown = s.drawdown < -15;
+
+    // High vol + price near lows = potential accumulation zone
+    if (volExpanded && nearLow) {
+      return {
+        signal: 'Potential Buy Zone' as const,
+        badge: 'green' as const,
+        reason: `Volatility is elevated (${s.currentVol.toFixed(0)}% vs median ${s.medianVol.toFixed(0)}%) while price sits near period lows (${s.drawdown.toFixed(1)}% from high). Historically, high fear + depressed prices create opportunities for patient buyers. Consider scaling in if your thesis is intact.`,
+      };
+    }
+
+    // Deep drawdown with expanding vol = possible capitulation
+    if (deepDrawdown && volExpanded) {
+      return {
+        signal: 'Capitulation Watch' as const,
+        badge: 'blue' as const,
+        reason: `Down ${Math.abs(s.drawdown).toFixed(1)}% from period high with spiking volatility (${s.volPercentile > 0.9 ? 'top 10%' : 'top 25%'} of its historical range). Capitulation selling can mark bottoms, but wait for vol to peak and start declining before adding. Catching a falling knife is risky.`,
+      };
+    }
+
+    // Low vol + near highs + strong momentum = ride the trend but tighten stops
+    if (volContracted && nearHigh && strongMomentum) {
+      return {
+        signal: 'Trim / Tighten Stops' as const,
+        badge: 'orange' as const,
+        reason: `Price is near period highs with unusually low volatility (bottom 25% historically). Low-vol rallies can persist, but compressed vol often precedes a sharp move. Consider taking partial profits or tightening stop-losses to protect gains.`,
+      };
+    }
+
+    // High vol + near highs = potential distribution
+    if (volExpanded && nearHigh) {
+      return {
+        signal: 'Caution — Elevated Risk' as const,
+        badge: 'red' as const,
+        reason: `Price is near highs but volatility is expanding (${s.currentVol.toFixed(0)}% annualized, above median). This pattern can indicate distribution — smart money selling into strength. Watch for failed breakouts or reversal patterns before adding.`,
+      };
+    }
+
+    // Low vol + near lows = coiling for a move
+    if (volContracted && nearLow) {
+      return {
+        signal: 'Coiling — Watch for Breakout' as const,
+        badge: 'blue' as const,
+        reason: `Volatility is compressed (bottom 25%) while price is near period lows. This "coiling" pattern often precedes a significant directional move. Wait for a clear breakout with volume confirmation before entering. Could break either direction.`,
+      };
+    }
+
+    // Neutral
+    return {
+      signal: 'Neutral' as const,
+      badge: 'neutral' as const,
+      reason: `Volatility is near its historical median (${s.currentVol.toFixed(0)}% vs ${s.medianVol.toFixed(0)}% median) with no extreme price positioning. No strong buy/sell signal from vol alone. Use fundamental analysis and macro context to guide decisions.`,
+    };
+  };
+
   // Relative strength chart — normalized to 100
   const topOutperformers = relativeStrength.slice(0, 3);
   const rsChartData: Array<{ date: string; [key: string]: string | number }> = [];
@@ -481,6 +602,101 @@ export default function AnalyticsPage() {
             valueFormatter={(v) => `${v.toFixed(1)}%`}
           />
         </Card>
+      )}
+
+      {/* ─── VOLATILITY-BASED BUY/SELL SIGNALS ─── */}
+      {volSignals.length > 0 && (
+        <>
+          <div className="mt-4">
+            <h3 className="text-lg font-semibold text-black/75 tracking-tight mb-1">Volatility Signals — Buy vs Sell Context</h3>
+            <p className="text-xs text-black/40 mb-4">
+              Combines each holding&apos;s current volatility regime (vs its own history) with price position to flag potential opportunities and risks.
+            </p>
+          </div>
+
+          <Card padding="none">
+            <div className="px-6 pt-6 pb-3">
+              <CardTitle>Per-Holding Signals ({period})</CardTitle>
+              <p className="text-xs text-black/40 mt-1">
+                Based on 20-day rolling vol percentile, drawdown from high, and price position in the period range
+              </p>
+            </div>
+            <div className="divide-y divide-black/[0.04]">
+              {volSignals.map((s) => {
+                const signal = getVolSignal(s);
+                return (
+                  <div key={s.symbol} className="px-6 py-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <span className="text-sm font-semibold text-black/85">{s.symbol}</span>
+                          <Badge variant={signal.badge}>{signal.signal}</Badge>
+                          <span className="text-xs text-black/35">{s.category}</span>
+                        </div>
+                        <p className="text-sm text-black/55 leading-relaxed max-w-2xl">
+                          {signal.reason}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right space-y-1">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wider text-black/35">Vol Percentile</p>
+                          <p className={`text-sm font-semibold tabular-nums ${
+                            s.volPercentile > 0.75 ? 'text-accent-red' : s.volPercentile < 0.25 ? 'text-accent-green' : 'text-black/65'
+                          }`}>
+                            {(s.volPercentile * 100).toFixed(0)}th
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wider text-black/35">From High</p>
+                          <p className={`text-sm font-semibold tabular-nums ${
+                            s.drawdown < -10 ? 'text-accent-red' : s.drawdown < -5 ? 'text-accent-orange' : 'text-black/65'
+                          }`}>
+                            {s.drawdown.toFixed(1)}%
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wider text-black/35">20d Momentum</p>
+                          <p className={`text-sm font-semibold tabular-nums ${
+                            s.momentum20d > 0 ? 'text-accent-green' : 'text-accent-red'
+                          }`}>
+                            {s.momentum20d > 0 ? '+' : ''}{s.momentum20d.toFixed(1)}%
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          {/* Framework explanation */}
+          <Card>
+            <CardTitle>How to Read Volatility Signals</CardTitle>
+            <p className="text-xs text-black/40 mt-1 mb-4">A framework for using volatility to time entries and exits</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="border border-accent-green/20 rounded-xl p-4 bg-accent-green/[0.03]">
+                <p className="text-xs font-semibold text-accent-green uppercase tracking-wider mb-2">When to Consider Buying</p>
+                <ul className="text-xs text-black/55 space-y-1.5 leading-relaxed">
+                  <li><span className="font-medium text-black/70">High vol + price near lows:</span> Fear is elevated and the stock has sold off. If your fundamental thesis is intact, this is often the best risk/reward entry.</li>
+                  <li><span className="font-medium text-black/70">Vol starting to decline from a spike:</span> The panic is subsiding. A &quot;vol crush&quot; after a spike often coincides with a price recovery.</li>
+                  <li><span className="font-medium text-black/70">Low vol coiling near support:</span> Compressed volatility suggests a big move is brewing. If it breaks upward with volume, it can run.</li>
+                </ul>
+              </div>
+              <div className="border border-accent-red/20 rounded-xl p-4 bg-accent-red/[0.03]">
+                <p className="text-xs font-semibold text-accent-red uppercase tracking-wider mb-2">When to Consider Selling / Trimming</p>
+                <ul className="text-xs text-black/55 space-y-1.5 leading-relaxed">
+                  <li><span className="font-medium text-black/70">Low vol + price at highs:</span> Complacency. The market is pricing in a best-case scenario. Small catalysts can trigger outsized drops.</li>
+                  <li><span className="font-medium text-black/70">Rising vol + price at highs:</span> Distribution pattern. Volatility expanding near tops suggests large players are selling. Take partial profits.</li>
+                  <li><span className="font-medium text-black/70">Vol &gt;1.5x its median for extended periods:</span> Persistent high vol erodes compounding. If a position stays volatile for weeks, reassess your conviction level.</li>
+                </ul>
+              </div>
+            </div>
+            <p className="text-xs text-black/35 mt-4 italic leading-relaxed">
+              Volatility signals work best as a complement to fundamental analysis, not a replacement. They tell you about market sentiment and positioning, not intrinsic value. Always size positions inversely to volatility — smaller positions in high-vol names.
+            </p>
+          </Card>
+        </>
       )}
     </div>
   );
