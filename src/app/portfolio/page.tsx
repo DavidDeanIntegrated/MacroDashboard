@@ -6,9 +6,9 @@ import { LoadingPage, ErrorState, EmptyState } from '@/components/ui/Loading';
 import { Badge, TrendIndicator } from '@/components/ui/Badge';
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart';
 import { AllocationPieChart } from '@/components/charts/AllocationPieChart';
-import { usePortfolio, useStockBars } from '@/lib/hooks';
+import { usePortfolio, useStockBars, usePortfolioDividends } from '@/lib/hooks';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/format';
-import { CATEGORY_CONFIG } from '@/lib/holdings';
+import { CATEGORY_CONFIG, HOLDINGS } from '@/lib/holdings';
 
 // Map badge variants to hex colors for the pie chart
 const BADGE_COLORS: Record<string, string> = {
@@ -26,10 +26,18 @@ const categoryBadge = (category: string) => {
   return config?.badge ?? 'neutral';
 };
 
+const FREQ_LABELS: Record<number, string> = {
+  1: 'Annual',
+  2: 'Semi-Annual',
+  4: 'Quarterly',
+  12: 'Monthly',
+};
+
 export default function PortfolioPage() {
   const { data: portfolio, error, loading, refresh } = usePortfolio();
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const { data: chartData } = useStockBars(selectedSymbol);
+  const { data: dividends } = usePortfolioDividends(HOLDINGS.map((h) => h.symbol));
 
   if (loading) return <LoadingPage />;
   if (error) return <ErrorState message={error} onRetry={refresh} />;
@@ -169,6 +177,50 @@ export default function PortfolioPage() {
             gradientId={`pos-${selectedSymbol}`}
             valueFormatter={(v) => formatCurrency(v)}
           />
+        </Card>
+      )}
+
+      {/* Dividend Calendar */}
+      {dividends && dividends.length > 0 && (
+        <Card padding="none">
+          <div className="px-6 pt-6 pb-3">
+            <CardTitle>Dividend Calendar</CardTitle>
+            <p className="text-xs text-black/40 mt-1">Recent and upcoming dividends for your holdings</p>
+          </div>
+          <div className="divide-y divide-black/[0.04]">
+            {dividends.slice(0, 20).map((div, i) => {
+              const isUpcoming = new Date(div.exDate) >= new Date();
+              return (
+                <div
+                  key={`${div.ticker}-${div.exDate}-${i}`}
+                  className="flex items-center justify-between px-6 py-3.5"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-black/85 w-12">{div.ticker}</span>
+                    <div>
+                      <p className="text-sm text-black/65">
+                        {formatCurrency(div.amount)}/share
+                      </p>
+                      <p className="text-xs text-black/35">
+                        {FREQ_LABELS[div.frequency] || 'Other'} {div.type !== 'CD' ? `(${div.type})` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="flex items-center gap-2">
+                      {isUpcoming && (
+                        <Badge variant="green">Upcoming</Badge>
+                      )}
+                      <p className="text-xs text-black/55">Ex: {div.exDate}</p>
+                    </div>
+                    {div.payDate && (
+                      <p className="text-xs text-black/35 mt-0.5">Pay: {div.payDate}</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </Card>
       )}
     </div>

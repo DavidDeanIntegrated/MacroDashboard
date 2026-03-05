@@ -222,3 +222,58 @@ export function useEarnings(symbol: string | null) {
     surprisePercent: number | null;
   }>>(symbol ? `/api/finnhub?action=earnings&symbol=${symbol}` : null);
 }
+
+// ─── Polygon Hooks ───
+
+export function usePolygonAggregates(
+  symbol: string | null,
+  timeframe: string = '1day'
+) {
+  return useApi<Array<{
+    date: string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+  }>>(
+    symbol
+      ? `/api/polygon?action=aggregates&symbol=${symbol}&timeframe=${timeframe}`
+      : null,
+    { refreshInterval: timeframe === '1day' ? 0 : 60000 }
+  );
+}
+
+export function usePolygonRSI(symbol: string | null) {
+  return useApi<Array<{ date: string; value: number }>>(
+    symbol ? `/api/polygon?action=rsi&symbol=${symbol}` : null
+  );
+}
+
+export function usePolygonMACD(symbol: string | null) {
+  return useApi<Array<{
+    date: string;
+    macd: number;
+    signal: number;
+    histogram: number;
+  }>>(symbol ? `/api/polygon?action=macd&symbol=${symbol}` : null);
+}
+
+export function usePolygonSMA(symbol: string | null, window = 50) {
+  return useApi<Array<{ date: string; value: number }>>(
+    symbol ? `/api/polygon?action=sma&symbol=${symbol}&window=${window}` : null
+  );
+}
+
+export function usePortfolioDividends(symbols: string[]) {
+  const syms = symbols.filter((s) => s !== 'BTC').join(',');
+  return useApi<Array<{
+    ticker: string;
+    amount: number;
+    exDate: string;
+    payDate: string;
+    declarationDate: string;
+    frequency: number;
+    type: string;
+  }>>(syms ? `/api/polygon?action=portfolio-dividends&symbols=${syms}` : null);
+}

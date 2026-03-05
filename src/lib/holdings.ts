@@ -2,6 +2,7 @@
 // Update quantities here when rebalancing
 
 import { getSnapshot } from './alpaca';
+import { getSnapshot as getPolygonSnapshot } from './polygon';
 import { fetchJson } from './fetcher';
 import { withCache, TTL } from './cache';
 
@@ -89,6 +90,7 @@ async function fetchPrice(symbol: string): Promise<{ price: number; prevClose: n
   if (symbol === 'BTC') {
     return fetchBtcPrice();
   }
+  // Try Alpaca first, fall back to Polygon
   try {
     const snapshot = await getSnapshot(symbol);
     return {
@@ -96,7 +98,15 @@ async function fetchPrice(symbol: string): Promise<{ price: number; prevClose: n
       prevClose: snapshot.prevDailyBar.c,
     };
   } catch {
-    return { price: 0, prevClose: 0 };
+    try {
+      const pgSnapshot = await getPolygonSnapshot(symbol);
+      return {
+        price: pgSnapshot.price,
+        prevClose: pgSnapshot.prevClose,
+      };
+    } catch {
+      return { price: 0, prevClose: 0 };
+    }
   }
 }
 

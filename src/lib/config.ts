@@ -27,4 +27,8 @@ export const config = {
     baseUrl: 'https://data.sec.gov',
     userAgent: process.env.EDGAR_USER_AGENT || 'MacroDashboard macro-dashboard contact@example.com',
   },
+  polygon: {
+    apiKey: process.env.POLYGON_API_KEY || '',
+    baseUrl: 'https://api.polygon.io',
+  },
 } as const;

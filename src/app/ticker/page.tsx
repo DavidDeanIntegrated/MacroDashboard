@@ -12,9 +12,21 @@ import {
   useCompanyFundamentals,
   useCompanyFilings,
   useEarnings,
-  useStockBars,
+  usePolygonAggregates,
+  usePolygonRSI,
+  usePolygonMACD,
+  usePolygonSMA,
 } from '@/lib/hooks';
 import { formatCurrency, formatPercent, formatDate, timeAgo } from '@/lib/format';
+
+type ChartTimeframe = '1min' | '5min' | '15min' | '1hour' | '1day';
+const TIMEFRAME_LABELS: Record<ChartTimeframe, string> = {
+  '1min': '1M',
+  '5min': '5M',
+  '15min': '15M',
+  '1hour': '1H',
+  '1day': '1D',
+};
 
 export default function TickerPage() {
   const [ticker, setTicker] = useState('');
@@ -113,9 +125,16 @@ function TickerDetail({
   activeTab: string;
   onTabChange: (tab: 'overview' | 'fundamentals' | 'filings' | 'news') => void;
 }) {
+  const [chartTimeframe, setChartTimeframe] = useState<ChartTimeframe>('1day');
+  const [showTechnicals, setShowTechnicals] = useState(false);
+
   const { data: quote, loading: quoteLoading } = useFinnhubQuote(symbol);
   const { data: profile, loading: profileLoading } = useCompanyProfile(symbol);
-  const { data: chartData } = useStockBars(symbol);
+  const { data: chartData } = usePolygonAggregates(symbol, chartTimeframe);
+  const { data: rsiData } = usePolygonRSI(showTechnicals ? symbol : null);
+  const { data: macdData } = usePolygonMACD(showTechnicals ? symbol : null);
+  const { data: sma50Data } = usePolygonSMA(showTechnicals ? symbol : null, 50);
+  const { data: sma200Data } = usePolygonSMA(showTechnicals ? symbol : null, 200);
   const { data: fundamentals, loading: fundLoading } = useCompanyFundamentals(symbol);
   const { data: filings, loading: filingsLoading } = useCompanyFilings(symbol);
   const { data: news, loading: newsLoading } = useCompanyNews(symbol);
@@ -228,20 +247,164 @@ function TickerDetail({
       {/* Tab Content */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          {/* Price Chart */}
+          {/* Price Chart with Timeframe Selector */}
           <Card>
-            <CardTitle>{symbol} — Daily Price</CardTitle>
+            <div className="flex items-center justify-between mb-3">
+              <CardTitle>{symbol} — Price Chart</CardTitle>
+              <div className="flex items-center gap-1">
+                {(Object.entries(TIMEFRAME_LABELS) as [ChartTimeframe, string][]).map(([tf, label]) => (
+                  <button
+                    key={tf}
+                    onClick={() => setChartTimeframe(tf)}
+                    className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-all ${
+                      chartTimeframe === tf
+                        ? 'bg-accent-blue text-white shadow-sm'
+                        : 'text-black/45 hover:bg-black/[0.04]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
             {chartData ? (
               <TimeSeriesChart
                 data={chartData.map((d) => ({ date: d.date, value: d.close }))}
                 color="#007AFF"
                 height={350}
-                gradientId={`price-${symbol}`}
+                gradientId={`price-${symbol}-${chartTimeframe}`}
                 valueFormatter={(v) => formatCurrency(v)}
+                compact={chartTimeframe !== '1day'}
               />
             ) : (
               <div className="h-[350px] flex items-center justify-center text-sm text-black/35">
                 Loading chart...
+              </div>
+            )}
+            <p className="text-xs text-black/30 mt-2">
+              {chartTimeframe === '1day' ? 'Daily bars, 1 year' :
+               chartTimeframe === '1hour' ? 'Hourly bars, 30 days' :
+               chartTimeframe === '15min' ? '15-min bars, 10 days' :
+               chartTimeframe === '5min' ? '5-min bars, 5 days' :
+               '1-min bars, today'} via Polygon.io (15-min delayed)
+            </p>
+          </Card>
+
+          {/* Technical Indicators Toggle */}
+          <Card>
+            <div className="flex items-center justify-between">
+              <CardTitle>Technical Indicators</CardTitle>
+              <button
+                onClick={() => setShowTechnicals(!showTechnicals)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                  showTechnicals
+                    ? 'bg-accent-blue text-white'
+                    : 'bg-black/[0.04] text-black/55 hover:bg-black/[0.08]'
+                }`}
+              >
+                {showTechnicals ? 'Hide' : 'Show'}
+              </button>
+            </div>
+
+            {showTechnicals && (
+              <div className="mt-4 space-y-6">
+                {/* SMA overlay info */}
+                {sma50Data && sma200Data && (
+                  <div>
+                    <div className="flex items-center gap-4 mb-2">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-3 h-0.5 bg-accent-orange rounded-full" />
+                        <span className="text-xs text-black/45">SMA 50: {sma50Data.length > 0 ? formatCurrency(sma50Data[sma50Data.length - 1].value) : '—'}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-3 h-0.5 bg-accent-purple rounded-full" />
+                        <span className="text-xs text-black/45">SMA 200: {sma200Data.length > 0 ? formatCurrency(sma200Data[sma200Data.length - 1].value) : '—'}</span>
+                      </div>
+                      {sma50Data.length > 0 && sma200Data.length > 0 && (
+                        <Badge variant={sma50Data[sma50Data.length - 1].value > sma200Data[sma200Data.length - 1].value ? 'green' : 'red'}>
+                          {sma50Data[sma50Data.length - 1].value > sma200Data[sma200Data.length - 1].value ? 'Golden Cross' : 'Death Cross'}
+                        </Badge>
+                      )}
+                    </div>
+                    <TimeSeriesChart
+                      data={sma50Data}
+                      color="#FF9500"
+                      height={180}
+                      gradientId={`sma50-${symbol}`}
+                      valueFormatter={(v) => formatCurrency(v)}
+                      compact
+                    />
+                  </div>
+                )}
+
+                {/* RSI */}
+                {rsiData && rsiData.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <p className="text-xs font-semibold text-black/55">RSI (14)</p>
+                      {(() => {
+                        const latest = rsiData[rsiData.length - 1].value;
+                        return (
+                          <Badge variant={latest > 70 ? 'red' : latest < 30 ? 'green' : 'neutral'}>
+                            {latest.toFixed(1)} — {latest > 70 ? 'Overbought' : latest < 30 ? 'Oversold' : 'Neutral'}
+                          </Badge>
+                        );
+                      })()}
+                    </div>
+                    <TimeSeriesChart
+                      data={rsiData}
+                      color="#AF52DE"
+                      height={160}
+                      gradientId={`rsi-${symbol}`}
+                      valueFormatter={(v) => v.toFixed(1)}
+                      compact
+                    />
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xxs text-black/25">30 = Oversold</span>
+                      <span className="text-xxs text-black/25">70 = Overbought</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* MACD */}
+                {macdData && macdData.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <p className="text-xs font-semibold text-black/55">MACD (12, 26, 9)</p>
+                      {(() => {
+                        const latest = macdData[macdData.length - 1];
+                        return (
+                          <Badge variant={latest.histogram > 0 ? 'green' : 'red'}>
+                            {latest.histogram > 0 ? 'Bullish' : 'Bearish'}
+                          </Badge>
+                        );
+                      })()}
+                    </div>
+                    <TimeSeriesChart
+                      data={macdData.map((d) => ({ date: d.date, value: d.macd }))}
+                      color="#007AFF"
+                      height={160}
+                      gradientId={`macd-${symbol}`}
+                      valueFormatter={(v) => v.toFixed(3)}
+                      compact
+                    />
+                    <div className="flex items-center gap-4 mt-1">
+                      <div className="flex items-center gap-1">
+                        <div className="w-3 h-0.5 bg-accent-blue rounded-full" />
+                        <span className="text-xxs text-black/25">MACD Line</span>
+                      </div>
+                      <span className="text-xxs text-black/25">
+                        Signal: {macdData[macdData.length - 1].signal.toFixed(3)} | Histogram: {macdData[macdData.length - 1].histogram.toFixed(3)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {!rsiData && !macdData && (
+                  <div className="h-20 flex items-center justify-center text-sm text-black/35">
+                    Loading technical indicators...
+                  </div>
+                )}
               </div>
             )}
           </Card>
