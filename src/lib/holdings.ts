@@ -184,9 +184,10 @@ export async function getHoldingsPortfolio(): Promise<HoldingsPortfolio> {
 
 // ─── Portfolio Historical Chart ───
 
-export type PortfolioChartPeriod = '1M' | '3M' | '6M' | '1Y';
+export type PortfolioChartPeriod = '1D' | '1M' | '3M' | '6M' | '1Y';
 
 const PERIOD_DAYS: Record<PortfolioChartPeriod, number> = {
+  '1D': 1,
   '1M': 30,
   '3M': 90,
   '6M': 180,
@@ -224,16 +225,92 @@ async function fetchBtcDailyBars(days: number): Promise<Map<string, number>> {
   return map;
 }
 
+async function fetchBtcIntradayBars(): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const start = now - 86400;
+    const url = `https://api.exchange.coinbase.com/products/BTC-USD/candles?start=${start}&end=${now}&granularity=300`;
+    const data = await fetchJson<number[][]>(url, { provider: 'Coinbase' });
+    for (const candle of data) {
+      const ts = new Date(candle[0] * 1000).toISOString();
+      map.set(ts, candle[4]); // close price
+    }
+  } catch {
+    // BTC intraday bars unavailable
+  }
+  return map;
+}
+
 export async function getPortfolioChart(
   period: PortfolioChartPeriod = '1Y'
 ): Promise<Array<{ date: string; value: number }>> {
   const days = PERIOD_DAYS[period];
-  const start = new Date();
-  start.setDate(start.getDate() - days);
-  const startStr = start.toISOString().split('T')[0];
+  const isIntraday = period === '1D';
 
   const stockSymbols = HOLDINGS.filter((h) => h.symbol !== 'BTC');
   const btcHolding = HOLDINGS.find((h) => h.symbol === 'BTC');
+
+  if (isIntraday) {
+    // Use 5-minute bars for intraday
+    const today = new Date().toISOString().split('T')[0];
+    const [stockBars, btcBars] = await Promise.all([
+      Promise.all(
+        stockSymbols.map((h) =>
+          getHistoricalBars(h.symbol, '5Min', today, undefined, 200)
+            .then((bars) => ({ symbol: h.symbol, bars }))
+            .catch(() => ({ symbol: h.symbol, bars: [] as Array<{ date: string; close: number }> }))
+        )
+      ),
+      btcHolding ? fetchBtcIntradayBars() : Promise.resolve(new Map<string, number>()),
+    ]);
+
+    // Build a map: timestamp → { symbol → close }
+    const dateMap = new Map<string, Map<string, number>>();
+
+    for (const { symbol, bars } of stockBars) {
+      for (const bar of bars) {
+        // Round to 5-min bucket
+        const d = new Date(bar.date);
+        d.setMinutes(Math.floor(d.getMinutes() / 5) * 5, 0, 0);
+        const key = d.toISOString();
+        if (!dateMap.has(key)) dateMap.set(key, new Map());
+        dateMap.get(key)!.set(symbol, bar.close);
+      }
+    }
+
+    if (btcHolding) {
+      btcBars.forEach((close, ts) => {
+        const d = new Date(ts);
+        d.setMinutes(Math.floor(d.getMinutes() / 5) * 5, 0, 0);
+        const key = d.toISOString();
+        if (!dateMap.has(key)) dateMap.set(key, new Map());
+        dateMap.get(key)!.set('BTC', close);
+      });
+    }
+
+    const sortedDates = Array.from(dateMap.keys()).sort();
+    const lastKnown = new Map<string, number>();
+    const totalHoldings = HOLDINGS.length;
+
+    const result: Array<{ date: string; value: number }> = [];
+    for (const ts of sortedDates) {
+      const prices = dateMap.get(ts)!;
+      prices.forEach((price, symbol) => lastKnown.set(symbol, price));
+      if (lastKnown.size < totalHoldings) continue;
+      let total = 0;
+      for (const h of HOLDINGS) {
+        total += h.qty * (lastKnown.get(h.symbol) || 0);
+      }
+      result.push({ date: ts, value: Math.round(total * 100) / 100 });
+    }
+    return result;
+  }
+
+  // Daily bars for longer periods
+  const start = new Date();
+  start.setDate(start.getDate() - days);
+  const startStr = start.toISOString().split('T')[0];
 
   // Fetch all bars in parallel
   const [stockBars, btcBars] = await Promise.all([

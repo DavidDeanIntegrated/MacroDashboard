@@ -34,7 +34,7 @@ const FREQ_LABELS: Record<number, string> = {
   12: 'Monthly',
 };
 
-const PORTFOLIO_CHART_PERIODS = ['1M', '3M', '6M', '1Y'] as const;
+const PORTFOLIO_CHART_PERIODS = ['1D', '1M', '3M', '6M', '1Y'] as const;
 
 const CHART_TIMEFRAMES: { label: string; value: PolygonTimeframe }[] = [
   { label: '1D', value: '1min' },
@@ -54,7 +54,7 @@ function getRSIBadge(rsiData: Array<{ date: string; value: number }> | null) {
 
 export default function PortfolioPage() {
   const { data: portfolio, error, loading, refresh } = usePortfolio();
-  const [portfolioChartPeriod, setPortfolioChartPeriod] = useState<string>('1Y');
+  const [portfolioChartPeriod, setPortfolioChartPeriod] = useState<string>('1D');
   const { data: portfolioChartData } = usePortfolioChart(portfolioChartPeriod);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [chartTimeframe, setChartTimeframe] = useState<PolygonTimeframe>('1day');
