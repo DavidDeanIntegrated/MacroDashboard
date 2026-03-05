@@ -64,10 +64,11 @@ export interface HoldingsPortfolio {
 
 async function fetchBtcPrice(): Promise<{ price: number; prevClose: number }> {
   return withCache('holdings:btc-price', TTL.QUOTES, async () => {
+    // Try Coinbase first
     try {
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
-      const yStr = yesterday.toISOString().split('T')[0]; // YYYY-MM-DD
+      const yStr = yesterday.toISOString().split('T')[0];
 
       const [spotRes, prevRes] = await Promise.all([
         fetchJson<{ data: { amount: string } }>(
@@ -80,13 +81,39 @@ async function fetchBtcPrice(): Promise<{ price: number; prevClose: number }> {
         ),
       ]);
 
-      return {
-        price: parseFloat(spotRes.data.amount),
-        prevClose: parseFloat(prevRes.data.amount),
-      };
-    } catch {
-      return { price: 0, prevClose: 0 };
+      const price = parseFloat(spotRes.data.amount);
+      const prevClose = parseFloat(prevRes.data.amount);
+      if (price > 0) return { price, prevClose };
+    } catch (err) {
+      console.warn('Coinbase BTC price failed, trying Polygon:', err instanceof Error ? err.message : err);
     }
+
+    // Fallback: Polygon crypto aggregates (X:BTCUSD)
+    try {
+      const now = new Date();
+      const to = now.toISOString().split('T')[0];
+      const from = new Date(now);
+      from.setDate(from.getDate() - 5); // Get last 5 days to ensure we have 2 trading days
+      const fromStr = from.toISOString().split('T')[0];
+
+      const { getAggregates } = await import('./polygon');
+      const bars = await getAggregates('X:BTCUSD', '1day', fromStr, to);
+      if (bars.length >= 2) {
+        return {
+          price: bars[bars.length - 1].close,
+          prevClose: bars[bars.length - 2].close,
+        };
+      } else if (bars.length === 1) {
+        return {
+          price: bars[0].close,
+          prevClose: bars[0].open,
+        };
+      }
+    } catch (err) {
+      console.warn('Polygon BTC price also failed:', err instanceof Error ? err.message : err);
+    }
+
+    return { price: 0, prevClose: 0 };
   });
 }
 
@@ -284,10 +311,11 @@ const PERIOD_DAYS: Record<PortfolioChartPeriod, number> = {
 
 async function fetchBtcDailyBars(days: number): Promise<Map<string, number>> {
   const map = new Map<string, number>();
-  const granularity = 86400; // daily
-  const maxCandles = 290; // Coinbase limit is 300; use 290 for safety
+
+  // Try Coinbase exchange API first
   try {
-    // Paginate in chunks of maxCandles days
+    const granularity = 86400;
+    const maxCandles = 290;
     const now = Math.floor(Date.now() / 1000);
     const earliest = now - days * 86400;
     const fetches: Promise<void>[] = [];
@@ -297,24 +325,44 @@ async function fetchBtcDailyBars(days: number): Promise<Map<string, number>> {
       const url = `https://api.exchange.coinbase.com/products/BTC-USD/candles?start=${chunkStart}&end=${chunkEnd}&granularity=${granularity}`;
       fetches.push(
         fetchJson<number[][]>(url, { provider: 'Coinbase' }).then((data) => {
-          // Coinbase returns [time, low, high, open, close, volume] newest-first
           for (const candle of data) {
             const date = new Date(candle[0] * 1000).toISOString().split('T')[0];
-            map.set(date, candle[4]); // close price
+            map.set(date, candle[4]);
           }
         })
       );
     }
 
     await Promise.all(fetches);
-  } catch {
-    // BTC bars unavailable — will be omitted from totals
+    if (map.size > 0) return map;
+  } catch (err) {
+    console.warn('Coinbase BTC bars failed, trying Polygon:', err instanceof Error ? err.message : err);
   }
+
+  // Fallback: Polygon crypto aggregates
+  try {
+    const { getAggregates } = await import('./polygon');
+    const from = new Date();
+    from.setDate(from.getDate() - days);
+    const fromStr = from.toISOString().split('T')[0];
+    const toStr = new Date().toISOString().split('T')[0];
+
+    const bars = await getAggregates('X:BTCUSD', '1day', fromStr, toStr, days + 10);
+    for (const bar of bars) {
+      const date = bar.date.split('T')[0];
+      map.set(date, bar.close);
+    }
+  } catch (err) {
+    console.warn('Polygon BTC bars also failed:', err instanceof Error ? err.message : err);
+  }
+
   return map;
 }
 
 async function fetchBtcIntradayBars(): Promise<Map<string, number>> {
   const map = new Map<string, number>();
+
+  // Try Coinbase exchange API first
   try {
     const now = Math.floor(Date.now() / 1000);
     const start = now - 86400;
@@ -322,11 +370,30 @@ async function fetchBtcIntradayBars(): Promise<Map<string, number>> {
     const data = await fetchJson<number[][]>(url, { provider: 'Coinbase' });
     for (const candle of data) {
       const ts = new Date(candle[0] * 1000).toISOString();
-      map.set(ts, candle[4]); // close price
+      map.set(ts, candle[4]);
     }
-  } catch {
-    // BTC intraday bars unavailable
+    if (map.size > 0) return map;
+  } catch (err) {
+    console.warn('Coinbase BTC intraday failed, trying Polygon:', err instanceof Error ? err.message : err);
   }
+
+  // Fallback: Polygon crypto 5-min bars
+  try {
+    const { getAggregates } = await import('./polygon');
+    const now = new Date();
+    const from = new Date(now);
+    from.setDate(from.getDate() - 1);
+    const fromStr = from.toISOString().split('T')[0];
+    const toStr = now.toISOString().split('T')[0];
+
+    const bars = await getAggregates('X:BTCUSD', '5min', fromStr, toStr, 300);
+    for (const bar of bars) {
+      map.set(bar.date, bar.close);
+    }
+  } catch (err) {
+    console.warn('Polygon BTC intraday also failed:', err instanceof Error ? err.message : err);
+  }
+
   return map;
 }
 
