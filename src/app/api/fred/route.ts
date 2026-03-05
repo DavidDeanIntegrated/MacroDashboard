@@ -4,6 +4,7 @@ import {
   getFredSeriesInfo,
   computeYoYChange,
   classifyMacroRegime,
+  getUpcomingReleaseDates,
   FRED_SERIES,
 } from '@/lib/fred';
 
@@ -104,9 +105,14 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(dashboard);
       }
 
+      case 'release-calendar': {
+        const releases = await getUpcomingReleaseDates();
+        return NextResponse.json(releases);
+      }
+
       default:
         return NextResponse.json(
-          { error: 'Invalid action. Use: series, info, yield-curve, regime, dashboard' },
+          { error: 'Invalid action. Use: series, info, yield-curve, regime, dashboard, release-calendar' },
           { status: 400 }
         );
     }

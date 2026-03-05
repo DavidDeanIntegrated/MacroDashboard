@@ -67,6 +67,16 @@ export function useFredSeries(seriesId: string, start?: string) {
   return useApi<Array<{ date: string; value: number }>>(url);
 }
 
+export function useReleaseCalendar() {
+  return useApi<Array<{
+    seriesId: string;
+    name: string;
+    releaseDate: string;
+    frequency: string;
+    source: string;
+  }>>('/api/fred?action=release-calendar', { refreshInterval: 3600000 }); // re-check every hour
+}
+
 export function useYieldCurve() {
   return useApi<Array<{ id: string; value: number; date: string }>>(
     '/api/fred?action=yield-curve'

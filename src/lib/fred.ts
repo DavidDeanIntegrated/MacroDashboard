@@ -208,6 +208,107 @@ export function computeYoYChange(
   return result;
 }
 
+// ─── Release Schedule ───
+// Maps each dashboard indicator to its FRED release_id and typical schedule
+export const FRED_RELEASE_IDS: Record<string, { releaseId: number; name: string; frequency: string; source: string }> = {
+  FEDFUNDS:      { releaseId: 118, name: 'Fed Funds Rate',      frequency: '~6 weeks (FOMC)', source: 'Federal Reserve' },
+  UNRATE:        { releaseId: 50,  name: 'Unemployment Rate',   frequency: 'Monthly',          source: 'BLS' },
+  CPIAUCSL:      { releaseId: 10,  name: 'CPI',                 frequency: 'Monthly',          source: 'BLS' },
+  INDPRO:        { releaseId: 13,  name: 'Industrial Production', frequency: 'Monthly',        source: 'Federal Reserve' },
+  BAMLH0A0HYM2: { releaseId: 283, name: 'HY Credit Spread',    frequency: 'Daily',            source: 'ICE/BofA' },
+  DGS10:         { releaseId: 18,  name: '10Y Treasury',        frequency: 'Daily',            source: 'Treasury' },
+  DGS2:          { releaseId: 18,  name: '2Y Treasury',         frequency: 'Daily',            source: 'Treasury' },
+  T10Y2Y:        { releaseId: 18,  name: '10Y-2Y Spread',       frequency: 'Daily',            source: 'Treasury' },
+};
+
+export interface ReleaseDate {
+  seriesId: string;
+  name: string;
+  releaseDate: string;
+  frequency: string;
+  source: string;
+}
+
+export async function getUpcomingReleaseDates(): Promise<ReleaseDate[]> {
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  // Look 60 days ahead
+  const futureDate = new Date(today);
+  futureDate.setDate(futureDate.getDate() + 60);
+  const futureStr = futureDate.toISOString().split('T')[0];
+
+  // Deduplicate release IDs (many series share the same release)
+  const uniqueReleases = new Map<number, { releaseId: number; seriesIds: string[]; name: string; frequency: string; source: string }>();
+  for (const [seriesId, info] of Object.entries(FRED_RELEASE_IDS)) {
+    // Skip daily series — they update every trading day, no calendar entry needed
+    if (info.frequency === 'Daily') continue;
+    const existing = uniqueReleases.get(info.releaseId);
+    if (existing) {
+      existing.seriesIds.push(seriesId);
+    } else {
+      uniqueReleases.set(info.releaseId, { releaseId: info.releaseId, seriesIds: [seriesId], name: info.name, frequency: info.frequency, source: info.source });
+    }
+  }
+
+  const results: ReleaseDate[] = [];
+
+  await Promise.all(
+    Array.from(uniqueReleases.values()).map(async (rel) => {
+      const cacheKey = `fred:release-dates:${rel.releaseId}`;
+      try {
+        const dates = await withCache(cacheKey, TTL.MACRO * 6, async () => {
+          const params = new URLSearchParams({
+            release_id: String(rel.releaseId),
+            api_key: config.fred.apiKey,
+            file_type: 'json',
+            include_release_dates_with_no_data: 'true',
+            sort_order: 'asc',
+          });
+          // FRED release/dates returns all dates for that release
+          // We'll filter client-side for the window we care about
+          const data = await fetchJson<{ release_dates: Array<{ release_id: number; date: string }> }>(
+            `${config.fred.baseUrl}/release/dates?${params}`,
+            { provider: 'FRED' }
+          );
+          return data.release_dates.map((d) => d.date);
+        });
+
+        // Find the next upcoming date (>= today)
+        const upcomingDates = dates.filter((d: string) => d >= todayStr && d <= futureStr);
+        // Also find the most recent past date for "last released"
+        const pastDates = dates.filter((d: string) => d < todayStr);
+        const lastDate = pastDates.length > 0 ? pastDates[pastDates.length - 1] : null;
+
+        // Add next upcoming date
+        if (upcomingDates.length > 0) {
+          results.push({
+            seriesId: rel.seriesIds[0],
+            name: rel.name,
+            releaseDate: upcomingDates[0],
+            frequency: rel.frequency,
+            source: rel.source,
+          });
+        } else if (lastDate) {
+          // If no upcoming date found, include the last release date
+          results.push({
+            seriesId: rel.seriesIds[0],
+            name: rel.name,
+            releaseDate: lastDate,
+            frequency: rel.frequency,
+            source: rel.source,
+          });
+        }
+      } catch (err) {
+        console.warn(`Failed to fetch release dates for release ${rel.releaseId}:`, err);
+      }
+    })
+  );
+
+  // Sort by date ascending
+  results.sort((a, b) => a.releaseDate.localeCompare(b.releaseDate));
+  return results;
+}
+
 // Macro regime classification
 export type MacroRegime =
   | 'goldilocks'    // low inflation + strong growth

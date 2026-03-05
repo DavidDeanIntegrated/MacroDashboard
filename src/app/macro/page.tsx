@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardTitle, MetricCard } from '@/components/ui/Card';
 import { LoadingPage, ErrorState } from '@/components/ui/Loading';
 import { Badge, RegimeBadge } from '@/components/ui/Badge';
 import { TimeSeriesChart, MultiSeriesChart } from '@/components/charts/TimeSeriesChart';
 import { YieldCurveChart } from '@/components/charts/YieldCurveChart';
-import { useApi, useYieldCurve, useMultiAggregates, usePolygonSMA } from '@/lib/hooks';
+import { useApi, useYieldCurve, useReleaseCalendar, useMultiAggregates, usePolygonSMA } from '@/lib/hooks';
 import { formatPercent, formatNumber, formatCurrency } from '@/lib/format';
 import { FRED_SERIES_NAMES } from '@/lib/fred';
 
@@ -194,6 +194,33 @@ export default function MacroPage() {
   const { data: spySma50 } = usePolygonSMA('SPY', 50);
   const { data: spySma200 } = usePolygonSMA('SPY', 200);
 
+  // Release calendar
+  const { data: releaseCalendar } = useReleaseCalendar();
+
+  // Auto-refresh: check every 5 minutes if a release just happened (within the last 10 minutes)
+  const lastAutoRefresh = useRef<string>('');
+  useEffect(() => {
+    if (!releaseCalendar || releaseCalendar.length === 0) return;
+
+    const checkForNewRelease = () => {
+      const now = new Date();
+      const todayStr = now.toISOString().split('T')[0];
+      const releasesToday = releaseCalendar.filter((r) => r.releaseDate === todayStr);
+      if (releasesToday.length > 0) {
+        // If it's after 8:30 AM ET (typical release time) and we haven't refreshed for this date
+        const etHour = now.getUTCHours() - 5; // rough ET offset
+        if (etHour >= 8 && lastAutoRefresh.current !== todayStr) {
+          lastAutoRefresh.current = todayStr;
+          refresh();
+        }
+      }
+    };
+
+    checkForNewRelease();
+    const interval = setInterval(checkForNewRelease, 5 * 60 * 1000); // check every 5 min
+    return () => clearInterval(interval);
+  }, [releaseCalendar, refresh]);
+
   if (loading) return <LoadingPage />;
   if (error) return <ErrorState message={error} onRetry={refresh} />;
   if (!data) return null;
@@ -251,6 +278,68 @@ export default function MacroPage() {
           ))}
         </div>
       </div>
+
+      {/* Economic Release Calendar */}
+      {releaseCalendar && releaseCalendar.length > 0 && (
+        <Card>
+          <div className="flex items-center justify-between mb-3">
+            <CardTitle>Upcoming Economic Releases</CardTitle>
+            <p className="text-[10px] text-black/30 uppercase tracking-wider">Auto-refreshes on release day</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+            {releaseCalendar.map((release) => {
+              const releaseDate = new Date(release.releaseDate + 'T12:00:00');
+              const now = new Date();
+              const todayStr = now.toISOString().split('T')[0];
+              const diffMs = releaseDate.getTime() - now.getTime();
+              const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+              const isToday = release.releaseDate === todayStr;
+              const isPast = release.releaseDate < todayStr;
+              const isSoon = diffDays <= 3 && diffDays > 0;
+
+              return (
+                <div
+                  key={release.seriesId}
+                  className={`rounded-lg p-3 border transition-all ${
+                    isToday
+                      ? 'border-accent-blue/20 bg-accent-blue/[0.04] ring-1 ring-accent-blue/10'
+                      : isPast
+                        ? 'border-black/[0.04] bg-black/[0.01] opacity-60'
+                        : isSoon
+                          ? 'border-accent-orange/15 bg-accent-orange/[0.02]'
+                          : 'border-black/[0.06] bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[11px] font-semibold text-black/65">{release.name}</span>
+                    {isToday && (
+                      <Badge variant="blue">Today</Badge>
+                    )}
+                    {isPast && (
+                      <Badge variant="neutral">Released</Badge>
+                    )}
+                    {isSoon && (
+                      <Badge variant="orange">{diffDays}d</Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-black/40">
+                      {releaseDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', weekday: 'short' })}
+                    </span>
+                    <span className="text-[10px] text-black/30">{release.source}</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-[10px] text-black/30">{release.frequency}</span>
+                    {!isPast && !isToday && diffDays > 3 && (
+                      <span className="text-[10px] text-black/25">{diffDays} days</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* Macro Regime Banner */}
       <Card className="bg-gradient-to-r from-white/80 to-white/60">
