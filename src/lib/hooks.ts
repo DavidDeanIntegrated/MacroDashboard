@@ -117,6 +117,20 @@ export function usePortfolio() {
   }>('/api/alpaca?action=portfolio', { refreshInterval: 60000 });
 }
 
+export function useWatchlist() {
+  return useApi<Array<{
+    symbol: string;
+    currentPrice: number;
+    dayChange: number;
+    dayChangePercent: number;
+    category: string;
+    open: number;
+    high: number;
+    low: number;
+    volume: number;
+  }>>('/api/alpaca?action=watchlist', { refreshInterval: 60000 });
+}
+
 export function useOrders(status: 'open' | 'closed' | 'all' = 'all') {
   return useApi<Array<{
     id: string;

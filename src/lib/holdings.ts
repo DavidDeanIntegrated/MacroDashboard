@@ -182,6 +182,94 @@ export async function getHoldingsPortfolio(): Promise<HoldingsPortfolio> {
   };
 }
 
+// ─── Watchlist ───
+// Stocks to track without owning
+
+export interface WatchlistStock {
+  symbol: string;
+  category: string;
+}
+
+export const WATCHLIST: WatchlistStock[] = [
+  { symbol: 'AVAV',  category: 'Defense' },
+  { symbol: 'XOM',   category: 'Energy' },
+  { symbol: 'CEG',   category: 'Nuclear / Energy' },
+  { symbol: 'FLNC',  category: 'Energy Storage' },
+  { symbol: 'CLSK',  category: 'Crypto Mining' },
+  { symbol: 'IONQ',  category: 'Quantum Computing' },
+  { symbol: 'ACHR',  category: 'eVTOL / Aviation' },
+  { symbol: 'HIMS',  category: 'Telehealth' },
+  { symbol: 'ABCL',  category: 'Biotech' },
+  { symbol: 'CATX',  category: 'Biotech' },
+  { symbol: 'KULR',  category: 'Battery Tech' },
+  { symbol: 'SES',   category: 'Battery Tech' },
+  { symbol: 'ONDS',  category: 'IoT / Connectivity' },
+  { symbol: 'LTRX',  category: 'IoT / Connectivity' },
+  { symbol: 'OPTT',  category: 'Renewables' },
+  { symbol: 'OPEN',  category: 'Real Estate Tech' },
+];
+
+export const WATCHLIST_CATEGORY_CONFIG: Record<string, { order: number; badge: 'blue' | 'purple' | 'orange' | 'green' | 'yellow' | 'red' | 'neutral' }> = {
+  'Defense':            { order: 0, badge: 'blue' },
+  'Energy':             { order: 1, badge: 'orange' },
+  'Nuclear / Energy':   { order: 2, badge: 'orange' },
+  'Energy Storage':     { order: 3, badge: 'yellow' },
+  'Crypto Mining':      { order: 4, badge: 'red' },
+  'Quantum Computing':  { order: 5, badge: 'purple' },
+  'eVTOL / Aviation':   { order: 6, badge: 'blue' },
+  'Telehealth':         { order: 7, badge: 'green' },
+  'Biotech':            { order: 8, badge: 'green' },
+  'Battery Tech':       { order: 9, badge: 'yellow' },
+  'IoT / Connectivity': { order: 10, badge: 'neutral' },
+  'Renewables':         { order: 11, badge: 'green' },
+  'Real Estate Tech':   { order: 12, badge: 'neutral' },
+};
+
+export interface WatchlistPosition {
+  symbol: string;
+  currentPrice: number;
+  dayChange: number;
+  dayChangePercent: number;
+  category: string;
+  open: number;
+  high: number;
+  low: number;
+  volume: number;
+}
+
+export async function getWatchlistData(): Promise<WatchlistPosition[]> {
+  const prices = await Promise.all(
+    WATCHLIST.map((w) => fetchPrice(w.symbol))
+  );
+
+  const positions: WatchlistPosition[] = WATCHLIST.map((w, i) => {
+    const { price, prevClose, open, high, low, volume } = prices[i];
+    const dayChange = price - prevClose;
+    const dayChangePercent = prevClose > 0 ? (dayChange / prevClose) * 100 : 0;
+
+    return {
+      symbol: w.symbol,
+      currentPrice: price,
+      dayChange,
+      dayChangePercent,
+      category: w.category,
+      open,
+      high,
+      low,
+      volume,
+    };
+  });
+
+  // Sort by category order
+  positions.sort((a, b) => {
+    const orderA = WATCHLIST_CATEGORY_CONFIG[a.category]?.order ?? 99;
+    const orderB = WATCHLIST_CATEGORY_CONFIG[b.category]?.order ?? 99;
+    return orderA - orderB;
+  });
+
+  return positions;
+}
+
 // ─── Portfolio Historical Chart ───
 
 export type PortfolioChartPeriod = '1D' | '1M' | '3M' | '6M' | '1Y';

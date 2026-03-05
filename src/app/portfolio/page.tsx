@@ -6,9 +6,9 @@ import { LoadingPage, ErrorState, EmptyState } from '@/components/ui/Loading';
 import { Badge, TrendIndicator } from '@/components/ui/Badge';
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart';
 import { AllocationPieChart } from '@/components/charts/AllocationPieChart';
-import { usePortfolio, usePortfolioChart, usePolygonAggregates, usePolygonRSI, usePortfolioDividends } from '@/lib/hooks';
+import { usePortfolio, usePortfolioChart, usePolygonAggregates, usePolygonRSI, usePortfolioDividends, useWatchlist } from '@/lib/hooks';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/format';
-import { CATEGORY_CONFIG, HOLDINGS } from '@/lib/holdings';
+import { CATEGORY_CONFIG, HOLDINGS, WATCHLIST_CATEGORY_CONFIG } from '@/lib/holdings';
 import type { PolygonTimeframe } from '@/lib/polygon';
 
 // Map badge variants to hex colors for the pie chart
@@ -62,6 +62,13 @@ export default function PortfolioPage() {
   const { data: rsiData } = usePolygonRSI(selectedSymbol && selectedSymbol !== 'BTC' ? selectedSymbol : null);
   const { data: dividends } = usePortfolioDividends(HOLDINGS.map((h) => h.symbol));
 
+  // Watchlist
+  const { data: watchlist } = useWatchlist();
+  const [watchSelectedSymbol, setWatchSelectedSymbol] = useState<string | null>(null);
+  const [watchChartTimeframe, setWatchChartTimeframe] = useState<PolygonTimeframe>('1day');
+  const { data: watchChartData } = usePolygonAggregates(watchSelectedSymbol, watchChartTimeframe);
+  const { data: watchRsiData } = usePolygonRSI(watchSelectedSymbol);
+
   if (loading) return <LoadingPage />;
   if (error) return <ErrorState message={error} onRetry={refresh} />;
   if (!portfolio) return null;
@@ -80,6 +87,13 @@ export default function PortfolioPage() {
 
   const selectedPosition = portfolio.positions.find((p) => p.symbol === selectedSymbol);
   const rsiBadge = getRSIBadge(rsiData);
+
+  const watchSelectedPosition = watchlist?.find((p) => p.symbol === watchSelectedSymbol);
+  const watchRsiBadge = getRSIBadge(watchRsiData);
+  const watchCategoryBadge = (category: string) => {
+    const config = WATCHLIST_CATEGORY_CONFIG[category];
+    return config?.badge ?? 'neutral';
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -387,6 +401,182 @@ export default function PortfolioPage() {
             })}
           </div>
         </Card>
+      )}
+
+      {/* ═══ Watching Section ═══ */}
+      {watchlist && watchlist.length > 0 && (
+        <>
+          <div className="pt-4 border-t border-black/[0.06]">
+            <h2 className="text-2xl font-semibold text-black/85 tracking-tight">Watching</h2>
+            <p className="text-sm text-black/45 mt-1">Stocks you&apos;re tracking — no position held</p>
+          </div>
+
+          {/* Watchlist Summary Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {(() => {
+              const gainers = [...watchlist].sort((a, b) => b.dayChangePercent - a.dayChangePercent);
+              const topGainer = gainers[0];
+              const topLoser = gainers[gainers.length - 1];
+              const avgChange = watchlist.reduce((s, w) => s + w.dayChangePercent, 0) / watchlist.length;
+              const categories = new Set(watchlist.map((w) => w.category));
+              return (
+                <>
+                  <MetricCard
+                    label="Stocks Watched"
+                    value={watchlist.length.toString()}
+                    change={`${categories.size} sectors`}
+                    changeLabel=""
+                  />
+                  <MetricCard
+                    label="Avg Day Change"
+                    value={formatPercent(avgChange)}
+                    trend={avgChange >= 0 ? 'up' : 'down'}
+                  />
+                  <MetricCard
+                    label="Top Gainer"
+                    value={topGainer.symbol}
+                    change={formatPercent(topGainer.dayChangePercent)}
+                    trend="up"
+                  />
+                  <MetricCard
+                    label="Top Loser"
+                    value={topLoser.symbol}
+                    change={formatPercent(topLoser.dayChangePercent)}
+                    trend="down"
+                  />
+                </>
+              );
+            })()}
+          </div>
+
+          {/* Watchlist Table */}
+          <Card padding="none">
+            <div className="px-6 pt-6 pb-3">
+              <CardTitle>Watchlist Positions</CardTitle>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-black/[0.06]">
+                    {['Symbol', 'Category', 'Price', 'Open', 'High', 'Low', 'Volume', 'Day Chg'].map(
+                      (h) => (
+                        <th
+                          key={h}
+                          className="px-4 py-3 text-left text-xs font-medium text-black/40 uppercase tracking-wider"
+                        >
+                          {h}
+                        </th>
+                      )
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {watchlist.map((pos) => (
+                    <tr
+                      key={pos.symbol}
+                      onClick={() => setWatchSelectedSymbol(pos.symbol === watchSelectedSymbol ? null : pos.symbol)}
+                      className={`border-b border-black/[0.03] cursor-pointer transition-colors ${
+                        watchSelectedSymbol === pos.symbol
+                          ? 'bg-accent-blue/[0.04]'
+                          : 'hover:bg-black/[0.02]'
+                      }`}
+                    >
+                      <td className="px-4 py-3">
+                        <span className="font-semibold text-sm text-black/85">{pos.symbol}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant={watchCategoryBadge(pos.category)}>{pos.category}</Badge>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-black/85 font-medium tabular-nums">
+                        {formatCurrency(pos.currentPrice)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-black/55 tabular-nums">
+                        {pos.open > 0 ? formatCurrency(pos.open) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-black/55 tabular-nums">
+                        {pos.high > 0 ? formatCurrency(pos.high) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-black/55 tabular-nums">
+                        {pos.low > 0 ? formatCurrency(pos.low) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-black/45 tabular-nums">
+                        {pos.volume > 0 ? formatNumber(pos.volume, { compact: true }) : '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <TrendIndicator value={pos.dayChangePercent} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          {/* Watchlist Selected Detail */}
+          {watchSelectedSymbol && watchSelectedPosition && (
+            <Card>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <CardTitle>{watchSelectedSymbol} — Price Chart</CardTitle>
+                  {watchRsiBadge && (
+                    <Badge variant={watchRsiBadge.variant}>{watchRsiBadge.label}</Badge>
+                  )}
+                </div>
+                <div className="flex gap-1">
+                  {CHART_TIMEFRAMES.map((tf) => (
+                    <button
+                      key={tf.value}
+                      onClick={() => setWatchChartTimeframe(tf.value)}
+                      className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                        watchChartTimeframe === tf.value
+                          ? 'bg-black/[0.08] text-black/85'
+                          : 'text-black/40 hover:text-black/65 hover:bg-black/[0.03]'
+                      }`}
+                    >
+                      {tf.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Intraday stats row */}
+              {watchSelectedPosition.open > 0 && (
+                <div className="grid grid-cols-4 gap-4 mb-4 p-3 bg-black/[0.02] rounded-lg">
+                  <div>
+                    <p className="text-xs text-black/40">Open</p>
+                    <p className="text-sm font-medium text-black/75 tabular-nums">{formatCurrency(watchSelectedPosition.open)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-black/40">High</p>
+                    <p className="text-sm font-medium text-black/75 tabular-nums">{formatCurrency(watchSelectedPosition.high)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-black/40">Low</p>
+                    <p className="text-sm font-medium text-black/75 tabular-nums">{formatCurrency(watchSelectedPosition.low)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-black/40">Volume</p>
+                    <p className="text-sm font-medium text-black/75 tabular-nums">{formatNumber(watchSelectedPosition.volume, { compact: true })}</p>
+                  </div>
+                </div>
+              )}
+
+              {watchChartData ? (
+                <TimeSeriesChart
+                  data={watchChartData.map((d) => ({ date: d.date, value: d.close }))}
+                  color="auto"
+                  height={300}
+                  gradientId={`watch-${watchSelectedSymbol}`}
+                  valueFormatter={(v) => formatCurrency(v)}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-[300px] text-black/25 text-sm">
+                  Loading chart data...
+                </div>
+              )}
+            </Card>
+          )}
+        </>
       )}
     </div>
   );

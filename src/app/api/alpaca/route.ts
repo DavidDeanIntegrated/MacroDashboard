@@ -8,7 +8,7 @@ import {
   submitOrder,
   cancelOrder,
 } from '@/lib/alpaca';
-import { getHoldingsPortfolio, getPortfolioChart } from '@/lib/holdings';
+import { getHoldingsPortfolio, getPortfolioChart, getWatchlistData } from '@/lib/holdings';
 import type { PortfolioChartPeriod } from '@/lib/holdings';
 
 export async function GET(request: NextRequest) {
@@ -56,6 +56,11 @@ export async function GET(request: NextRequest) {
         const period = (searchParams.get('period') || '1Y') as PortfolioChartPeriod;
         const chart = await getPortfolioChart(period);
         return NextResponse.json(chart);
+      }
+
+      case 'watchlist': {
+        const watchlist = await getWatchlistData();
+        return NextResponse.json(watchlist);
       }
 
       case 'snapshot': {
