@@ -98,16 +98,37 @@ export default function SectorsPage() {
 
   // Regime hints based on sector leadership
   const topSectors = sorted.slice(0, 3).map((s) => s.symbol);
+  const topSectorNames = sorted.slice(0, 3).map((s) => `${s.symbol} (${s.name})`).join(', ');
   const regimeHint = (() => {
     if (topSectors.includes('XLE') && topSectors.includes('XLB'))
-      return { label: 'Reflation', badge: 'orange' as const, text: 'Energy & Materials leading suggests rising commodity prices and inflation expectations.' };
+      return {
+        label: 'Reflation', badge: 'orange' as const,
+        text: 'Energy & Materials leading suggests rising commodity prices and inflation expectations.',
+        reasoning: `The top 3 sectors over ${selectedPeriod} are ${topSectorNames}. Energy (XLE) and Materials (XLB) both appearing in the top 3 is the classic reflation signature — investors are positioning for rising commodity prices, a weaker dollar, and inflation expectations moving higher. This pattern historically emerges when the economy is growing but monetary conditions are loose enough to fuel price pressures. In past cycles, this rotation preceded CPI acceleration by 2-4 months.`,
+      };
     if (topSectors.includes('XLU') && topSectors.includes('XLP'))
-      return { label: 'Defensive / Late Cycle', badge: 'red' as const, text: 'Utilities & Staples leading suggests risk-off positioning and potential slowdown.' };
+      return {
+        label: 'Defensive / Late Cycle', badge: 'red' as const,
+        text: 'Utilities & Staples leading suggests risk-off positioning and potential slowdown.',
+        reasoning: `The top 3 sectors over ${selectedPeriod} are ${topSectorNames}. Utilities (XLU) and Consumer Staples (XLP) both in the top 3 is a defensive rotation — investors are moving capital away from cyclical, high-beta sectors into stable cash-flow businesses with inelastic demand. This pattern typically signals that the market is pricing in slower economic growth or recession risk. These sectors outperform because they offer bond-like income characteristics and their earnings are less sensitive to the economic cycle. Historically, this defensive leadership has preceded economic downturns by 3-6 months.`,
+      };
     if (topSectors.includes('XLK') && topSectors.includes('XLC'))
-      return { label: 'Growth / Risk-On', badge: 'green' as const, text: 'Tech & Communication leading suggests growth optimism and risk appetite.' };
+      return {
+        label: 'Growth / Risk-On', badge: 'green' as const,
+        text: 'Tech & Communication leading suggests growth optimism and risk appetite.',
+        reasoning: `The top 3 sectors over ${selectedPeriod} are ${topSectorNames}. Technology (XLK) and Communication Services (XLC) both leading is a growth/risk-on signal — investors are willing to pay premium multiples for earnings growth, which requires confidence in a stable-to-improving economic outlook. These long-duration sectors benefit most from falling or low interest rates and a favorable liquidity backdrop. This pattern is consistent with a Goldilocks environment where growth is solid but inflation isn't threatening enough to force aggressive tightening.`,
+      };
     if (topSectors.includes('XLF') && topSectors.includes('XLI'))
-      return { label: 'Early Cycle', badge: 'blue' as const, text: 'Financials & Industrials leading suggests economic expansion and rising rates.' };
-    return { label: 'Mixed', badge: 'neutral' as const, text: 'No clear sector leadership pattern. Markets may be in transition.' };
+      return {
+        label: 'Early Cycle', badge: 'blue' as const,
+        text: 'Financials & Industrials leading suggests economic expansion and rising rates.',
+        reasoning: `The top 3 sectors over ${selectedPeriod} are ${topSectorNames}. Financials (XLF) and Industrials (XLI) both in the top 3 is a classic early-cycle rotation — Financials benefit from a steepening yield curve and rising loan demand, while Industrials benefit from capex recovery and improving PMI data. This pattern historically appears as the economy exits contraction and enters expansion, and often precedes broad market strength by 1-3 months. It signals that credit conditions are improving and businesses are investing again.`,
+      };
+    return {
+      label: 'Mixed', badge: 'neutral' as const,
+      text: 'No clear sector leadership pattern. Markets may be in transition.',
+      reasoning: `The top 3 sectors over ${selectedPeriod} are ${topSectorNames}. No two sectors from a single regime archetype appear together in the top 3, meaning sector leadership is fragmented. This often occurs during regime transitions — the market hasn't yet committed to a directional view. Fragmented leadership can also signal that stock-specific factors (earnings surprises, M&A) are driving returns more than macro forces. Watch whether a clearer pattern emerges over the next 2-4 weeks.`,
+    };
   })();
 
   // ─── REGIME FIT SCORES ───
@@ -124,6 +145,13 @@ export default function SectorsPage() {
       description: 'Moderate growth, low inflation, easy policy.',
       leaders: ['XLK', 'XLY', 'XLC'],
       leaderLabel: 'XLK, XLY, XLC (growth & consumer)',
+      positioning: {
+        overweight: 'Growth equities (QQQ), Tech (XLK), Consumer Discretionary (XLY), Small-caps (IWM)',
+        underweight: 'Commodities, Utilities, Cash',
+        fixedIncome: 'Shorter duration corporate credit; consider high-yield for carry',
+        alternatives: 'Growth-oriented factor ETFs, momentum strategies',
+        rationale: 'Maximum risk appetite — lean into duration and beta. Earnings growth is the primary driver; companies with strong secular trends outperform. Low inflation means the Fed is on hold or easing, supporting multiples.',
+      },
       interpretation: {
         high: 'Growth and consumer discretionary sectors are strongly outperforming — markets are pricing in a favorable economic backdrop with healthy earnings growth and manageable inflation.',
         mid: 'Some growth leadership but not dominant — the market sees moderate tailwinds but isn\'t fully in "risk-on" mode.',
@@ -139,6 +167,13 @@ export default function SectorsPage() {
       description: 'Rising inflation, strong growth, tightening.',
       leaders: ['XLE', 'XLB', 'XLF'],
       leaderLabel: 'XLE, XLB, XLF (commodities & financials)',
+      positioning: {
+        overweight: 'Commodities (DJP/GSG), Energy (XLE), Materials (XLB), Financials (XLF), TIPS, Value stocks',
+        underweight: 'Long-duration growth (unprofitable tech), Long-term Treasuries (TLT)',
+        fixedIncome: 'TIPS over nominal bonds; floating-rate notes; short duration',
+        alternatives: 'Commodity futures, real assets, infrastructure, value factor ETFs',
+        rationale: 'Inflation is the dominant force — own assets with pricing power and real asset backing. Nominal bonds lose purchasing power; equities with tangible asset bases (energy, materials) preserve it. Financials benefit from a steepening yield curve as the Fed tightens.',
+      },
       interpretation: {
         high: 'Energy, materials, and financials dominating — strong signal of rising inflation expectations and commodity demand. Pricing power matters most in this environment.',
         mid: 'Some commodity/financial strength — inflation expectations are building but not yet dominant. Monitor CPI and commodity prices for confirmation.',
@@ -154,6 +189,13 @@ export default function SectorsPage() {
       description: 'High inflation, slowing growth.',
       leaders: ['XLE', 'XLP', 'XLU'],
       leaderLabel: 'XLE, XLP, XLU (energy & defensives)',
+      positioning: {
+        overweight: 'Energy (XLE), Commodities, Consumer Staples (XLP), Healthcare (XLV), Cash',
+        underweight: 'Consumer Discretionary (XLY), Small-caps, Unprofitable growth, Cyclicals',
+        fixedIncome: 'TIPS, short-duration bonds, cash equivalents (T-bills); avoid long-duration',
+        alternatives: 'Gold (GLD), commodity trend-following, managed futures (DBMF), low-vol factor',
+        rationale: 'The hardest environment for portfolios — both stocks and bonds struggle. Prioritize real assets (energy, commodities) for inflation protection and defensive sectors (staples, healthcare) for earnings stability. Raise cash allocation. Avoid anything dependent on economic growth or multiple expansion. Gold historically shines as a stagflation hedge.',
+      },
       interpretation: {
         high: 'Energy outperforming alongside defensive sectors — a classic stagflation signature. The market is pricing in persistent inflation with slowing growth. This is the hardest environment for portfolios.',
         mid: 'Some defensive + energy leadership — mixed signals. Inflation may be sticky while growth is uncertain. Watch the yield curve for confirmation.',
@@ -169,6 +211,13 @@ export default function SectorsPage() {
       description: 'Falling prices, demand collapsing, rate cuts.',
       leaders: ['XLU', 'XLP', 'XLRE'],
       leaderLabel: 'XLU, XLP, XLRE (defensives & duration)',
+      positioning: {
+        overweight: 'Long-term Treasuries (TLT/EDV), Utilities (XLU), REITs (XLRE), Investment-grade bonds',
+        underweight: 'Cyclicals, Commodities, Financials, High-yield credit',
+        fixedIncome: 'Extend duration aggressively — long-term Treasuries rally as rates fall; investment-grade credit over high-yield',
+        alternatives: 'Managed futures (trend-following benefits from bond rally), gold, defensive equity factors (low-vol, quality)',
+        rationale: 'Duration is king — falling rates drive outsized gains in long bonds and rate-sensitive equities (utilities, REITs). Avoid cyclicals and anything tied to economic growth. Credit spreads widen, so favor Treasuries over corporate debt. This environment historically precedes Fed rate cuts, making long-duration the highest-conviction trade.',
+      },
       interpretation: {
         high: 'Pure defensives and rate-sensitive sectors leading — markets are positioning for economic contraction and rate cuts. Capital preservation is the priority. Duration assets (bonds, REITs) benefit from falling rates.',
         mid: 'Some flight to safety — the market is hedging downside risk but hasn\'t fully capitulated. Monitor credit spreads and leading indicators.',
@@ -273,6 +322,12 @@ export default function SectorsPage() {
               {regimeHint.text}
             </p>
           </div>
+        </div>
+        <div className="mt-4 pt-3 border-t border-black/[0.06]">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-black/35 mb-2">Why this signal?</p>
+          <p className="text-xs text-black/50 leading-relaxed">
+            {regimeHint.reasoning}
+          </p>
         </div>
       </Card>
 
@@ -521,8 +576,150 @@ export default function SectorsPage() {
               <p className="text-xs text-black/50 leading-relaxed italic">
                 {regime.interpretation}
               </p>
+
+              {/* Portfolio Positioning */}
+              {regime.score >= 35 && (
+                <div className="mt-3 pt-3 border-t border-black/[0.06]">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-black/35 mb-2">
+                    Portfolio Positioning
+                  </p>
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] text-black/60">
+                      <span className="font-semibold text-accent-green">Overweight:</span>{' '}
+                      {regime.positioning.overweight}
+                    </p>
+                    <p className="text-[11px] text-black/60">
+                      <span className="font-semibold text-accent-red">Underweight:</span>{' '}
+                      {regime.positioning.underweight}
+                    </p>
+                    <p className="text-[11px] text-black/60">
+                      <span className="font-semibold text-accent-blue">Fixed Income:</span>{' '}
+                      {regime.positioning.fixedIncome}
+                    </p>
+                    <p className="text-[11px] text-black/60">
+                      <span className="font-semibold text-accent-purple">Alternatives:</span>{' '}
+                      {regime.positioning.alternatives}
+                    </p>
+                  </div>
+                  <p className="text-[11px] text-black/45 mt-2 leading-relaxed italic">
+                    {regime.positioning.rationale}
+                  </p>
+                </div>
+              )}
             </div>
           ))}
+        </div>
+      </Card>
+
+      {/* Regime Transition Monitoring Guide */}
+      <Card>
+        <CardTitle>How to Monitor Regime Transitions</CardTitle>
+        <p className="text-xs text-black/40 mt-1 mb-4">
+          Practical framework for detecting whether sector signals are front-running a macro shift or if economic fundamentals will reassert
+        </p>
+
+        <div className="space-y-4">
+          {/* Step 1: Cross-check timeframes */}
+          <div className="border border-black/[0.06] rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-bold text-accent-blue bg-accent-blue/10 w-6 h-6 rounded-full flex items-center justify-center">1</span>
+              <p className="text-sm font-semibold text-black/75">Cross-Check Timeframes</p>
+            </div>
+            <p className="text-xs text-black/55 leading-relaxed mb-2">
+              Compare sector regime scores across 1W, 1M, and 3M using the period selector above. If the divergence between FRED and sector signals
+              appears only on the 1W view but 1M and 3M still agree with FRED, it may be noise. If all three timeframes show the same divergence,
+              the signal is more credible.
+            </p>
+            <div className="bg-black/[0.02] rounded-lg p-2.5">
+              <p className="text-[11px] text-black/50 italic">
+                <span className="font-semibold">Rule of thumb:</span> A regime shift typically shows up in 1W first, then 1M confirms within 2-4 weeks. If
+                3M flips, the transition is likely durable.
+              </p>
+            </div>
+          </div>
+
+          {/* Step 2: Watch the score trajectory */}
+          <div className="border border-black/[0.06] rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-bold text-accent-blue bg-accent-blue/10 w-6 h-6 rounded-full flex items-center justify-center">2</span>
+              <p className="text-sm font-semibold text-black/75">Track Score Trajectory, Not Levels</p>
+            </div>
+            <p className="text-xs text-black/55 leading-relaxed mb-2">
+              A regime score of 45 isn&apos;t bearish if it was 30 last week — it&apos;s <em>improving</em>. The direction of regime fit scores matters
+              more than absolute levels. Check this page weekly and note which regime scores are rising vs. falling. A regime with a score climbing
+              from 35 to 55 over three weeks is more actionable than one sitting at a static 60.
+            </p>
+            <div className="bg-black/[0.02] rounded-lg p-2.5">
+              <p className="text-[11px] text-black/50 italic">
+                <span className="font-semibold">Action:</span> Bookmark this page and check weekly. Compare each regime&apos;s score to your mental baseline.
+                Rising scores = capital flowing into that regime&apos;s signature sectors.
+              </p>
+            </div>
+          </div>
+
+          {/* Step 3: Validate with leading indicators */}
+          <div className="border border-black/[0.06] rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-bold text-accent-blue bg-accent-blue/10 w-6 h-6 rounded-full flex items-center justify-center">3</span>
+              <p className="text-sm font-semibold text-black/75">Validate with Leading Indicators on the Macro Page</p>
+            </div>
+            <p className="text-xs text-black/55 leading-relaxed mb-2">
+              Sector rotation leads FRED data, but other indicators can help you judge whether the market is right. Cross-reference with:
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+              <div className="bg-black/[0.02] rounded-lg p-2.5">
+                <p className="text-[11px] font-semibold text-black/60 mb-1">Yield Curve (Macro page)</p>
+                <p className="text-[11px] text-black/45">Steepening = growth expectations rising. Inverting = recession signal. Compare to sector regime.</p>
+              </div>
+              <div className="bg-black/[0.02] rounded-lg p-2.5">
+                <p className="text-[11px] font-semibold text-black/60 mb-1">CPI Trend (Macro page)</p>
+                <p className="text-[11px] text-black/45">If sectors say Reflation but CPI is trending down, markets may be wrong. Wait for confirmation.</p>
+              </div>
+              <div className="bg-black/[0.02] rounded-lg p-2.5">
+                <p className="text-[11px] font-semibold text-black/60 mb-1">Unemployment Trend (Macro page)</p>
+                <p className="text-[11px] text-black/45">Rising unemployment + sector Stagflation signal = high conviction. Falling unemployment contradicts it.</p>
+              </div>
+              <div className="bg-black/[0.02] rounded-lg p-2.5">
+                <p className="text-[11px] font-semibold text-black/60 mb-1">Credit Spreads &amp; VIX (Analytics page)</p>
+                <p className="text-[11px] text-black/45">Widening spreads confirm defensive rotation. Tightening spreads confirm risk-on signals.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Step 4: Decide when to act */}
+          <div className="border border-black/[0.06] rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-bold text-accent-blue bg-accent-blue/10 w-6 h-6 rounded-full flex items-center justify-center">4</span>
+              <p className="text-sm font-semibold text-black/75">When to Act vs. Wait</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="bg-accent-green/[0.04] border border-accent-green/10 rounded-lg p-3">
+                <p className="text-[11px] font-semibold text-accent-green mb-1.5">Lean into the sector signal when:</p>
+                <ul className="text-[11px] text-black/55 space-y-1 list-disc list-inside">
+                  <li>Multiple timeframes (1W + 1M) agree on the new regime</li>
+                  <li>Leading indicators on Macro page confirm the direction</li>
+                  <li>The top regime score is above 60 and rising</li>
+                  <li>Breadth is strong (all leader ETFs outperforming SPY)</li>
+                </ul>
+              </div>
+              <div className="bg-accent-orange/[0.04] border border-accent-orange/10 rounded-lg p-3">
+                <p className="text-[11px] font-semibold text-accent-orange mb-1.5">Wait for confirmation when:</p>
+                <ul className="text-[11px] text-black/55 space-y-1 list-disc list-inside">
+                  <li>Only the 1W view shows divergence (could be noise)</li>
+                  <li>Multiple regime scores are clustered (within 10 pts of each other)</li>
+                  <li>Leading indicators contradict the sector signal</li>
+                  <li>Breadth is weak (only 1 of 3 leaders outperforming)</li>
+                </ul>
+              </div>
+            </div>
+            <div className="bg-black/[0.02] rounded-lg p-2.5 mt-3">
+              <p className="text-[11px] text-black/50 italic">
+                <span className="font-semibold">Key insight:</span> Sector signals front-run FRED data by 2-4 months on average. But about 30% of the time,
+                the initial sector signal reverses — the economy reasserts rather than shifting. Use the framework above to distinguish durable transitions
+                from false starts. When in doubt, position incrementally (tilt, don&apos;t rotate fully) until confirmation arrives.
+              </p>
+            </div>
+          </div>
         </div>
       </Card>
     </div>
