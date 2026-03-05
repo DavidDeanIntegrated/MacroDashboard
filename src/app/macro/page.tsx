@@ -149,7 +149,7 @@ const INDICATOR_INFO: Record<string, IndicatorInfo> = {
     key: 'UNRATE',
     label: FRED_SERIES_NAMES['UNRATE'],
     description:
-      'A lagging indicator — by the time unemployment rises meaningfully, recession has usually begun. The Sahm Rule triggers when the 3-month average rises 0.50% above its 12-month low.',
+      'A lagging indicator — by the time unemployment rises meaningfully, recession has usually begun. The Sahm Rule triggers when the 3-month average rises 0.50% above its 12-month low. See the Sahm Rule panel on the chart below for the current 12-month low and trigger status.',
     regimeSignal: (v) => {
       if (v > 8)
         return { regime: 'Depression / Crisis', badge: 'red', explanation: 'Severe labor market deterioration. Requires massive fiscal stimulus. Historically, equities are near bottoms at these levels.' };
@@ -199,6 +199,21 @@ export default function MacroPage() {
   if (!data) return null;
 
   const regime = data.regime;
+
+  // Sahm Rule computation: 3-month average vs 12-month low
+  const unempData = data.unemployment || [];
+  const sahmInfo = (() => {
+    if (unempData.length < 12) return null;
+    // Unemployment is monthly — last 12 entries = 12-month window
+    const recent12 = unempData.slice(-12);
+    const low12 = Math.min(...recent12.map((d: { value: number }) => d.value));
+    // 3-month average = last 3 entries
+    const recent3 = unempData.slice(-3);
+    const avg3 = recent3.reduce((sum: number, d: { value: number }) => sum + d.value, 0) / recent3.length;
+    const sahmValue = avg3 - low12;
+    const triggered = sahmValue >= 0.5;
+    return { low12, avg3, sahmValue, triggered };
+  })();
 
   const indicators = [
     { info: INDICATOR_INFO['FEDFUNDS'], data: data.fedFunds, suffix: '%' },
@@ -494,6 +509,33 @@ export default function MacroPage() {
           <p className="text-xs text-black/40 mt-3 leading-relaxed">
             A lagging indicator — by the time it rises, recession has usually started. Below 4.5% signals a strong economy. Watch for the Sahm Rule: a 0.5% rise from the 12-month low has a perfect track record of identifying recessions.
           </p>
+          {sahmInfo && (
+            <div className={`mt-2 rounded-lg p-2.5 border ${sahmInfo.triggered ? 'bg-accent-red/[0.04] border-accent-red/10' : 'bg-black/[0.02] border-black/[0.06]'}`}>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-black/55">Sahm Rule Indicator</span>
+                <Badge variant={sahmInfo.triggered ? 'red' : 'green'}>
+                  {sahmInfo.triggered ? 'Triggered' : 'Not Triggered'}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-3 gap-3 mt-2">
+                <div>
+                  <p className="text-[10px] text-black/35 uppercase tracking-wider">12-Mo Low</p>
+                  <p className="text-sm font-bold tabular-nums text-black/70">{sahmInfo.low12.toFixed(1)}%</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-black/35 uppercase tracking-wider">3-Mo Avg</p>
+                  <p className="text-sm font-bold tabular-nums text-black/70">{sahmInfo.avg3.toFixed(1)}%</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-black/35 uppercase tracking-wider">Sahm Value</p>
+                  <p className={`text-sm font-bold tabular-nums ${sahmInfo.triggered ? 'text-accent-red' : 'text-black/70'}`}>
+                    +{sahmInfo.sahmValue.toFixed(2)}%
+                    <span className="text-[10px] font-normal text-black/35 ml-1">/ 0.50%</span>
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </Card>
       </div>
 
