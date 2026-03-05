@@ -207,13 +207,15 @@ export default function WatchlistAnalyticsPage() {
   const relativeStrength = WATCH_STOCKS.map((h) => {
     const closes = symbolData[h.symbol]?.closes || [];
     if (closes.length < 2 || spyCloses.length < 2) {
-      return { symbol: h.symbol, category: h.category, holdingReturn: 0, spyReturn: 0, relStrength: 0 };
+      return { symbol: h.symbol, category: h.category, currentPrice: 0, holdingReturn: 0, spyReturn: 0, relStrength: 0 };
     }
+    const currentPrice = closes[closes.length - 1];
     const holdingReturn = ((closes[closes.length - 1] - closes[0]) / closes[0]) * 100;
     const spyReturn = ((spyCloses[spyCloses.length - 1] - spyCloses[0]) / spyCloses[0]) * 100;
     return {
       symbol: h.symbol,
       category: h.category,
+      currentPrice,
       holdingReturn,
       spyReturn,
       relStrength: holdingReturn - spyReturn,
@@ -430,7 +432,7 @@ export default function WatchlistAnalyticsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-black/[0.06]">
-                {['Symbol', 'Category', 'Stock', 'SPY', 'Relative'].map((h) => (
+                {['Symbol', 'Category', 'Price', 'Stock', 'SPY', 'Relative'].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-medium text-black/40 uppercase tracking-wider">
                     {h}
                   </th>
@@ -445,6 +447,11 @@ export default function WatchlistAnalyticsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <Badge variant={categoryBadge(r.category)}>{r.category}</Badge>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-sm font-semibold tabular-nums text-black/75">
+                      ${r.currentPrice < 1 ? r.currentPrice.toFixed(4) : r.currentPrice.toFixed(2)}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     <span className={`text-sm font-semibold tabular-nums ${r.holdingReturn >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>
@@ -753,6 +760,9 @@ export default function WatchlistAnalyticsPage() {
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
                           <span className="text-sm font-semibold text-black/85">{s.symbol}</span>
+                          <span className="text-sm font-semibold tabular-nums text-black/55">
+                            ${s.currentPrice < 1 ? s.currentPrice.toFixed(4) : s.currentPrice.toFixed(2)}
+                          </span>
                           <Badge variant={signal.badge}>{signal.signal}</Badge>
                           <Badge variant={categoryBadge(s.category)}>{s.category}</Badge>
                         </div>
