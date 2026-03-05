@@ -292,6 +292,9 @@ export default function MacroPage() {
         <Card>
           <CardTitle>Yield Curve (Live)</CardTitle>
           {yieldCurve && <YieldCurveChart data={yieldCurve} height={280} />}
+          <p className="text-xs text-black/40 mt-3 leading-relaxed">
+            Shows yields across Treasury maturities. A normal upward slope means markets expect growth; a flat or inverted curve (short rates above long rates) has preceded every U.S. recession since 1955.
+          </p>
         </Card>
 
         <Card>
@@ -303,6 +306,9 @@ export default function MacroPage() {
             gradientId="t10y2y"
             valueFormatter={(v) => `${v.toFixed(2)}%`}
           />
+          <p className="text-xs text-black/40 mt-3 leading-relaxed">
+            The most-watched recession signal. Negative values (inversion) warn of recession 6-24 months ahead. The un-inversion — when this turns positive again — is often when recession actually begins, as the Fed starts cutting.
+          </p>
         </Card>
       </div>
 
@@ -316,6 +322,9 @@ export default function MacroPage() {
           gradientId="cpiYoY"
           valueFormatter={(v) => `${v.toFixed(2)}%`}
         />
+        <p className="text-xs text-black/40 mt-3 leading-relaxed">
+          Measures how fast consumer prices are rising. The Fed targets 2%. Below 2% allows easy policy (bullish for growth stocks); above 3-4% forces tightening (bearish for multiples, favors commodities and value). Deflation (below 0%) signals crisis.
+        </p>
       </Card>
 
       {/* Rates + Labor */}
@@ -329,6 +338,9 @@ export default function MacroPage() {
             gradientId="fedFunds"
             valueFormatter={(v) => `${v.toFixed(2)}%`}
           />
+          <p className="text-xs text-black/40 mt-3 leading-relaxed">
+            The Fed&apos;s primary policy lever. Rising rates cool the economy and compress asset valuations; falling rates stimulate growth and boost risk assets. The direction matters more than the level — &quot;don&apos;t fight the Fed.&quot;
+          </p>
         </Card>
 
         <Card>
@@ -340,6 +352,9 @@ export default function MacroPage() {
             gradientId="unemployment"
             valueFormatter={(v) => `${v.toFixed(1)}%`}
           />
+          <p className="text-xs text-black/40 mt-3 leading-relaxed">
+            A lagging indicator — by the time it rises, recession has usually started. Below 4.5% signals a strong economy. Watch for the Sahm Rule: a 0.5% rise from the 12-month low has a perfect track record of identifying recessions.
+          </p>
         </Card>
       </div>
 
@@ -354,6 +369,9 @@ export default function MacroPage() {
             gradientId="hySpread"
             valueFormatter={(v) => `${v.toFixed(2)}%`}
           />
+          <p className="text-xs text-black/40 mt-3 leading-relaxed">
+            The premium investors demand for risky corporate bonds over Treasuries. Below 3.5% signals easy credit (risk-on). Above 5-6% signals stress. Above 8% means panic — credit markets are freezing and the Fed typically intervenes.
+          </p>
         </Card>
 
         <Card>
@@ -365,6 +383,9 @@ export default function MacroPage() {
             gradientId="indProd"
             valueFormatter={(v) => formatNumber(v, { decimals: 1 })}
           />
+          <p className="text-xs text-black/40 mt-3 leading-relaxed">
+            Measures real output from manufacturing, mining, and utilities. A rising trend confirms expansion; sustained declines signal contraction. Tends to peak before recessions and trough before recoveries.
+          </p>
         </Card>
       </div>
 
