@@ -22,6 +22,7 @@ export default function AlertsPage() {
     { symbol: 'SPY' },
   ]);
   const [newSymbol, setNewSymbol] = useState('');
+  const [expandedTilt, setExpandedTilt] = useState<number | null>(null);
   const [watchlistFilings, setWatchlistFilings] = useState<Record<string, FilingAlert[]>>({});
   const [loadingFilings, setLoadingFilings] = useState(false);
 
@@ -137,21 +138,51 @@ export default function AlertsPage() {
             {regimeSignals.length > 0 && (
               <div className="mt-4 pt-4 border-t border-black/[0.04]">
                 <p className="text-xs font-medium text-black/45 uppercase mb-3">Regime Tilts</p>
-                <div className="space-y-2">
-                  {regimeSignals.map((signal, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <div
-                        className={`w-2 h-2 rounded-full ${
-                          signal.sentiment === 'positive'
-                            ? 'bg-accent-green'
-                            : signal.sentiment === 'negative'
-                              ? 'bg-accent-red'
-                              : 'bg-accent-orange'
-                        }`}
-                      />
-                      <span className="text-sm text-black/65">{signal.text}</span>
-                    </div>
-                  ))}
+                <div className="space-y-1">
+                  {regimeSignals.map((signal, i) => {
+                    const isExpanded = expandedTilt === i;
+                    return (
+                      <div key={i}>
+                        <button
+                          onClick={() => setExpandedTilt(isExpanded ? null : i)}
+                          className="w-full flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-black/[0.02] transition-colors cursor-pointer text-left"
+                        >
+                          <svg
+                            className={`w-3 h-3 text-black/25 transition-transform shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                          </svg>
+                          <div
+                            className={`w-2 h-2 rounded-full shrink-0 ${
+                              signal.sentiment === 'positive'
+                                ? 'bg-accent-green'
+                                : signal.sentiment === 'negative'
+                                  ? 'bg-accent-red'
+                                  : 'bg-accent-orange'
+                            }`}
+                          />
+                          <span className="text-sm text-black/65">{signal.text}</span>
+                        </button>
+                        {isExpanded && (
+                          <div className={`ml-8 mr-2 mb-2 mt-1 p-3 rounded-lg border animate-fade-in ${
+                            signal.sentiment === 'positive'
+                              ? 'bg-accent-green/[0.04] border-accent-green/15'
+                              : signal.sentiment === 'negative'
+                                ? 'bg-accent-red/[0.04] border-accent-red/15'
+                                : 'bg-accent-orange/[0.04] border-accent-orange/15'
+                          }`}>
+                            <p className="text-xs text-black/55 leading-relaxed">
+                              {signal.explanation}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -304,6 +335,7 @@ interface FilingAlert {
 interface RegimeSignal {
   text: string;
   sentiment: 'positive' | 'negative' | 'neutral';
+  explanation: string;
 }
 
 function getRegimeSignals(
@@ -315,35 +347,35 @@ function getRegimeSignals(
 
   switch (regime) {
     case 'goldilocks':
-      signals.push({ text: 'Favorable for broad equity exposure (SPY, QQQ)', sentiment: 'positive' });
-      signals.push({ text: 'Growth stocks likely outperform value', sentiment: 'positive' });
-      signals.push({ text: 'Credit spreads likely to tighten — corporate bonds attractive', sentiment: 'positive' });
+      signals.push({ text: 'Favorable for broad equity exposure (SPY, QQQ)', sentiment: 'positive', explanation: 'In a Goldilocks regime, moderate growth and contained inflation create ideal conditions for equities. Broad index funds capture upside without excessive sector concentration risk.' });
+      signals.push({ text: 'Growth stocks likely outperform value', sentiment: 'positive', explanation: 'Low and stable interest rates keep discount rates low, boosting the present value of future earnings. This disproportionately benefits high-growth companies with cash flows further out in the future.' });
+      signals.push({ text: 'Credit spreads likely to tighten — corporate bonds attractive', sentiment: 'positive', explanation: 'When the economy is growing steadily without inflation pressure, corporate default risk falls. Investors accept lower premiums for credit risk, pushing spreads tighter and bond prices higher.' });
       break;
     case 'reflation':
-      signals.push({ text: 'Commodities & real assets likely outperform (GLD, DBC)', sentiment: 'positive' });
-      signals.push({ text: 'TIPS and short-duration bonds preferred over long bonds', sentiment: 'neutral' });
-      signals.push({ text: 'Value & cyclical sectors may outperform growth', sentiment: 'positive' });
-      signals.push({ text: 'Long-duration treasuries face headwinds (TLT)', sentiment: 'negative' });
+      signals.push({ text: 'Commodities & real assets likely outperform (GLD, DBC)', sentiment: 'positive', explanation: 'Rising inflation erodes the value of financial assets but boosts the nominal value of real assets. Commodities, gold, and real estate act as natural inflation hedges in this environment.' });
+      signals.push({ text: 'TIPS and short-duration bonds preferred over long bonds', sentiment: 'neutral', explanation: 'TIPS adjust principal for inflation, protecting real returns. Short-duration bonds reduce interest rate risk — critical when the Fed is hiking. Long bonds lose value as rates rise.' });
+      signals.push({ text: 'Value & cyclical sectors may outperform growth', sentiment: 'positive', explanation: 'Rising rates compress the multiples of high-growth stocks while cyclical sectors (energy, materials, financials) benefit from pricing power and wider net interest margins.' });
+      signals.push({ text: 'Long-duration treasuries face headwinds (TLT)', sentiment: 'negative', explanation: 'Long bonds have the highest sensitivity to interest rate changes. In a rising rate environment, TLT can lose 15-25% in a single year as yields increase and bond prices fall inversely.' });
       break;
     case 'stagflation':
-      signals.push({ text: 'Defensive positioning recommended — consider reducing equity exposure', sentiment: 'negative' });
-      signals.push({ text: 'Gold and commodities as inflation hedge (GLD)', sentiment: 'positive' });
-      signals.push({ text: 'Avoid long-duration bonds and high-growth equities', sentiment: 'negative' });
-      signals.push({ text: 'Utilities and consumer staples may provide relative stability', sentiment: 'neutral' });
+      signals.push({ text: 'Defensive positioning recommended — consider reducing equity exposure', sentiment: 'negative', explanation: 'Stagflation is the worst environment for traditional portfolios. Both stocks and bonds can decline simultaneously as inflation prevents the Fed from cutting rates to support growth.' });
+      signals.push({ text: 'Gold and commodities as inflation hedge (GLD)', sentiment: 'positive', explanation: 'Gold has historically outperformed during stagflation because it holds value when currencies weaken and real rates are negative. It is one of the few assets that benefits from both inflation and fear.' });
+      signals.push({ text: 'Avoid long-duration bonds and high-growth equities', sentiment: 'negative', explanation: 'High inflation erodes the fixed coupons of long bonds, while rising costs and slowing revenue crush high-multiple growth stocks. Both ends of the duration spectrum suffer.' });
+      signals.push({ text: 'Utilities and consumer staples may provide relative stability', sentiment: 'neutral', explanation: 'Defensive sectors with pricing power and stable demand hold up better than the broad market. Consumers still buy electricity and groceries even in downturns, providing resilient cash flows.' });
       break;
     case 'deflation':
-      signals.push({ text: 'Long-duration treasuries attractive (TLT, IEF)', sentiment: 'positive' });
-      signals.push({ text: 'Quality & defensive equities preferred', sentiment: 'positive' });
-      signals.push({ text: 'Commodities and cyclicals likely underperform', sentiment: 'negative' });
-      signals.push({ text: 'Watch for potential rate cuts — beneficial for duration', sentiment: 'neutral' });
+      signals.push({ text: 'Long-duration treasuries attractive (TLT, IEF)', sentiment: 'positive', explanation: 'When the economy contracts and the Fed cuts rates, long-duration bonds rally sharply as yields fall. TLT gained over 40% during the 2008-2009 crisis. Treasuries also benefit from flight-to-safety flows.' });
+      signals.push({ text: 'Quality & defensive equities preferred', sentiment: 'positive', explanation: 'Companies with strong balance sheets, consistent earnings, and low debt survive deflationary periods. They can acquire competitors cheaply and emerge stronger. Think large-cap healthcare, staples, and utilities.' });
+      signals.push({ text: 'Commodities and cyclicals likely underperform', sentiment: 'negative', explanation: 'Falling demand and excess capacity drive commodity prices down. Cyclical sectors (industrials, materials, discretionary) see revenue declines as consumers and businesses cut spending.' });
+      signals.push({ text: 'Watch for potential rate cuts — beneficial for duration', sentiment: 'neutral', explanation: 'The Fed typically cuts aggressively during deflationary scares, pushing short rates toward zero. Positioning in duration assets before cuts can capture significant price appreciation as the yield curve steepens.' });
       break;
   }
 
   if (inflationTrend === 'rising') {
-    signals.push({ text: 'Rising inflation: monitor TIPS and breakeven spreads', sentiment: 'neutral' });
+    signals.push({ text: 'Rising inflation: monitor TIPS and breakeven spreads', sentiment: 'neutral', explanation: 'TIPS breakeven rates reflect the market\'s inflation expectations. Rising breakevens confirm inflation is not just transitory and may warrant increasing real asset allocation.' });
   }
   if (growthTrend === 'decelerating') {
-    signals.push({ text: 'Decelerating growth: watch initial claims and PMI for confirmation', sentiment: 'negative' });
+    signals.push({ text: 'Decelerating growth: watch initial claims and PMI for confirmation', sentiment: 'negative', explanation: 'Initial jobless claims and PMI are leading indicators. Rising claims above 300K or PMI below 50 confirm contraction is underway. This would strengthen the case for defensive positioning.' });
   }
 
   return signals;
