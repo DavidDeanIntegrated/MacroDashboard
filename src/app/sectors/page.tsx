@@ -5,7 +5,8 @@ import { Card, CardTitle } from '@/components/ui/Card';
 import { LoadingPage } from '@/components/ui/Loading';
 import { Badge } from '@/components/ui/Badge';
 import { MultiSeriesChart } from '@/components/charts/TimeSeriesChart';
-import { useMultiAggregates } from '@/lib/hooks';
+import { useMultiAggregates, useMacroRegime } from '@/lib/hooks';
+import { RegimeBadge } from '@/components/ui/Badge';
 
 const SECTOR_ETFS = [
   { symbol: 'XLK', name: 'Technology', color: '#007AFF' },
@@ -68,6 +69,9 @@ export default function SectorsPage() {
 
   // Also fetch SPY as benchmark
   const { data: benchmarkData } = useMultiAggregates(['SPY'], '1day', fromDate);
+
+  // FRED macro regime (economic fundamentals)
+  const { data: fredRegime } = useMacroRegime();
 
   if (loading) return <LoadingPage />;
 
@@ -360,6 +364,101 @@ export default function SectorsPage() {
           />
         </Card>
       )}
+
+      {/* Regime Cross-Reference: FRED vs Sector Signals */}
+      {fredRegime && fredRegime.regime !== 'unknown' && regimeScores.length > 0 && (() => {
+        const fredRegimeName = fredRegime.regime === 'deflation' ? 'Deflation / Contraction' : fredRegime.label;
+        const topSectorRegime = regimeScores[0];
+        const fredMatchScore = regimeScores.find((r) =>
+          r.name.toLowerCase().includes(fredRegime.regime)
+        );
+        const isAligned = topSectorRegime.name === fredRegimeName ||
+          topSectorRegime.name.toLowerCase().includes(fredRegime.regime);
+        const fredRank = fredMatchScore
+          ? regimeScores.indexOf(fredMatchScore) + 1
+          : null;
+
+        return (
+          <Card className={`border ${isAligned ? 'border-accent-green/20 bg-accent-green/[0.02]' : 'border-accent-orange/20 bg-accent-orange/[0.02]'}`}>
+            <div className="flex items-center gap-2 mb-1">
+              <CardTitle>Regime Cross-Reference</CardTitle>
+              <Badge variant={isAligned ? 'green' : 'orange'}>
+                {isAligned ? 'Aligned' : 'Diverging'}
+              </Badge>
+            </div>
+            <p className="text-xs text-black/40 mb-4">
+              Comparing FRED economic data (backward-looking) with sector rotation signals (forward-looking)
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              {/* FRED Regime */}
+              <div className="border border-black/[0.06] rounded-xl p-4 bg-white/60">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-black/35 mb-2">
+                  Economic Data (FRED)
+                </p>
+                <div className="flex items-center gap-2 mb-2">
+                  <RegimeBadge regime={fredRegime.regime} />
+                </div>
+                <p className="text-xs text-black/55 mb-2">{fredRegime.description}</p>
+                <div className="flex gap-3 text-[11px] text-black/45">
+                  <span>CPI YoY: <span className="font-semibold text-black/70">{fredRegime.latestInflation.toFixed(1)}%</span></span>
+                  <span>Unemployment: <span className="font-semibold text-black/70">{fredRegime.latestUnemployment.toFixed(1)}%</span></span>
+                </div>
+                <div className="flex gap-3 mt-1 text-[11px] text-black/40">
+                  <span>Inflation: {fredRegime.inflationTrend}</span>
+                  <span>Growth: {fredRegime.growthTrend}</span>
+                </div>
+              </div>
+
+              {/* Top Sector Regime */}
+              <div className="border border-black/[0.06] rounded-xl p-4 bg-white/60">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-black/35 mb-2">
+                  Market Pricing (Sectors, {selectedPeriod})
+                </p>
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge variant={topSectorRegime.badge} size="md">{topSectorRegime.name}</Badge>
+                  <span className="text-lg font-bold tabular-nums text-black/70">{topSectorRegime.score}</span>
+                </div>
+                <p className="text-xs text-black/55 mb-2">{topSectorRegime.description}</p>
+                <div className="flex gap-2">
+                  {topSectorRegime.leaders.map((sym, i) => (
+                    <span key={sym} className={`text-[10px] font-semibold px-2 py-0.5 rounded-md tabular-nums ${
+                      topSectorRegime.leaderExcess[i] > 0
+                        ? 'bg-accent-green/10 text-green-700'
+                        : 'bg-accent-red/10 text-red-700'
+                    }`}>
+                      {sym} {topSectorRegime.leaderExcess[i] > 0 ? '+' : ''}{topSectorRegime.leaderExcess[i].toFixed(1)}%
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Interpretation */}
+            <div className={`rounded-lg p-3 ${isAligned ? 'bg-accent-green/[0.05]' : 'bg-accent-orange/[0.05]'}`}>
+              <p className="text-xs text-black/65 leading-relaxed">
+                {isAligned ? (
+                  <>
+                    <span className="font-semibold">Consensus:</span> Both economic fundamentals and market sector rotation point to a{' '}
+                    <span className="font-semibold">{fredRegime.label}</span> environment. FRED data and market positioning are in agreement
+                    — the macro picture is consistent.
+                  </>
+                ) : (
+                  <>
+                    <span className="font-semibold">Divergence:</span> FRED economic data indicates{' '}
+                    <span className="font-semibold">{fredRegime.label}</span>
+                    {fredRank && <> (ranked #{fredRank} by sector fit)</>},
+                    but sector rotation is pricing in{' '}
+                    <span className="font-semibold">{topSectorRegime.name}</span> (score: {topSectorRegime.score}).
+                    Markets often lead economic data — this divergence may signal a regime transition.
+                    Monitor whether sector signals are front-running a shift or if fundamentals will reassert.
+                  </>
+                )}
+              </p>
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* Regime Fit Scores */}
       <Card>
