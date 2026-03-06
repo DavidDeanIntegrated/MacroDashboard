@@ -1,5 +1,6 @@
 // Fundamental Analysis Scoring Engine
 // Computes a 0–100 composite score across 5 pillars for each stock
+// Data sourced from Polygon.io Stock Financials API + Finnhub earnings
 //
 // ═══ METHODOLOGY ═══
 //
@@ -50,12 +51,12 @@
 //   35-49  = Weak          (below average, caution)
 //   0-34   = Poor          (fundamentally challenged)
 //
-// Scores update automatically: EDGAR data refreshes hourly from SEC filings,
-// Finnhub metrics refresh hourly, and earnings data updates after each report.
+// Scores update automatically: Polygon financials data refreshes hourly,
+// and earnings data updates after each report.
 // ETFs and crypto receive "N/A" since traditional fundamental analysis doesn't apply.
 
-import { getCompanyFundamentals, computeMetrics } from './edgar';
-import { getBasicFinancials, getEarnings, type EarningsEstimate } from './finnhub';
+import { getStockFinancials, getSnapshot, getTickerDetails, type StockFinancials } from './polygon';
+import { getEarnings, type EarningsEstimate } from './finnhub';
 import { withCache, TTL } from './cache';
 
 // ─── Types ───
@@ -179,7 +180,7 @@ function scoreHealth(
   currentRatio: number | null,
   cashToDebt: number | null,
 ): { pts: number; debtEquityPts: number; currentRatioPts: number; cashDebtPts: number } {
-  const debtEquityPts = debtToEquity === null ? 4 // no debt data often means low/no debt
+  const debtEquityPts = debtToEquity === null ? 4
     : debtToEquity < 0.3 ? 8 : debtToEquity < 0.5 ? 6 : debtToEquity < 1.0 ? 4 : debtToEquity < 2.0 ? 2 : 0;
 
   const currentRatioPts = currentRatio === null ? 0
@@ -223,7 +224,7 @@ function getGrade(total: number): { grade: FundamentalsScore['grade']; color: st
   return { grade: 'Poor', color: 'bg-accent-red/10 text-red-700 border-red-100' };
 }
 
-function buildRationale(symbol: string, total: number, breakdown: FundamentalsBreakdown): string {
+function buildRationale(breakdown: FundamentalsBreakdown): string {
   const parts: string[] = [];
   const { profitabilityPts, growthPts, valuationPts, healthPts, earningsQualityPts } = breakdown;
   const pd = breakdown.profitabilityDetail;
@@ -232,18 +233,16 @@ function buildRationale(symbol: string, total: number, breakdown: FundamentalsBr
   const hd = breakdown.healthDetail;
   const ed = breakdown.earningsQualityDetail;
 
-  // Profitability
   if (profitabilityPts >= 20) {
     parts.push(`Highly profitable with${pd.netMargin !== null ? ` ${pd.netMargin.toFixed(1)}% net margin` : ''}${pd.grossMargin !== null ? `, ${pd.grossMargin.toFixed(1)}% gross margin` : ''}${pd.roe !== null ? `, and ${pd.roe.toFixed(1)}% ROE` : ''}.`);
   } else if (profitabilityPts >= 10) {
-    parts.push(`Decent profitability${pd.netMargin !== null ? ` (${pd.netMargin.toFixed(1)}% net margin)` : ''}, though there\'s room for margin expansion.`);
+    parts.push(`Decent profitability${pd.netMargin !== null ? ` (${pd.netMargin.toFixed(1)}% net margin)` : ''}, though there's room for margin expansion.`);
   } else if (profitabilityPts > 0) {
     parts.push(`Thin margins${pd.netMargin !== null ? ` (${pd.netMargin.toFixed(1)}% net margin)` : ''} suggest limited pricing power or high costs.`);
   } else {
     parts.push('Currently unprofitable or insufficient profitability data.');
   }
 
-  // Growth
   if (growthPts >= 16) {
     parts.push(`Strong growth trajectory${gd.revenueGrowth !== null ? ` with ${gd.revenueGrowth.toFixed(1)}% revenue growth` : ''}${gd.epsGrowth !== null ? ` and ${gd.epsGrowth.toFixed(1)}% EPS growth` : ''}.`);
   } else if (growthPts >= 8) {
@@ -254,7 +253,6 @@ function buildRationale(symbol: string, total: number, breakdown: FundamentalsBr
     parts.push('Revenue or earnings are declining, indicating headwinds.');
   }
 
-  // Valuation
   if (valuationPts >= 15) {
     parts.push(`Attractively valued${vd.pe !== null ? ` at ${vd.pe.toFixed(1)}x earnings` : ''}${vd.pb !== null ? `, ${vd.pb.toFixed(1)}x book` : ''}.`);
   } else if (valuationPts >= 8) {
@@ -265,7 +263,6 @@ function buildRationale(symbol: string, total: number, breakdown: FundamentalsBr
     parts.push('Expensive or unprofitable, making valuation difficult to justify on earnings alone.');
   }
 
-  // Health
   if (healthPts >= 15) {
     parts.push('Fortress balance sheet with low debt and strong liquidity.');
   } else if (healthPts >= 8) {
@@ -276,7 +273,6 @@ function buildRationale(symbol: string, total: number, breakdown: FundamentalsBr
     parts.push('Financial health data is limited or shows concerning leverage.');
   }
 
-  // Earnings quality
   if (earningsQualityPts >= 12) {
     parts.push(`Excellent earnings execution — ${ed.beatRate?.toFixed(0)}% beat rate over ${ed.quartersAnalyzed} quarters.`);
   } else if (earningsQualityPts >= 6) {
@@ -299,6 +295,117 @@ function isNonScoreable(symbol: string): { skip: boolean; reason?: string } {
   return { skip: false };
 }
 
+// ─── Compute metrics from Polygon financials ───
+
+function computeFromPolygon(
+  annuals: StockFinancials[],
+  quarters: StockFinancials[],
+  price: number,
+  marketCap: number,
+) {
+  // Use most recent annual for profitability and health
+  const latest = annuals[0] || quarters[0];
+  const prevAnnual = annuals[1] || null;
+
+  // Profitability from latest filing
+  let netMargin: number | null = null;
+  let grossMargin: number | null = null;
+  let roe: number | null = null;
+
+  if (latest) {
+    if (latest.revenue && latest.revenue !== 0) {
+      if (latest.netIncome !== null) netMargin = (latest.netIncome / latest.revenue) * 100;
+      if (latest.grossProfit !== null) grossMargin = (latest.grossProfit / latest.revenue) * 100;
+    }
+    if (latest.netIncome !== null && latest.stockholdersEquity && latest.stockholdersEquity > 0) {
+      roe = (latest.netIncome / latest.stockholdersEquity) * 100;
+    }
+  }
+
+  // Growth: compare most recent annual to prior annual
+  let revenueGrowth: number | null = null;
+  let epsGrowth: number | null = null;
+
+  if (latest && prevAnnual) {
+    if (latest.revenue !== null && prevAnnual.revenue !== null && prevAnnual.revenue !== 0) {
+      revenueGrowth = ((latest.revenue - prevAnnual.revenue) / Math.abs(prevAnnual.revenue)) * 100;
+    }
+    if (latest.eps !== null && prevAnnual.eps !== null && prevAnnual.eps !== 0) {
+      epsGrowth = ((latest.eps - prevAnnual.eps) / Math.abs(prevAnnual.eps)) * 100;
+    }
+  }
+
+  // If no annual growth data, try quarterly YoY (Q vs same Q prior year)
+  if (revenueGrowth === null && quarters.length >= 5) {
+    const recentQ = quarters[0];
+    // Find same quarter from prior year
+    const priorYearQ = quarters.find(
+      (q) => q.fiscalPeriod === recentQ.fiscalPeriod && q.fiscalYear !== recentQ.fiscalYear
+    );
+    if (recentQ.revenue !== null && priorYearQ?.revenue !== null && priorYearQ && priorYearQ.revenue !== 0) {
+      revenueGrowth = ((recentQ.revenue - priorYearQ.revenue) / Math.abs(priorYearQ.revenue)) * 100;
+    }
+    if (recentQ.eps !== null && priorYearQ?.eps !== null && priorYearQ && priorYearQ.eps !== 0 && epsGrowth === null) {
+      epsGrowth = ((recentQ.eps - priorYearQ.eps) / Math.abs(priorYearQ.eps)) * 100;
+    }
+  }
+
+  // Valuation: compute from price + financial data
+  let pe: number | null = null;
+  let pb: number | null = null;
+  let ps: number | null = null;
+
+  // TTM EPS from last 4 quarters
+  const recentQuarters = quarters.slice(0, 4);
+  if (recentQuarters.length >= 4) {
+    const ttmEps = recentQuarters.reduce((sum, q) => sum + (q.eps ?? 0), 0);
+    if (ttmEps > 0 && price > 0) pe = price / ttmEps;
+  } else if (latest?.eps && latest.eps > 0 && price > 0) {
+    pe = price / latest.eps;
+  }
+
+  if (latest?.stockholdersEquity && latest.stockholdersEquity > 0 && marketCap > 0) {
+    pb = marketCap / latest.stockholdersEquity;
+  }
+
+  // TTM Revenue from last 4 quarters
+  if (recentQuarters.length >= 4) {
+    const ttmRevenue = recentQuarters.reduce((sum, q) => sum + (q.revenue ?? 0), 0);
+    if (ttmRevenue > 0 && marketCap > 0) ps = marketCap / ttmRevenue;
+  } else if (latest?.revenue && latest.revenue > 0 && marketCap > 0) {
+    ps = marketCap / latest.revenue;
+  }
+
+  // Financial Health
+  let debtToEquity: number | null = null;
+  let currentRatio: number | null = null;
+  let cashToDebt: number | null = null;
+
+  const healthSource = quarters[0] || latest;
+  if (healthSource) {
+    if (healthSource.totalDebt !== null && healthSource.stockholdersEquity && healthSource.stockholdersEquity > 0) {
+      debtToEquity = healthSource.totalDebt / healthSource.stockholdersEquity;
+    } else if (healthSource.longTermDebt !== null && healthSource.stockholdersEquity && healthSource.stockholdersEquity > 0) {
+      debtToEquity = healthSource.longTermDebt / healthSource.stockholdersEquity;
+    } else if (healthSource.totalLiabilities !== null && healthSource.stockholdersEquity && healthSource.stockholdersEquity > 0) {
+      debtToEquity = healthSource.totalLiabilities / healthSource.stockholdersEquity;
+    }
+
+    if (healthSource.currentAssets !== null && healthSource.currentLiabilities !== null && healthSource.currentLiabilities > 0) {
+      currentRatio = healthSource.currentAssets / healthSource.currentLiabilities;
+    }
+
+    const debt = healthSource.totalDebt ?? healthSource.longTermDebt ?? 0;
+    if (healthSource.cash !== null && debt > 0) {
+      cashToDebt = healthSource.cash / debt;
+    } else if (healthSource.cash !== null && debt === 0) {
+      cashToDebt = 10; // no debt = excellent
+    }
+  }
+
+  return { netMargin, grossMargin, roe, revenueGrowth, epsGrowth, pe, pb, ps, debtToEquity, currentRatio, cashToDebt };
+}
+
 // ─── Main Scoring Function ───
 
 export async function computeFundamentalsScore(symbol: string): Promise<FundamentalsScore> {
@@ -317,45 +424,37 @@ export async function computeFundamentalsScore(symbol: string): Promise<Fundamen
   }
 
   return withCache(`fundamentals-score:${symbol}`, TTL.FUNDAMENTALS, async () => {
-    // Fetch all data sources in parallel
-    const [edgarData, finnhubMetrics, earnings] = await Promise.all([
-      getCompanyFundamentals(symbol).catch(() => null),
-      getBasicFinancials(symbol).catch(() => null),
+    // Fetch all data from Polygon + Finnhub earnings in parallel
+    const [annuals, quarters, snapshot, tickerDetails, earnings] = await Promise.all([
+      getStockFinancials(symbol, 'annual', 3).catch(() => []),
+      getStockFinancials(symbol, 'quarterly', 8).catch(() => []),
+      getSnapshot(symbol).catch(() => null),
+      getTickerDetails(symbol).catch(() => null),
       getEarnings(symbol).catch(() => []),
     ]);
 
-    const edgarMetrics = edgarData ? computeMetrics(edgarData) : null;
+    const price = snapshot?.price ?? 0;
+    const marketCap = tickerDetails?.marketCap ?? 0;
 
-    // Merge data: prefer Finnhub for valuation metrics (more current), EDGAR for margins
-    const netMargin = edgarMetrics?.netMargin ?? null;
-    const grossMargin = edgarMetrics?.grossMargin ?? null;
-    const roe = finnhubMetrics?.roe ?? null;
-    const revenueGrowth = finnhubMetrics?.revenueGrowthTTM ?? null;
-    const epsGrowth = finnhubMetrics?.epsGrowthTTM ?? null;
-    const pe = finnhubMetrics?.peRatio ?? null;
-    const pb = finnhubMetrics?.pbRatio ?? null;
-    const ps = finnhubMetrics?.psRatio ?? null;
-    const debtToEquity = edgarMetrics?.debtToEquity ?? null;
-    const currentRatio = finnhubMetrics?.currentRatio ?? null;
-
-    // Cash to debt ratio from EDGAR
-    let cashToDebt: number | null = null;
-    if (edgarData) {
-      const cashArr = edgarData.cash;
-      const debtArr = edgarData.longTermDebt;
-      const latestCash = cashArr.length > 0 ? cashArr[cashArr.length - 1].value : null;
-      const latestDebt = debtArr.length > 0 ? debtArr[debtArr.length - 1].value : null;
-      if (latestCash !== null && latestDebt !== null && latestDebt > 0) {
-        cashToDebt = latestCash / latestDebt;
-      } else if (latestCash !== null && (latestDebt === null || latestDebt === 0)) {
-        cashToDebt = 10; // no debt = very good
-      }
+    if (annuals.length === 0 && quarters.length === 0) {
+      return {
+        symbol,
+        total: 0,
+        grade: 'Hold' as const,
+        gradeColor: 'bg-black/[0.04] text-black/45 border-black/[0.06]',
+        breakdown: emptyBreakdown(),
+        rationale: 'No financial data available from Polygon for this stock.',
+        unavailable: true,
+        unavailableReason: 'No financial statements found',
+      };
     }
 
-    const profitability = scoreProfitability(netMargin, grossMargin, roe);
-    const growth = scoreGrowth(revenueGrowth, epsGrowth);
-    const valuation = scoreValuation(pe, pb, ps);
-    const health = scoreHealth(debtToEquity, currentRatio, cashToDebt);
+    const metrics = computeFromPolygon(annuals, quarters, price, marketCap);
+
+    const profitability = scoreProfitability(metrics.netMargin, metrics.grossMargin, metrics.roe);
+    const growth = scoreGrowth(metrics.revenueGrowth, metrics.epsGrowth);
+    const valuation = scoreValuation(metrics.pe, metrics.pb, metrics.ps);
+    const health = scoreHealth(metrics.debtToEquity, metrics.currentRatio, metrics.cashToDebt);
     const earningsQuality = scoreEarningsQuality(earnings);
 
     const total = profitability.pts + growth.pts + valuation.pts + health.pts + earningsQuality.pts;
@@ -368,17 +467,17 @@ export async function computeFundamentalsScore(symbol: string): Promise<Fundamen
         netMarginPts: profitability.netMarginPts,
         grossMarginPts: profitability.grossMarginPts,
         roePts: profitability.roePts,
-        netMargin,
-        grossMargin,
-        roe,
+        netMargin: metrics.netMargin,
+        grossMargin: metrics.grossMargin,
+        roe: metrics.roe,
       },
       growthPts: growth.pts,
       growthMax: 20,
       growthDetail: {
         revenueGrowthPts: growth.revenueGrowthPts,
         epsGrowthPts: growth.epsGrowthPts,
-        revenueGrowth,
-        epsGrowth,
+        revenueGrowth: metrics.revenueGrowth,
+        epsGrowth: metrics.epsGrowth,
       },
       valuationPts: valuation.pts,
       valuationMax: 20,
@@ -386,7 +485,7 @@ export async function computeFundamentalsScore(symbol: string): Promise<Fundamen
         pePts: valuation.pePts,
         pbPts: valuation.pbPts,
         psPts: valuation.psPts,
-        pe, pb, ps,
+        pe: metrics.pe, pb: metrics.pb, ps: metrics.ps,
       },
       healthPts: health.pts,
       healthMax: 20,
@@ -394,9 +493,9 @@ export async function computeFundamentalsScore(symbol: string): Promise<Fundamen
         debtEquityPts: health.debtEquityPts,
         currentRatioPts: health.currentRatioPts,
         cashDebtPts: health.cashDebtPts,
-        debtToEquity,
-        currentRatio,
-        cashToDebt,
+        debtToEquity: metrics.debtToEquity,
+        currentRatio: metrics.currentRatio,
+        cashToDebt: metrics.cashToDebt,
       },
       earningsQualityPts: earningsQuality.pts,
       earningsQualityMax: 15,
@@ -409,7 +508,7 @@ export async function computeFundamentalsScore(symbol: string): Promise<Fundamen
       },
     };
 
-    const rationale = buildRationale(symbol, total, breakdown);
+    const rationale = buildRationale(breakdown);
 
     return { symbol, total, grade, gradeColor: color, breakdown, rationale };
   });
@@ -433,7 +532,6 @@ function emptyBreakdown(): FundamentalsBreakdown {
 // ─── Batch scoring ───
 
 export async function computeAllScores(symbols: string[]): Promise<FundamentalsScore[]> {
-  // Process in parallel with concurrency limit to avoid rate limits
   const CONCURRENCY = 4;
   const results: FundamentalsScore[] = [];
 

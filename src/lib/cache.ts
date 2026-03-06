@@ -25,6 +25,18 @@ export function setCache<T>(key: string, data: T, ttlSeconds: number): void {
   });
 }
 
+export function invalidatePrefix(prefix: string): number {
+  let count = 0;
+  const keys = Array.from(cache.keys());
+  for (const key of keys) {
+    if (key.startsWith(prefix)) {
+      cache.delete(key);
+      count++;
+    }
+  }
+  return count;
+}
+
 export async function withCache<T>(
   key: string,
   ttlSeconds: number,

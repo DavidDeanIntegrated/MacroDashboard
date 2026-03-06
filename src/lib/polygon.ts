@@ -384,3 +384,144 @@ export async function getTickerDetails(symbol: string): Promise<TickerDetails> {
     };
   });
 }
+
+// ─── Stock Financials ───
+
+interface PolygonFinancialValue {
+  label: string;
+  value: number;
+  unit: string;
+  order: number;
+}
+
+interface PolygonFinancialStatements {
+  income_statement: Record<string, PolygonFinancialValue>;
+  balance_sheet: Record<string, PolygonFinancialValue>;
+  cash_flow_statement: Record<string, PolygonFinancialValue>;
+  comprehensive_income?: Record<string, PolygonFinancialValue>;
+}
+
+interface PolygonFinancialResult {
+  id: string;
+  start_date: string;
+  end_date: string;
+  timeframe: 'annual' | 'quarterly' | 'ttm';
+  fiscal_period: string;
+  fiscal_year: string;
+  cik: string;
+  company_name: string;
+  filing_date: string;
+  source_filing_url: string;
+  financials: PolygonFinancialStatements;
+}
+
+interface PolygonFinancialsResponse {
+  results: PolygonFinancialResult[];
+  status: string;
+  count: number;
+}
+
+export interface StockFinancials {
+  // Income Statement
+  revenue: number | null;
+  costOfRevenue: number | null;
+  grossProfit: number | null;
+  operatingExpenses: number | null;
+  operatingIncome: number | null;
+  netIncome: number | null;
+  eps: number | null;
+  ebitda: number | null;
+  researchDevelopment: number | null;
+
+  // Balance Sheet
+  totalAssets: number | null;
+  totalLiabilities: number | null;
+  stockholdersEquity: number | null;
+  currentAssets: number | null;
+  currentLiabilities: number | null;
+  cash: number | null;
+  longTermDebt: number | null;
+  totalDebt: number | null;
+
+  // Cash Flow
+  operatingCashFlow: number | null;
+  capitalExpenditures: number | null;
+  freeCashFlow: number | null;
+
+  // Metadata
+  fiscalPeriod: string;
+  fiscalYear: string;
+  endDate: string;
+  filingDate: string;
+  companyName: string;
+  timeframe: 'annual' | 'quarterly' | 'ttm';
+}
+
+function extractVal(statements: PolygonFinancialStatements, section: keyof PolygonFinancialStatements, ...keys: string[]): number | null {
+  const stmt = statements[section];
+  if (!stmt) return null;
+  for (const key of keys) {
+    if (stmt[key]?.value !== undefined) return stmt[key].value;
+  }
+  return null;
+}
+
+function mapFinancialResult(r: PolygonFinancialResult): StockFinancials {
+  const f = r.financials;
+  const revenue = extractVal(f, 'income_statement', 'revenues', 'revenue');
+  const costOfRevenue = extractVal(f, 'income_statement', 'cost_of_revenue');
+  const grossProfit = extractVal(f, 'income_statement', 'gross_profit');
+  const operatingExpenses = extractVal(f, 'income_statement', 'operating_expenses');
+  const operatingIncome = extractVal(f, 'income_statement', 'operating_income_loss', 'income_loss_from_continuing_operations_before_tax');
+  const netIncome = extractVal(f, 'income_statement', 'net_income_loss', 'net_income_loss_attributable_to_parent');
+  const eps = extractVal(f, 'income_statement', 'diluted_earnings_per_share', 'basic_earnings_per_share');
+  const ebitda = extractVal(f, 'income_statement', 'ebitda');
+  const researchDevelopment = extractVal(f, 'income_statement', 'research_and_development');
+
+  const totalAssets = extractVal(f, 'balance_sheet', 'assets');
+  const totalLiabilities = extractVal(f, 'balance_sheet', 'liabilities');
+  const stockholdersEquity = extractVal(f, 'balance_sheet', 'equity', 'equity_attributable_to_parent', 'stockholders_equity');
+  const currentAssets = extractVal(f, 'balance_sheet', 'current_assets');
+  const currentLiabilities = extractVal(f, 'balance_sheet', 'current_liabilities');
+  const cash = extractVal(f, 'balance_sheet', 'cash_and_cash_equivalents', 'cash');
+  const longTermDebt = extractVal(f, 'balance_sheet', 'long_term_debt', 'noncurrent_liabilities');
+  const totalDebt = extractVal(f, 'balance_sheet', 'debt', 'long_term_debt');
+
+  const operatingCashFlow = extractVal(f, 'cash_flow_statement', 'net_cash_flow_from_operating_activities', 'net_cash_flow_from_operating_activities_continuing');
+  const capitalExpenditures = extractVal(f, 'cash_flow_statement', 'capital_expenditure');
+  const capex = capitalExpenditures ?? 0;
+  const freeCashFlow = operatingCashFlow !== null ? operatingCashFlow - Math.abs(capex) : null;
+
+  return {
+    revenue, costOfRevenue, grossProfit, operatingExpenses, operatingIncome,
+    netIncome, eps, ebitda, researchDevelopment,
+    totalAssets, totalLiabilities, stockholdersEquity,
+    currentAssets, currentLiabilities, cash, longTermDebt, totalDebt,
+    operatingCashFlow, capitalExpenditures, freeCashFlow,
+    fiscalPeriod: r.fiscal_period,
+    fiscalYear: r.fiscal_year,
+    endDate: r.end_date,
+    filingDate: r.filing_date,
+    companyName: r.company_name,
+    timeframe: r.timeframe,
+  };
+}
+
+export async function getStockFinancials(
+  symbol: string,
+  timeframe: 'annual' | 'quarterly' | 'ttm' = 'annual',
+  limit = 5
+): Promise<StockFinancials[]> {
+  return withCache(`polygon:financials:${symbol}:${timeframe}:${limit}`, TTL.FUNDAMENTALS, async () => {
+    const url = polygonUrl('/vX/reference/financials', {
+      ticker: symbol,
+      timeframe,
+      limit: limit.toString(),
+      order: 'desc',
+      sort: 'period_of_report_date',
+    });
+    const data = await fetchJson<PolygonFinancialsResponse>(url, { provider: 'Polygon' });
+    if (!data.results) return [];
+    return data.results.map(mapFinancialResult);
+  });
+}

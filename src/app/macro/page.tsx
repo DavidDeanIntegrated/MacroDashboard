@@ -196,7 +196,10 @@ const INDICATOR_INFO: Record<string, IndicatorInfo> = {
 };
 
 export default function MacroPage() {
-  const { data, error, loading, refresh } = useApi<MacroDashboard>('/api/fred?action=dashboard');
+  const [bustCache, setBustCache] = useState(false);
+  const { data, error, loading, refresh } = useApi<MacroDashboard>(
+    `/api/fred?action=dashboard${bustCache ? '&bust=1' : ''}`
+  );
   const { data: yieldCurve } = useYieldCurve();
   const [period, setPeriod] = useState<ChartPeriod>('3Y');
   const [expandedIndicator, setExpandedIndicator] = useState<string | null>(null);
@@ -226,10 +229,12 @@ export default function MacroPage() {
       const releasesToday = releaseCalendar.filter((r) => r.releaseDate === todayStr);
       if (releasesToday.length > 0) {
         // If it's after 8:30 AM ET (typical release time) and we haven't refreshed for this date
-        const etHour = now.getUTCHours() - 5; // rough ET offset
+        // Use Intl to get correct ET offset (handles DST automatically)
+        const etTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+        const etHour = etTime.getHours();
         if (etHour >= 8 && lastAutoRefresh.current !== todayStr) {
           lastAutoRefresh.current = todayStr;
-          refresh();
+          setBustCache(true); // bust cache on release day
         }
       }
     };

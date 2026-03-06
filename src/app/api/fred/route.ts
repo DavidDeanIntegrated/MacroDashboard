@@ -7,6 +7,7 @@ import {
   getUpcomingReleaseDates,
   FRED_SERIES,
 } from '@/lib/fred';
+import { invalidatePrefix } from '@/lib/cache';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -66,6 +67,10 @@ export async function GET(request: NextRequest) {
       }
 
       case 'dashboard': {
+        // Bust FRED cache if requested (e.g., on release day refresh)
+        if (searchParams.get('bust') === '1') {
+          invalidatePrefix('fred:');
+        }
         // Fetch all key macro indicators in parallel
         const seriesMap = {
           fedFunds: FRED_SERIES.FED_FUNDS,
