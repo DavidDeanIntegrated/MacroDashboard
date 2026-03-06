@@ -7,8 +7,10 @@ import {
   getCandles,
   getEarnings,
   getInsiderTransactions,
+  getBasicFinancials,
 } from '@/lib/finnhub';
 import { getNews as getAlpacaNews } from '@/lib/alpaca';
+import { computeFundamentalsScore, computeAllScores } from '@/lib/fundamentals-score';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -87,9 +89,31 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(transactions);
       }
 
+      case 'metrics': {
+        const symbol = searchParams.get('symbol');
+        if (!symbol) return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
+        const metrics = await getBasicFinancials(symbol);
+        return NextResponse.json(metrics);
+      }
+
+      case 'fundamentals-score': {
+        const symbol = searchParams.get('symbol');
+        if (symbol) {
+          const score = await computeFundamentalsScore(symbol);
+          return NextResponse.json(score);
+        }
+        // Batch: pass comma-separated symbols
+        const symbols = searchParams.get('symbols')?.split(',') || [];
+        if (symbols.length === 0) {
+          return NextResponse.json({ error: 'Missing symbol or symbols' }, { status: 400 });
+        }
+        const scores = await computeAllScores(symbols);
+        return NextResponse.json(scores);
+      }
+
       default:
         return NextResponse.json(
-          { error: 'Invalid action. Use: quote, profile, news, candles, earnings, insider' },
+          { error: 'Invalid action. Use: quote, profile, news, candles, earnings, insider, metrics, fundamentals-score' },
           { status: 400 }
         );
     }

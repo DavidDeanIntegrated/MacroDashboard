@@ -239,3 +239,47 @@ export async function getEarnings(
     )
   );
 }
+
+// ─── Basic Financials (Valuation Metrics) ───
+
+export interface BasicFinancials {
+  peRatio: number | null;
+  pbRatio: number | null;
+  psRatio: number | null;
+  roe: number | null;
+  currentRatio: number | null;
+  revenueGrowthTTM: number | null;
+  epsGrowthTTM: number | null;
+  dividendYield: number | null;
+  beta: number | null;
+  '52WeekHigh': number | null;
+  '52WeekLow': number | null;
+}
+
+export async function getBasicFinancials(
+  symbol: string
+): Promise<BasicFinancials> {
+  return withCache(`finnhub:metrics:${symbol}`, TTL.FUNDAMENTALS, async () => {
+    const data = await fetchJson<{
+      metric: Record<string, number | null>;
+    }>(
+      finnhubUrl('/stock/metric', { symbol, metric: 'all' }),
+      { provider: 'Finnhub' }
+    );
+
+    const m = data.metric || {};
+    return {
+      peRatio: m['peBasicExclExtraTTM'] ?? m['peTTM'] ?? null,
+      pbRatio: m['pbAnnual'] ?? m['pbQuarterly'] ?? null,
+      psRatio: m['psTTM'] ?? m['psAnnual'] ?? null,
+      roe: m['roeTTM'] ?? m['roeRfy'] ?? null,
+      currentRatio: m['currentRatioAnnual'] ?? m['currentRatioQuarterly'] ?? null,
+      revenueGrowthTTM: m['revenueGrowthTTMYoy'] ?? null,
+      epsGrowthTTM: m['epsGrowthTTMYoy'] ?? null,
+      dividendYield: m['dividendYieldIndicatedAnnual'] ?? null,
+      beta: m['beta'] ?? null,
+      '52WeekHigh': m['52WeekHigh'] ?? null,
+      '52WeekLow': m['52WeekLow'] ?? null,
+    };
+  });
+}

@@ -4,8 +4,9 @@ import { useState, useMemo } from 'react';
 import { Card, CardTitle, MetricCard } from '@/components/ui/Card';
 import { LoadingPage } from '@/components/ui/Loading';
 import { Badge } from '@/components/ui/Badge';
+import { FundamentalsScoreSection } from '@/components/FundamentalsScoreCard';
 import { TimeSeriesChart, MultiSeriesChart } from '@/components/charts/TimeSeriesChart';
-import { useMultiAggregates, useApi } from '@/lib/hooks';
+import { useMultiAggregates, useApi, useFundamentalsScores } from '@/lib/hooks';
 import { WATCHLIST, WATCHLIST_CATEGORY_CONFIG } from '@/lib/holdings';
 
 type AnalyticsPeriod = '1M' | '3M' | '6M' | '1Y';
@@ -184,6 +185,10 @@ export default function WatchlistAnalyticsPage() {
     vix: Array<{ date: string; value: number }>;
     highYieldSpread: Array<{ date: string; value: number }>;
   }>('/api/fred?action=dashboard');
+
+  // Fundamentals scores for watchlist stocks
+  const watchFundSymbols = useMemo(() => WATCH_STOCKS.map((h) => h.symbol), []);
+  const { data: watchFundScores, loading: fundScoresLoading } = useFundamentalsScores(watchFundSymbols);
 
   if (loading) return <LoadingPage />;
 
@@ -965,6 +970,15 @@ export default function WatchlistAnalyticsPage() {
               Volatility signals work best as a complement to fundamental analysis, not a replacement. They tell you about market sentiment and positioning, not intrinsic value. Always size positions inversely to volatility — smaller positions in high-vol names.
             </p>
           </Card>
+
+      {/* ─── FUNDAMENTAL ANALYSIS SCORES ─── */}
+      <FundamentalsScoreSection
+        scores={watchFundScores}
+        loading={fundScoresLoading}
+        title="Fundamental Analysis Scores"
+        subtitle="Composite score (0-100) for each watchlist stock based on profitability, growth, valuation, financial health, and earnings quality"
+      />
+
         </>
       )}
     </div>

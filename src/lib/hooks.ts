@@ -327,3 +327,50 @@ export function usePortfolioDividends(symbols: string[]) {
     type: string;
   }>>(syms ? `/api/polygon?action=portfolio-dividends&symbols=${syms}` : null);
 }
+
+// ─── Fundamentals Score ───
+
+export function useFundamentalsScores(symbols: string[]) {
+  const syms = symbols.join(',');
+  return useApi<Array<{
+    symbol: string;
+    total: number;
+    grade: 'Strong Buy' | 'Buy' | 'Hold' | 'Weak' | 'Poor';
+    gradeColor: string;
+    breakdown: {
+      profitabilityPts: number;
+      profitabilityMax: number;
+      profitabilityDetail: {
+        netMarginPts: number; grossMarginPts: number; roePts: number;
+        netMargin: number | null; grossMargin: number | null; roe: number | null;
+      };
+      growthPts: number;
+      growthMax: number;
+      growthDetail: {
+        revenueGrowthPts: number; epsGrowthPts: number;
+        revenueGrowth: number | null; epsGrowth: number | null;
+      };
+      valuationPts: number;
+      valuationMax: number;
+      valuationDetail: {
+        pePts: number; pbPts: number; psPts: number;
+        pe: number | null; pb: number | null; ps: number | null;
+      };
+      healthPts: number;
+      healthMax: number;
+      healthDetail: {
+        debtEquityPts: number; currentRatioPts: number; cashDebtPts: number;
+        debtToEquity: number | null; currentRatio: number | null; cashToDebt: number | null;
+      };
+      earningsQualityPts: number;
+      earningsQualityMax: number;
+      earningsQualityDetail: {
+        beatRatePts: number; surprisePts: number;
+        beatRate: number | null; avgSurprise: number | null; quartersAnalyzed: number;
+      };
+    };
+    rationale: string;
+    unavailable?: boolean;
+    unavailableReason?: string;
+  }>>(syms ? `/api/finnhub?action=fundamentals-score&symbols=${syms}` : null);
+}

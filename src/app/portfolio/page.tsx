@@ -1,14 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, CardTitle, MetricCard } from '@/components/ui/Card';
 import { LoadingPage, ErrorState, EmptyState } from '@/components/ui/Loading';
 import { Badge, TrendIndicator } from '@/components/ui/Badge';
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart';
 import { AllocationPieChart } from '@/components/charts/AllocationPieChart';
-import { usePortfolio, usePortfolioChart, usePolygonAggregates, usePolygonRSI, usePortfolioDividends, useWatchlist } from '@/lib/hooks';
+import { FundamentalsScoreSection } from '@/components/FundamentalsScoreCard';
+import { usePortfolio, usePortfolioChart, usePolygonAggregates, usePolygonRSI, usePortfolioDividends, useWatchlist, useFundamentalsScores } from '@/lib/hooks';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/format';
-import { CATEGORY_CONFIG, HOLDINGS, WATCHLIST_CATEGORY_CONFIG } from '@/lib/holdings';
+import { CATEGORY_CONFIG, HOLDINGS, WATCHLIST, WATCHLIST_CATEGORY_CONFIG } from '@/lib/holdings';
 import type { PolygonTimeframe } from '@/lib/polygon';
 
 // Map badge variants to hex colors for the pie chart
@@ -62,12 +63,20 @@ export default function PortfolioPage() {
   const { data: rsiData } = usePolygonRSI(selectedSymbol && selectedSymbol !== 'BTC' ? selectedSymbol : null);
   const { data: dividends } = usePortfolioDividends(HOLDINGS.map((h) => h.symbol));
 
+  // Fundamentals scores for portfolio holdings
+  const portfolioSymbols = useMemo(() => HOLDINGS.map((h) => h.symbol), []);
+  const { data: portfolioScores, loading: scoresLoading } = useFundamentalsScores(portfolioSymbols);
+
   // Watchlist
   const { data: watchlist } = useWatchlist();
   const [watchSelectedSymbol, setWatchSelectedSymbol] = useState<string | null>(null);
   const [watchChartTimeframe, setWatchChartTimeframe] = useState<PolygonTimeframe>('1day');
   const { data: watchChartData } = usePolygonAggregates(watchSelectedSymbol, watchChartTimeframe);
   const { data: watchRsiData } = usePolygonRSI(watchSelectedSymbol);
+
+  // Fundamentals scores for watchlist stocks
+  const watchlistSymbols = useMemo(() => WATCHLIST.map((w) => w.symbol), []);
+  const { data: watchlistScores, loading: watchScoresLoading } = useFundamentalsScores(watchlistSymbols);
 
   if (loading) return <LoadingPage />;
   if (error) return <ErrorState message={error} onRetry={refresh} />;
@@ -359,6 +368,14 @@ export default function PortfolioPage() {
         </Card>
       )}
 
+      {/* Fundamentals Score — Portfolio */}
+      <FundamentalsScoreSection
+        scores={portfolioScores}
+        loading={scoresLoading}
+        title="Portfolio Fundamental Scores"
+        subtitle="Composite fundamental analysis for your held positions — ranked by score"
+      />
+
       {/* Dividend Calendar */}
       {dividends && dividends.length > 0 && (
         <Card padding="none">
@@ -576,6 +593,14 @@ export default function PortfolioPage() {
               )}
             </Card>
           )}
+
+          {/* Fundamentals Score — Watchlist */}
+          <FundamentalsScoreSection
+            scores={watchlistScores}
+            loading={watchScoresLoading}
+            title="Watchlist Fundamental Scores"
+            subtitle="Composite fundamental analysis for watched stocks — ranked by score"
+          />
         </>
       )}
     </div>
