@@ -21,6 +21,12 @@ interface MacroDashboard {
   highYieldSpread: Array<{ date: string; value: number }>;
   industrialProduction: Array<{ date: string; value: number }>;
   vix: Array<{ date: string; value: number }>;
+  lei: Array<{ date: string; value: number }>;
+  consumerSentiment: Array<{ date: string; value: number }>;
+  buildingPermits: Array<{ date: string; value: number }>;
+  ismManufacturing: Array<{ date: string; value: number }>;
+  initialClaims: Array<{ date: string; value: number }>;
+  m2: Array<{ date: string; value: number }>;
   regime: {
     regime: string;
     label: string;
@@ -193,6 +199,100 @@ const INDICATOR_INFO: Record<string, IndicatorInfo> = {
       return { regime: 'Extreme Complacency', badge: 'blue', explanation: 'VIX below 12 signals extreme complacency. Markets are pricing in near-zero risk. Historically, this level precedes volatility spikes and corrections.' };
     },
   },
+  USSLIND: {
+    key: 'USSLIND',
+    label: FRED_SERIES_NAMES['USSLIND'],
+    description:
+      'The Conference Board Leading Economic Index (LEI) — a composite of 10 leading indicators including initial claims, building permits, stock prices, and the yield curve. The single most reliable composite recession predictor. 6+ consecutive monthly declines have preceded every modern recession.',
+    regimeSignal: (v) => {
+      // LEI is an index level; the YoY % change is what matters most, but we signal on trend direction
+      // using recent absolute level relative to historical norms
+      if (v < 98)
+        return { regime: 'Contraction signal', badge: 'red', explanation: 'LEI well below its recent highs, signaling sustained economic weakness. Historically this precedes or confirms recession.' };
+      if (v < 102)
+        return { regime: 'Slowing', badge: 'orange', explanation: 'LEI has declined from peaks, suggesting the economy is losing momentum. Watch for sustained consecutive declines.' };
+      if (v < 108)
+        return { regime: 'Stable Growth', badge: 'green', explanation: 'LEI at a healthy level, consistent with moderate economic expansion. No recession signal.' };
+      return { regime: 'Strong Expansion', badge: 'blue', explanation: 'LEI at elevated levels reflects broad economic strength across its 10 component indicators.' };
+    },
+  },
+  UMCSENT: {
+    key: 'UMCSENT',
+    label: FRED_SERIES_NAMES['UMCSENT'],
+    description:
+      'The University of Michigan Consumer Sentiment Index measures household confidence in economic conditions. Collapses in sentiment lead consumer spending pullbacks (spending = 70% of GDP). Readings below 60 have historically coincided with recessions.',
+    regimeSignal: (v) => {
+      if (v < 55)
+        return { regime: 'Recession-level pessimism', badge: 'red', explanation: 'Consumer sentiment at crisis levels. Consumers are pulling back, which leads to reduced spending and economic contraction.' };
+      if (v < 70)
+        return { regime: 'Pessimistic', badge: 'orange', explanation: 'Below-average sentiment suggests consumers feel squeezed — typically by inflation, job uncertainty, or rising rates.' };
+      if (v < 90)
+        return { regime: 'Neutral / Cautious', badge: 'neutral', explanation: 'Moderate sentiment. Consumers are neither euphoric nor panicking. Spending growth likely moderate.' };
+      return { regime: 'Optimistic', badge: 'green', explanation: 'High consumer confidence supports robust spending growth. Often seen during strong job markets with contained inflation.' };
+    },
+  },
+  PERMIT: {
+    key: 'PERMIT',
+    label: FRED_SERIES_NAMES['PERMIT'],
+    description:
+      'New privately-owned housing units authorized by building permits. Housing is the most interest-rate-sensitive sector and one of the earliest indicators to turn. Permits drop 12-18 months before recession as higher rates choke off demand.',
+    regimeSignal: (v) => {
+      // Building permits in thousands of units (SAAR)
+      if (v < 1000)
+        return { regime: 'Housing contraction', badge: 'red', explanation: 'Permits below 1M signal severe housing weakness. Historically seen only in recessions (2008-2009, 2020). Massive drag on GDP.' };
+      if (v < 1300)
+        return { regime: 'Cooling', badge: 'orange', explanation: 'Permits declining from cycle highs. Higher rates are dampening housing activity. Leading indicator of broader economic slowing.' };
+      if (v < 1600)
+        return { regime: 'Healthy', badge: 'green', explanation: 'Permits at healthy levels consistent with balanced housing supply. Supports construction employment and GDP growth.' };
+      return { regime: 'Housing boom', badge: 'blue', explanation: 'Very high permit levels signal strong housing demand. Often driven by low rates. Watch for overbuilding risk.' };
+    },
+  },
+  MANEMP: {
+    key: 'MANEMP',
+    label: 'ISM Manufacturing Employment',
+    description:
+      'The ISM Manufacturing Employment Index measures hiring in the manufacturing sector. Part of the broader ISM PMI suite. Above 50 signals expansion in manufacturing employment; below 50 signals contraction. Manufacturing leads the business cycle.',
+    regimeSignal: (v) => {
+      if (v < 45)
+        return { regime: 'Deep contraction', badge: 'red', explanation: 'Manufacturing employment contracting sharply. Factories cutting workers — strong recession signal for the industrial economy.' };
+      if (v < 50)
+        return { regime: 'Contraction', badge: 'orange', explanation: 'Manufacturing employment shrinking. Below the critical 50 threshold. Watch for spillover into services sector.' };
+      if (v < 55)
+        return { regime: 'Moderate expansion', badge: 'green', explanation: 'Manufacturing employment growing modestly. Consistent with a healthy industrial sector and steady GDP growth.' };
+      return { regime: 'Strong expansion', badge: 'blue', explanation: 'Robust manufacturing hiring signals strong industrial demand. Typically seen during early-to-mid cycle recoveries.' };
+    },
+  },
+  ICSA: {
+    key: 'ICSA',
+    label: FRED_SERIES_NAMES['ICSA'],
+    description:
+      'Weekly new unemployment insurance filings — the most timely labor market indicator. Rising claims are one of the earliest recession signals. The 4-week moving average smooths volatility. Claims above 300K sustained have preceded every modern recession.',
+    regimeSignal: (v) => {
+      // ICSA is in thousands
+      if (v > 350)
+        return { regime: 'Recession warning', badge: 'red', explanation: 'Initial claims above 350K signal significant layoffs. Sustained at this level, every historical instance has coincided with recession.' };
+      if (v > 260)
+        return { regime: 'Rising layoffs', badge: 'orange', explanation: 'Claims trending above normal. Labor market softening — layoffs are picking up. Early warning signal for broader weakness.' };
+      if (v > 200)
+        return { regime: 'Healthy', badge: 'green', explanation: 'Claims in the 200-260K range signal a normal, healthy labor market with low layoff activity.' };
+      return { regime: 'Very tight market', badge: 'blue', explanation: 'Claims below 200K signal extremely tight labor conditions. Very few layoffs — employers are hoarding workers.' };
+    },
+  },
+  M2SL: {
+    key: 'M2SL',
+    label: FRED_SERIES_NAMES['M2SL'],
+    description:
+      'M2 money supply includes cash, checking deposits, savings, and money market funds. Rapid M2 growth (2020-21) preceded the inflation surge. M2 contraction in 2022-23 (first since 1930s) preceded disinflation. Money supply leads inflation by 12-18 months.',
+    regimeSignal: (v) => {
+      // M2 is in billions — we show it as-is but the trend matters more than the level
+      // Use rough thresholds based on recent historical ranges
+      if (v < 18000)
+        return { regime: 'Tight liquidity', badge: 'orange', explanation: 'M2 contracting or at low levels relative to GDP. Reduced liquidity headwind for asset prices. Deflationary pressure building.' };
+      if (v < 21000)
+        return { regime: 'Normal', badge: 'green', explanation: 'M2 at moderate levels. Money supply growth consistent with stable prices and healthy credit conditions.' };
+      return { regime: 'Excess liquidity', badge: 'blue', explanation: 'Very high M2 levels. Excess liquidity supports asset prices in the near term but may feed inflation with a 12-18 month lag.' };
+    },
+  },
 };
 
 export default function MacroPage() {
@@ -274,6 +374,12 @@ export default function MacroPage() {
     { info: INDICATOR_INFO['UNRATE'], data: data.unemployment, suffix: '%' },
     { info: INDICATOR_INFO['BAMLH0A0HYM2'], data: data.highYieldSpread, suffix: '%' },
     { info: INDICATOR_INFO['VIXCLS'], data: data.vix, suffix: '' },
+    { info: INDICATOR_INFO['USSLIND'], data: data.lei, suffix: '' },
+    { info: INDICATOR_INFO['UMCSENT'], data: data.consumerSentiment, suffix: '' },
+    { info: INDICATOR_INFO['PERMIT'], data: data.buildingPermits, suffix: 'K' },
+    { info: INDICATOR_INFO['MANEMP'], data: data.ismManufacturing, suffix: '' },
+    { info: INDICATOR_INFO['ICSA'], data: data.initialClaims, suffix: 'K' },
+    { info: INDICATOR_INFO['M2SL'], data: data.m2, suffix: 'B' },
   ];
 
   return (
@@ -703,6 +809,105 @@ export default function MacroPage() {
           Measures real output from manufacturing, mining, and utilities. A rising trend confirms expansion; sustained declines signal contraction. Tends to peak before recessions and trough before recoveries.
         </p>
       </Card>
+
+      {/* ═══ Leading Indicators Section ═══ */}
+      <div className="pt-4 border-t border-black/[0.06]">
+        <h3 className="text-lg font-semibold text-black/75 tracking-tight mb-1">Leading Economic Indicators</h3>
+        <p className="text-xs text-black/40">Forward-looking signals that anticipate economic turning points</p>
+      </div>
+
+      {/* LEI + Consumer Sentiment */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardTitle>Conference Board LEI</CardTitle>
+          <TimeSeriesChart
+            data={filterByPeriod(data.lei, period)}
+            color="#5856D6"
+            height={250}
+            gradientId="lei"
+            valueFormatter={(v) => formatNumber(v, { decimals: 1 })}
+          />
+          <p className="text-xs text-black/40 mt-3 leading-relaxed">
+            Composite of 10 leading indicators (initial claims, building permits, stock prices, yield curve, etc.). Six or more consecutive monthly declines have preceded every modern U.S. recession. The single best composite recession predictor.
+          </p>
+        </Card>
+
+        <Card>
+          <CardTitle>Consumer Sentiment (UMich)</CardTitle>
+          <TimeSeriesChart
+            data={filterByPeriod(data.consumerSentiment, period)}
+            color="#FF9500"
+            height={250}
+            gradientId="umcsent"
+            valueFormatter={(v) => formatNumber(v, { decimals: 1 })}
+          />
+          <p className="text-xs text-black/40 mt-3 leading-relaxed">
+            University of Michigan survey measuring household confidence. Consumer spending is 70% of GDP — when sentiment collapses, spending follows. Readings below 60 have historically coincided with recessions.
+          </p>
+        </Card>
+      </div>
+
+      {/* ISM Manufacturing + Initial Claims */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardTitle>ISM Manufacturing Employment</CardTitle>
+          <TimeSeriesChart
+            data={filterByPeriod(data.ismManufacturing, period)}
+            color="#007AFF"
+            height={250}
+            gradientId="ismMfg"
+            valueFormatter={(v) => formatNumber(v, { decimals: 1 })}
+          />
+          <p className="text-xs text-black/40 mt-3 leading-relaxed">
+            Above 50 = manufacturing employment expanding; below 50 = contracting. Manufacturing leads the business cycle — when factories cut workers, broader layoffs often follow. Sustained readings below 50 are a recession warning.
+          </p>
+        </Card>
+
+        <Card>
+          <CardTitle>Initial Jobless Claims (Weekly)</CardTitle>
+          <TimeSeriesChart
+            data={filterByPeriod(data.initialClaims, period)}
+            color="#FF3B30"
+            height={250}
+            gradientId="icsa"
+            valueFormatter={(v) => `${formatNumber(v, { decimals: 0 })}K`}
+          />
+          <p className="text-xs text-black/40 mt-3 leading-relaxed">
+            The most timely labor market indicator — released weekly. Rising claims above 300K sustained have preceded every modern recession. The 4-week moving average smooths weekly volatility for clearer trend signals.
+          </p>
+        </Card>
+      </div>
+
+      {/* Building Permits + M2 Money Supply */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardTitle>Building Permits</CardTitle>
+          <TimeSeriesChart
+            data={filterByPeriod(data.buildingPermits, period)}
+            color="#34C759"
+            height={250}
+            gradientId="permits"
+            valueFormatter={(v) => `${formatNumber(v, { decimals: 0 })}K`}
+          />
+          <p className="text-xs text-black/40 mt-3 leading-relaxed">
+            Housing is the most rate-sensitive sector. Permits drop 12-18 months before recession as higher borrowing costs choke off demand. Below 1M signals severe housing weakness; above 1.5M signals healthy construction activity.
+          </p>
+        </Card>
+
+        <Card>
+          <CardTitle>M2 Money Supply</CardTitle>
+          <TimeSeriesChart
+            data={filterByPeriod(data.m2, period)}
+            color="#AF52DE"
+            height={250}
+            gradientId="m2"
+            valueFormatter={(v) => `$${formatNumber(v / 1000, { decimals: 1 })}T`}
+          />
+          <p className="text-xs text-black/40 mt-3 leading-relaxed">
+            M2 includes cash, checking, savings, and money market funds. Rapid M2 growth (2020-21) preceded the inflation surge; contraction in 2022-23 (first since 1930s) preceded disinflation. Money supply leads inflation by 12-18 months.
+          </p>
+        </Card>
+      </div>
 
       {/* Market Regime Scenarios */}
       <Card>

@@ -82,6 +82,12 @@ export async function GET(request: NextRequest) {
           highYieldSpread: FRED_SERIES.HIGH_YIELD_SPREAD,
           industrialProduction: FRED_SERIES.INDUSTRIAL_PRODUCTION,
           vix: FRED_SERIES.VIX,
+          lei: FRED_SERIES.LEI,
+          consumerSentiment: FRED_SERIES.CONSUMER_SENTIMENT,
+          buildingPermits: FRED_SERIES.BUILDING_PERMITS,
+          ismManufacturing: FRED_SERIES.ISM_MANUFACTURING,
+          initialClaims: FRED_SERIES.INITIAL_CLAIMS,
+          m2: FRED_SERIES.M2,
         };
 
         const entries = Object.entries(seriesMap);
