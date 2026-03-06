@@ -422,7 +422,7 @@ export async function getPortfolioChart(
   if (isIntraday) {
     // Use 5-minute bars for intraday
     const today = new Date().toISOString().split('T')[0];
-    const [stockBars, btcBars] = await Promise.all([
+    const [stockBars, btcBars, prevCloses] = await Promise.all([
       Promise.all(
         stockSymbols.map((h) =>
           getHistoricalBars(h.symbol, '5Min', today, undefined, 200)
@@ -431,6 +431,14 @@ export async function getPortfolioChart(
         )
       ),
       btcHolding ? fetchBtcIntradayBars() : Promise.resolve(new Map<string, number>()),
+      // Fetch previous close for each holding so chart baseline matches day change
+      Promise.all(
+        HOLDINGS.map((h) =>
+          fetchPrice(h.symbol)
+            .then((pd) => ({ symbol: h.symbol, prevClose: pd.prevClose }))
+            .catch(() => ({ symbol: h.symbol, prevClose: 0 }))
+        )
+      ),
     ]);
 
     // Build a map: timestamp → { symbol → close }
@@ -457,11 +465,28 @@ export async function getPortfolioChart(
       });
     }
 
+    // Compute previous-close portfolio value as baseline
+    const prevCloseMap = new Map<string, number>();
+    let prevCloseTotal = 0;
+    for (const { symbol, prevClose } of prevCloses) {
+      prevCloseMap.set(symbol, prevClose);
+      const holding = HOLDINGS.find((h) => h.symbol === symbol);
+      if (holding) prevCloseTotal += holding.qty * prevClose;
+    }
+
     const sortedDates = Array.from(dateMap.keys()).sort();
     const lastKnown = new Map<string, number>();
     const totalHoldings = HOLDINGS.length;
 
     const result: Array<{ date: string; value: number }> = [];
+
+    // Prepend previous close as the starting point so chart % matches day change
+    if (prevCloseTotal > 0 && sortedDates.length > 0) {
+      const firstTs = new Date(sortedDates[0]);
+      firstTs.setMinutes(firstTs.getMinutes() - 5);
+      result.push({ date: firstTs.toISOString(), value: Math.round(prevCloseTotal * 100) / 100 });
+    }
+
     for (const ts of sortedDates) {
       const prices = dateMap.get(ts)!;
       prices.forEach((price, symbol) => lastKnown.set(symbol, price));
