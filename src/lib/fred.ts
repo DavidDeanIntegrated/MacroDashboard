@@ -52,7 +52,7 @@ export const FRED_SERIES = {
   CASE_SHILLER: 'CSUSHPISA',
 
   // Leading indicators
-  LEI: 'USSLIND',
+  LEI: 'USALOLITONOSTSAM',
   CONSUMER_SENTIMENT: 'UMCSENT',
   BUILDING_PERMITS: 'PERMIT',
   ISM_MANUFACTURING: 'MANEMP',
@@ -93,7 +93,7 @@ export const FRED_SERIES_NAMES: Record<string, string> = {
   VIXCLS: 'CBOE Volatility Index (VIX)',
   M2SL: 'M2 Money Supply',
   CSUSHPISA: 'Case-Shiller Home Price',
-  USSLIND: 'Conference Board LEI',
+  USALOLITONOSTSAM: 'OECD Leading Indicator (US)',
   UMCSENT: 'Consumer Sentiment (UMich)',
   PERMIT: 'Building Permits',
   MANEMP: 'ISM Manufacturing Employment',
@@ -233,7 +233,7 @@ export const FRED_RELEASE_IDS: Record<string, { releaseId: number; name: string;
   DGS10:         { releaseId: 18,  name: '10Y Treasury',        frequency: 'Daily',            source: 'Treasury' },
   DGS2:          { releaseId: 18,  name: '2Y Treasury',         frequency: 'Daily',            source: 'Treasury' },
   T10Y2Y:        { releaseId: 18,  name: '10Y-2Y Spread',       frequency: 'Daily',            source: 'Treasury' },
-  USSLIND:       { releaseId: 11,  name: 'Leading Econ Index',   frequency: 'Monthly',          source: 'Conference Board' },
+  USALOLITONOSTSAM: { releaseId: 352, name: 'OECD Leading Indicator', frequency: 'Monthly',       source: 'OECD' },
   UMCSENT:       { releaseId: 492, name: 'Consumer Sentiment',   frequency: 'Monthly',          source: 'UMich' },
   PERMIT:        { releaseId: 29,  name: 'Building Permits',     frequency: 'Monthly',          source: 'Census Bureau' },
   MANEMP:        { releaseId: 14,  name: 'ISM Manufacturing',    frequency: 'Monthly',          source: 'ISM' },

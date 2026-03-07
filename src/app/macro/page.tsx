@@ -199,21 +199,20 @@ const INDICATOR_INFO: Record<string, IndicatorInfo> = {
       return { regime: 'Extreme Complacency', badge: 'blue', explanation: 'VIX below 12 signals extreme complacency. Markets are pricing in near-zero risk. Historically, this level precedes volatility spikes and corrections.' };
     },
   },
-  USSLIND: {
-    key: 'USSLIND',
-    label: FRED_SERIES_NAMES['USSLIND'],
+  USALOLITONOSTSAM: {
+    key: 'USALOLITONOSTSAM',
+    label: FRED_SERIES_NAMES['USALOLITONOSTSAM'],
     description:
-      'The Conference Board Leading Economic Index (LEI) — a composite of 10 leading indicators including initial claims, building permits, stock prices, and the yield curve. The single most reliable composite recession predictor. 6+ consecutive monthly declines have preceded every modern recession.',
+      'The OECD Composite Leading Indicator for the United States — designed to anticipate turning points in economic activity relative to trend. Indexed to 100: above 100 signals expansion above trend, below 100 signals contraction below trend. Includes components like yield curve, building permits, stock prices, and manufacturing orders.',
     regimeSignal: (v) => {
-      // LEI is an index level; the YoY % change is what matters most, but we signal on trend direction
-      // using recent absolute level relative to historical norms
-      if (v < 98)
-        return { regime: 'Contraction signal', badge: 'red', explanation: 'LEI well below its recent highs, signaling sustained economic weakness. Historically this precedes or confirms recession.' };
-      if (v < 102)
-        return { regime: 'Slowing', badge: 'orange', explanation: 'LEI has declined from peaks, suggesting the economy is losing momentum. Watch for sustained consecutive declines.' };
-      if (v < 108)
-        return { regime: 'Stable Growth', badge: 'green', explanation: 'LEI at a healthy level, consistent with moderate economic expansion. No recession signal.' };
-      return { regime: 'Strong Expansion', badge: 'blue', explanation: 'LEI at elevated levels reflects broad economic strength across its 10 component indicators.' };
+      // OECD CLI is indexed at 100 = long-term trend
+      if (v < 98.5)
+        return { regime: 'Contraction signal', badge: 'red', explanation: 'CLI well below 100 signals the economy is contracting relative to trend. Historically precedes or coincides with recession.' };
+      if (v < 99.5)
+        return { regime: 'Slowing', badge: 'orange', explanation: 'CLI declining toward 100 suggests growth is losing momentum. Watch for sustained declines below trend.' };
+      if (v < 101)
+        return { regime: 'Stable Growth', badge: 'green', explanation: 'CLI near or above 100 indicates the economy is growing at or above trend. No recession signal.' };
+      return { regime: 'Strong Expansion', badge: 'blue', explanation: 'CLI well above 100 reflects broad economic strength above the long-term trend.' };
     },
   },
   UMCSENT: {
@@ -374,7 +373,7 @@ export default function MacroPage() {
     { info: INDICATOR_INFO['UNRATE'], data: data.unemployment, suffix: '%' },
     { info: INDICATOR_INFO['BAMLH0A0HYM2'], data: data.highYieldSpread, suffix: '%' },
     { info: INDICATOR_INFO['VIXCLS'], data: data.vix, suffix: '' },
-    { info: INDICATOR_INFO['USSLIND'], data: data.lei, suffix: '' },
+    { info: INDICATOR_INFO['USALOLITONOSTSAM'], data: data.lei, suffix: '' },
     { info: INDICATOR_INFO['UMCSENT'], data: data.consumerSentiment, suffix: '' },
     { info: INDICATOR_INFO['PERMIT'], data: data.buildingPermits, suffix: 'K' },
     { info: INDICATOR_INFO['MANEMP'], data: data.ismManufacturing, suffix: '' },
@@ -819,7 +818,7 @@ export default function MacroPage() {
       {/* LEI + Consumer Sentiment */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
-          <CardTitle>Conference Board LEI</CardTitle>
+          <CardTitle>OECD Leading Indicator (US)</CardTitle>
           <TimeSeriesChart
             data={filterByPeriod(data.lei, period)}
             color="#5856D6"
@@ -828,7 +827,7 @@ export default function MacroPage() {
             valueFormatter={(v) => formatNumber(v, { decimals: 1 })}
           />
           <p className="text-xs text-black/40 mt-3 leading-relaxed">
-            Composite of 10 leading indicators (initial claims, building permits, stock prices, yield curve, etc.). Six or more consecutive monthly declines have preceded every modern U.S. recession. The single best composite recession predictor.
+            OECD Composite Leading Indicator — designed to anticipate turning points relative to trend (100 = trend). Above 100 signals expansion; below 100 signals contraction. Components include yield curve, building permits, stock prices, and manufacturing orders.
           </p>
         </Card>
 
