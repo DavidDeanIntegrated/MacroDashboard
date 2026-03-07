@@ -244,7 +244,7 @@ export const WATCHLIST: WatchlistStock[] = [
   { symbol: 'LTRX',  category: 'IoT / Connectivity' },
   { symbol: 'OPTT',  category: 'Renewables' },
   { symbol: 'OPEN',  category: 'Real Estate Tech' },
-  { symbol: 'EQR',   category: 'Mining / Resources' },
+  { symbol: 'EQR',   category: 'REIT' },
   { symbol: 'TUN',   category: 'Mining / Resources' },
 ];
 
@@ -265,7 +265,8 @@ export const WATCHLIST_CATEGORY_CONFIG: Record<string, { order: number; badge: '
   'IoT / Connectivity': { order: 13, badge: 'neutral' },
   'Renewables':         { order: 14, badge: 'green' },
   'Real Estate Tech':   { order: 15, badge: 'neutral' },
-  'Mining / Resources':  { order: 16, badge: 'yellow' },
+  'REIT':                { order: 16, badge: 'neutral' },
+  'Mining / Resources':  { order: 17, badge: 'yellow' },
 };
 
 export interface WatchlistPosition {
