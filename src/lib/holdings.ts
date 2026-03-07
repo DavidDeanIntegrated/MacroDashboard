@@ -420,12 +420,19 @@ export async function getPortfolioChart(
   const btcHolding = HOLDINGS.find((h) => h.symbol === 'BTC');
 
   if (isIntraday) {
+    // On weekends/holidays, fetch the most recent trading day's bars instead of today
+    const now = new Date();
+    const dayOfWeek = now.getUTCDay(); // 0=Sun, 6=Sat
+    const barDate = new Date(now);
+    if (dayOfWeek === 0) barDate.setDate(barDate.getDate() - 2); // Sun → Fri
+    else if (dayOfWeek === 6) barDate.setDate(barDate.getDate() - 1); // Sat → Fri
+    const barDateStr = barDate.toISOString().split('T')[0];
+
     // Use 5-minute bars for intraday
-    const today = new Date().toISOString().split('T')[0];
     const [stockBars, btcBars, prevCloses] = await Promise.all([
       Promise.all(
         stockSymbols.map((h) =>
-          getHistoricalBars(h.symbol, '5Min', today, undefined, 200)
+          getHistoricalBars(h.symbol, '5Min', barDateStr, undefined, 200)
             .then((bars) => ({ symbol: h.symbol, bars }))
             .catch(() => ({ symbol: h.symbol, bars: [] as Array<{ date: string; close: number }> }))
         )
@@ -497,6 +504,17 @@ export async function getPortfolioChart(
       }
       result.push({ date: ts, value: Math.round(total * 100) / 100 });
     }
+
+    // If no intraday bars (weekend/holiday), show a flat line at prev close
+    if (result.length === 0 && prevCloseTotal > 0) {
+      const baseTime = new Date(barDateStr + 'T14:30:00.000Z'); // 9:30 AM ET
+      const endTime = new Date(barDateStr + 'T21:00:00.000Z');  // 4:00 PM ET
+      result.push(
+        { date: baseTime.toISOString(), value: Math.round(prevCloseTotal * 100) / 100 },
+        { date: endTime.toISOString(), value: Math.round(prevCloseTotal * 100) / 100 },
+      );
+    }
+
     return result;
   }
 
