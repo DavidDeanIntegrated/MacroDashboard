@@ -56,7 +56,7 @@
 // ETFs and crypto receive "N/A" since traditional fundamental analysis doesn't apply.
 
 import { getStockFinancials, getSnapshot, getTickerDetails, type StockFinancials } from './polygon';
-import { getEarnings, type EarningsEstimate } from './finnhub';
+import { getEarnings, getBasicFinancials, type EarningsEstimate, type BasicFinancials } from './finnhub';
 import { withCache, TTL } from './cache';
 
 // ─── Types ───
@@ -302,7 +302,7 @@ function computeFromPolygon(
   quarters: StockFinancials[],
   price: number,
   marketCap: number,
-) {
+): ComputedMetrics {
   // Use most recent annual for profitability and health
   const latest = annuals[0] || quarters[0];
   const prevAnnual = annuals[1] || null;
@@ -406,6 +406,49 @@ function computeFromPolygon(
   return { netMargin, grossMargin, roe, revenueGrowth, epsGrowth, pe, pb, ps, debtToEquity, currentRatio, cashToDebt };
 }
 
+// ─── Metrics type + Finnhub fallback ───
+
+interface ComputedMetrics {
+  netMargin: number | null;
+  grossMargin: number | null;
+  roe: number | null;
+  revenueGrowth: number | null;
+  epsGrowth: number | null;
+  pe: number | null;
+  pb: number | null;
+  ps: number | null;
+  debtToEquity: number | null;
+  currentRatio: number | null;
+  cashToDebt: number | null;
+}
+
+function emptyMetrics(): ComputedMetrics {
+  return {
+    netMargin: null, grossMargin: null, roe: null,
+    revenueGrowth: null, epsGrowth: null,
+    pe: null, pb: null, ps: null,
+    debtToEquity: null, currentRatio: null, cashToDebt: null,
+  };
+}
+
+/** Fill in any null metrics from Finnhub's pre-computed values */
+function backfillFromFinnhub(metrics: ComputedMetrics, fh: BasicFinancials): void {
+  // Valuation — Finnhub often has these even when Polygon lacks filings
+  if (metrics.pe === null && fh.peRatio !== null && fh.peRatio > 0) metrics.pe = fh.peRatio;
+  if (metrics.pb === null && fh.pbRatio !== null && fh.pbRatio > 0) metrics.pb = fh.pbRatio;
+  if (metrics.ps === null && fh.psRatio !== null && fh.psRatio > 0) metrics.ps = fh.psRatio;
+
+  // Profitability — ROE
+  if (metrics.roe === null && fh.roe !== null) metrics.roe = fh.roe;
+
+  // Growth
+  if (metrics.revenueGrowth === null && fh.revenueGrowthTTM !== null) metrics.revenueGrowth = fh.revenueGrowthTTM;
+  if (metrics.epsGrowth === null && fh.epsGrowthTTM !== null) metrics.epsGrowth = fh.epsGrowthTTM;
+
+  // Financial Health — current ratio
+  if (metrics.currentRatio === null && fh.currentRatio !== null) metrics.currentRatio = fh.currentRatio;
+}
+
 // ─── Main Scoring Function ───
 
 export async function computeFundamentalsScore(symbol: string): Promise<FundamentalsScore> {
@@ -424,32 +467,42 @@ export async function computeFundamentalsScore(symbol: string): Promise<Fundamen
   }
 
   return withCache(`fundamentals-score:${symbol}`, TTL.FUNDAMENTALS, async () => {
-    // Fetch all data from Polygon + Finnhub earnings in parallel
-    const [annuals, quarters, snapshot, tickerDetails, earnings] = await Promise.all([
+    // Fetch all data from Polygon + Finnhub in parallel
+    const [annuals, quarters, snapshot, tickerDetails, earnings, finnhubMetrics] = await Promise.all([
       getStockFinancials(symbol, 'annual', 3).catch(() => []),
       getStockFinancials(symbol, 'quarterly', 8).catch(() => []),
       getSnapshot(symbol).catch(() => null),
       getTickerDetails(symbol).catch(() => null),
       getEarnings(symbol).catch(() => []),
+      getBasicFinancials(symbol).catch(() => null),
     ]);
 
     const price = snapshot?.price ?? 0;
     const marketCap = tickerDetails?.marketCap ?? 0;
 
-    if (annuals.length === 0 && quarters.length === 0) {
+    const hasPolygonFinancials = annuals.length > 0 || quarters.length > 0;
+
+    if (!hasPolygonFinancials && !finnhubMetrics) {
       return {
         symbol,
         total: 0,
         grade: 'Hold' as const,
         gradeColor: 'bg-black/[0.04] text-black/45 border-black/[0.06]',
         breakdown: emptyBreakdown(),
-        rationale: 'No financial data available from Polygon for this stock.',
+        rationale: 'No financial data available for this stock.',
         unavailable: true,
         unavailableReason: 'No financial statements found',
       };
     }
 
-    const metrics = computeFromPolygon(annuals, quarters, price, marketCap);
+    const metrics = hasPolygonFinancials
+      ? computeFromPolygon(annuals, quarters, price, marketCap)
+      : emptyMetrics();
+
+    // Fill gaps with Finnhub pre-computed metrics where Polygon data is missing
+    if (finnhubMetrics) {
+      backfillFromFinnhub(metrics, finnhubMetrics);
+    }
 
     const profitability = scoreProfitability(metrics.netMargin, metrics.grossMargin, metrics.roe);
     const growth = scoreGrowth(metrics.revenueGrowth, metrics.epsGrowth);
