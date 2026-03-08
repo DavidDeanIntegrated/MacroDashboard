@@ -117,8 +117,18 @@ function ScoreDetail({ score }: { score: ScoreData }) {
       <div>
         <p className="text-xs font-semibold text-black/60 uppercase tracking-wider mb-1.5">Earnings Quality ({b.earningsQualityPts}/{b.earningsQualityMax})</p>
         <div className="space-y-1">
-          {metricRow('Beat Rate', b.earningsQualityDetail.beatRate, '%', b.earningsQualityDetail.beatRatePts, 10)}
-          {metricRow('Avg Surprise', b.earningsQualityDetail.avgSurprise, '%', b.earningsQualityDetail.surprisePts, 5)}
+          {metricRow(
+            b.earningsQualityDetail.avgSurprise !== null || b.earningsQualityDetail.beatRate === null ? 'Beat Rate' : 'EPS Trend',
+            b.earningsQualityDetail.beatRate, '%',
+            b.earningsQualityDetail.beatRatePts,
+            b.earningsQualityDetail.avgSurprise !== null || b.earningsQualityDetail.beatRate === null ? 10 : 7
+          )}
+          {metricRow(
+            b.earningsQualityDetail.avgSurprise !== null || b.earningsQualityDetail.beatRate === null ? 'Avg Surprise' : 'EPS Momentum',
+            b.earningsQualityDetail.avgSurprise, '%',
+            b.earningsQualityDetail.surprisePts,
+            b.earningsQualityDetail.avgSurprise !== null || b.earningsQualityDetail.beatRate === null ? 5 : 3
+          )}
           <div className="flex items-center justify-between text-xs">
             <span className="text-black/45">Quarters Analyzed</span>
             <span className="text-black/65">{b.earningsQualityDetail.quartersAnalyzed}</span>

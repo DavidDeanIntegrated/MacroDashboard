@@ -57,7 +57,7 @@
 
 import { getStockFinancials, getSnapshot, getTickerDetails, type StockFinancials } from './polygon';
 import { getEarnings, getBasicFinancials, type EarningsEstimate, type BasicFinancials } from './finnhub';
-import { getCompanyFundamentals, extractScoringMetrics, type EdgarScoringMetrics } from './edgar';
+import { getCompanyFundamentals, extractScoringMetrics, type EdgarScoringMetrics, type CompanyFundamentals } from './edgar';
 import { withCache, TTL } from './cache';
 
 // ─── Types ───
@@ -195,26 +195,69 @@ function scoreHealth(
 
 function scoreEarningsQuality(
   earnings: EarningsEstimate[],
+  edgarFundamentals?: CompanyFundamentals | null,
 ): { pts: number; beatRatePts: number; surprisePts: number; beatRate: number | null; avgSurprise: number | null; quartersAnalyzed: number } {
   const recent = earnings.filter((e) => e.actual !== null && e.estimate !== null).slice(-4);
-  if (recent.length === 0) {
-    return { pts: 0, beatRatePts: 0, surprisePts: 0, beatRate: null, avgSurprise: null, quartersAnalyzed: 0 };
+
+  // If Finnhub has earnings data, use beat rate + surprise
+  if (recent.length > 0) {
+    const beats = recent.filter((e) => (e.actual ?? 0) >= (e.estimate ?? 0)).length;
+    const beatRate = (beats / recent.length) * 100;
+    const surprises = recent
+      .filter((e) => e.surprisePercent !== null)
+      .map((e) => e.surprisePercent!);
+    const avgSurprise = surprises.length > 0
+      ? surprises.reduce((a, b) => a + b, 0) / surprises.length
+      : null;
+
+    const beatRatePts = beatRate >= 100 ? 10 : beatRate >= 75 ? 8 : beatRate >= 50 ? 5 : beatRate >= 25 ? 2 : 0;
+    const surprisePts = avgSurprise === null ? 0
+      : avgSurprise > 10 ? 5 : avgSurprise > 5 ? 4 : avgSurprise > 2 ? 3 : avgSurprise > 0 ? 1 : 0;
+
+    return { pts: beatRatePts + surprisePts, beatRatePts, surprisePts, beatRate, avgSurprise, quartersAnalyzed: recent.length };
   }
 
-  const beats = recent.filter((e) => (e.actual ?? 0) >= (e.estimate ?? 0)).length;
-  const beatRate = (beats / recent.length) * 100;
-  const surprises = recent
-    .filter((e) => e.surprisePercent !== null)
-    .map((e) => e.surprisePercent!);
-  const avgSurprise = surprises.length > 0
-    ? surprises.reduce((a, b) => a + b, 0) / surprises.length
-    : null;
+  // Fallback: use EDGAR quarterly EPS trend when Finnhub has no earnings data.
+  // We look at last 4 quarterly EPS values and score based on improvement trend.
+  // Without analyst estimates we can't compute beat rate, so we award points for
+  // consistent EPS improvement (trending less negative or more positive).
+  if (edgarFundamentals) {
+    const quarterlyEPS = edgarFundamentals.eps
+      .filter((d) => d.form === '10-Q' || d.form === '10-K')
+      .slice(-4);
 
-  const beatRatePts = beatRate >= 100 ? 10 : beatRate >= 75 ? 8 : beatRate >= 50 ? 5 : beatRate >= 25 ? 2 : 0;
-  const surprisePts = avgSurprise === null ? 0
-    : avgSurprise > 10 ? 5 : avgSurprise > 5 ? 4 : avgSurprise > 2 ? 3 : avgSurprise > 0 ? 1 : 0;
+    if (quarterlyEPS.length >= 2) {
+      const values = quarterlyEPS.map((d) => d.value);
+      // Count quarters where EPS improved vs prior quarter
+      let improvements = 0;
+      for (let i = 1; i < values.length; i++) {
+        if (values[i] > values[i - 1]) improvements++;
+      }
+      const improvementRate = (improvements / (values.length - 1)) * 100;
 
-  return { pts: beatRatePts + surprisePts, beatRatePts, surprisePts, beatRate, avgSurprise, quartersAnalyzed: recent.length };
+      // Award up to 7 pts (capped — trend is weaker signal than actual beat rate)
+      const beatRatePts = improvementRate >= 100 ? 7 : improvementRate >= 66 ? 5 : improvementRate >= 33 ? 3 : 0;
+
+      // Surprise proxy: if latest EPS is positive or improving significantly
+      const latestEPS = values[values.length - 1];
+      const oldestEPS = values[0];
+      const epsDelta = latestEPS - oldestEPS;
+      const surprisePts = epsDelta > 0 && Math.abs(oldestEPS) > 0
+        ? (epsDelta / Math.abs(oldestEPS)) > 0.5 ? 3 : (epsDelta / Math.abs(oldestEPS)) > 0.2 ? 2 : 1
+        : latestEPS > 0 ? 1 : 0;
+
+      return {
+        pts: beatRatePts + surprisePts,
+        beatRatePts,
+        surprisePts,
+        beatRate: improvementRate,
+        avgSurprise: null,
+        quartersAnalyzed: quarterlyEPS.length,
+      };
+    }
+  }
+
+  return { pts: 0, beatRatePts: 0, surprisePts: 0, beatRate: null, avgSurprise: null, quartersAnalyzed: 0 };
 }
 
 function getGrade(total: number): { grade: FundamentalsScore['grade']; color: string } {
@@ -274,12 +317,24 @@ function buildRationale(breakdown: FundamentalsBreakdown): string {
     parts.push('Financial health data is limited or shows concerning leverage.');
   }
 
-  if (earningsQualityPts >= 12) {
-    parts.push(`Excellent earnings execution — ${ed.beatRate?.toFixed(0)}% beat rate over ${ed.quartersAnalyzed} quarters.`);
-  } else if (earningsQualityPts >= 6) {
-    parts.push(`Decent earnings track record (${ed.beatRate?.toFixed(0)}% beat rate).`);
+  if (ed.avgSurprise !== null || earningsQualityPts >= 8) {
+    // Finnhub-sourced (has surprise data) or high-quality EDGAR trend
+    if (earningsQualityPts >= 12) {
+      parts.push(`Excellent earnings execution — ${ed.beatRate?.toFixed(0)}% beat rate over ${ed.quartersAnalyzed} quarters.`);
+    } else if (earningsQualityPts >= 6) {
+      parts.push(`Decent earnings track record (${ed.beatRate?.toFixed(0)}% beat rate).`);
+    } else if (ed.quartersAnalyzed > 0) {
+      parts.push('Inconsistent earnings relative to estimates.');
+    }
   } else if (ed.quartersAnalyzed > 0) {
-    parts.push('Inconsistent earnings relative to estimates.');
+    // EDGAR-sourced trend data (no analyst estimates available)
+    if (earningsQualityPts >= 6) {
+      parts.push(`Improving earnings trend over ${ed.quartersAnalyzed} quarters (based on SEC filings).`);
+    } else if (earningsQualityPts >= 3) {
+      parts.push(`Mixed earnings trend over ${ed.quartersAnalyzed} quarters (based on SEC filings).`);
+    } else {
+      parts.push('Earnings trend is flat or declining based on SEC filings.');
+    }
   }
 
   return parts.join(' ');
@@ -549,7 +604,7 @@ export async function computeFundamentalsScore(symbol: string): Promise<Fundamen
     const growth = scoreGrowth(metrics.revenueGrowth, metrics.epsGrowth);
     const valuation = scoreValuation(metrics.pe, metrics.pb, metrics.ps);
     const health = scoreHealth(metrics.debtToEquity, metrics.currentRatio, metrics.cashToDebt);
-    const earningsQuality = scoreEarningsQuality(earnings);
+    const earningsQuality = scoreEarningsQuality(earnings, edgarFundamentals);
 
     const total = profitability.pts + growth.pts + valuation.pts + health.pts + earningsQuality.pts;
     const { grade, color } = getGrade(total);
