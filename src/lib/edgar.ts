@@ -50,6 +50,7 @@ interface CompanyFactsResponse {
   entityName: string;
   facts: {
     'us-gaap'?: Record<string, FactEntry>;
+    'ifrs-full'?: Record<string, FactEntry>;
     dei?: Record<string, FactEntry>;
   };
 }
@@ -97,7 +98,7 @@ export interface CompanyFundamentals {
   currentLiabilities: FundamentalDataPoint[];
 }
 
-// Core GAAP tags to pull
+// Core GAAP tags to pull (us-gaap names)
 const GAAP_TAGS = {
   revenue: [
     'Revenues',
@@ -121,36 +122,57 @@ const GAAP_TAGS = {
   currentLiabilities: ['LiabilitiesCurrent'],
 } as const;
 
-function extractFactData(
-  facts: CompanyFactsResponse['facts'],
+// IFRS-equivalent tags for foreign private issuers (20-F filers like TSM)
+const IFRS_TAGS = {
+  revenue: ['Revenue', 'RevenueFromContractsWithCustomers'],
+  netIncome: ['ProfitLossAttributableToOwnersOfParent', 'ProfitLoss'],
+  totalAssets: ['Assets'],
+  totalLiabilities: ['Liabilities'],
+  stockholdersEquity: ['EquityAttributableToOwnersOfParent', 'Equity'],
+  eps: ['DilutedEarningsLossPerShare', 'BasicEarningsLossPerShare'],
+  operatingIncome: ['ProfitLossFromOperatingActivities', 'OperatingProfit'],
+  grossProfit: ['GrossProfit'],
+  cash: ['CashAndCashEquivalents'],
+  longTermDebt: ['NoncurrentPortionOfNoncurrentBorrowings', 'NoncurrentBorrowings', 'LongtermBorrowings'],
+  currentAssets: ['CurrentAssets'],
+  currentLiabilities: ['CurrentLiabilities'],
+} as const;
+
+// Accepted SEC form types (includes foreign private issuer forms)
+const ACCEPTED_FORMS = new Set(['10-K', '10-Q', '20-F', '6-K']);
+
+function extractFactDataFromNamespace(
+  namespace: Record<string, FactEntry> | undefined,
   tags: readonly string[]
 ): FundamentalDataPoint[] {
-  const gaap = facts['us-gaap'];
-  if (!gaap) return [];
+  if (!namespace) return [];
 
   for (const tag of tags) {
-    const entry = gaap[tag];
+    const entry = namespace[tag];
     if (!entry) continue;
 
     // Prefer USD units
     const units = entry.units['USD'] || Object.values(entry.units)[0];
     if (!units || units.length === 0) continue;
 
-    // Filter to 10-K and 10-Q only, deduplicate by period
+    // Filter to accepted SEC form types, deduplicate by period
     const seen = new Set<string>();
     const results: FundamentalDataPoint[] = [];
 
     for (const u of units) {
-      if (u.form !== '10-K' && u.form !== '10-Q') continue;
+      if (!ACCEPTED_FORMS.has(u.form)) continue;
       const period = `${u.fy}-${u.fp}`;
       if (seen.has(period)) continue;
       seen.add(period);
+
+      // Normalize foreign forms to domestic equivalents for downstream logic
+      const normalizedForm = u.form === '20-F' ? '10-K' : u.form === '6-K' ? '10-Q' : u.form;
 
       results.push({
         period,
         endDate: u.end,
         value: u.val,
-        form: u.form,
+        form: normalizedForm,
         filed: u.filed,
       });
     }
@@ -160,6 +182,23 @@ function extractFactData(
         (a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime()
       );
     }
+  }
+
+  return [];
+}
+
+function extractFactData(
+  facts: CompanyFactsResponse['facts'],
+  gaapTags: readonly string[],
+  ifrsTags?: readonly string[]
+): FundamentalDataPoint[] {
+  // Try us-gaap first (domestic filers)
+  const gaapResult = extractFactDataFromNamespace(facts['us-gaap'], gaapTags);
+  if (gaapResult.length > 0) return gaapResult;
+
+  // Fall back to IFRS (foreign private issuers like TSM)
+  if (ifrsTags) {
+    return extractFactDataFromNamespace(facts['ifrs-full'], ifrsTags);
   }
 
   return [];
@@ -182,18 +221,18 @@ export async function getCompanyFundamentals(
     return {
       entityName: data.entityName,
       cik: data.cik,
-      revenue: extractFactData(data.facts, GAAP_TAGS.revenue),
-      netIncome: extractFactData(data.facts, GAAP_TAGS.netIncome),
-      totalAssets: extractFactData(data.facts, GAAP_TAGS.totalAssets),
-      totalLiabilities: extractFactData(data.facts, GAAP_TAGS.totalLiabilities),
-      stockholdersEquity: extractFactData(data.facts, GAAP_TAGS.stockholdersEquity),
-      eps: extractFactData(data.facts, GAAP_TAGS.eps),
-      operatingIncome: extractFactData(data.facts, GAAP_TAGS.operatingIncome),
-      grossProfit: extractFactData(data.facts, GAAP_TAGS.grossProfit),
-      cash: extractFactData(data.facts, GAAP_TAGS.cash),
-      longTermDebt: extractFactData(data.facts, GAAP_TAGS.longTermDebt),
-      currentAssets: extractFactData(data.facts, GAAP_TAGS.currentAssets),
-      currentLiabilities: extractFactData(data.facts, GAAP_TAGS.currentLiabilities),
+      revenue: extractFactData(data.facts, GAAP_TAGS.revenue, IFRS_TAGS.revenue),
+      netIncome: extractFactData(data.facts, GAAP_TAGS.netIncome, IFRS_TAGS.netIncome),
+      totalAssets: extractFactData(data.facts, GAAP_TAGS.totalAssets, IFRS_TAGS.totalAssets),
+      totalLiabilities: extractFactData(data.facts, GAAP_TAGS.totalLiabilities, IFRS_TAGS.totalLiabilities),
+      stockholdersEquity: extractFactData(data.facts, GAAP_TAGS.stockholdersEquity, IFRS_TAGS.stockholdersEquity),
+      eps: extractFactData(data.facts, GAAP_TAGS.eps, IFRS_TAGS.eps),
+      operatingIncome: extractFactData(data.facts, GAAP_TAGS.operatingIncome, IFRS_TAGS.operatingIncome),
+      grossProfit: extractFactData(data.facts, GAAP_TAGS.grossProfit, IFRS_TAGS.grossProfit),
+      cash: extractFactData(data.facts, GAAP_TAGS.cash, IFRS_TAGS.cash),
+      longTermDebt: extractFactData(data.facts, GAAP_TAGS.longTermDebt, IFRS_TAGS.longTermDebt),
+      currentAssets: extractFactData(data.facts, GAAP_TAGS.currentAssets, IFRS_TAGS.currentAssets),
+      currentLiabilities: extractFactData(data.facts, GAAP_TAGS.currentLiabilities, IFRS_TAGS.currentLiabilities),
     };
   });
 }
