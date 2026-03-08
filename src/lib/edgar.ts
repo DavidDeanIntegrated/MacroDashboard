@@ -93,6 +93,8 @@ export interface CompanyFundamentals {
   grossProfit: FundamentalDataPoint[];
   cash: FundamentalDataPoint[];
   longTermDebt: FundamentalDataPoint[];
+  currentAssets: FundamentalDataPoint[];
+  currentLiabilities: FundamentalDataPoint[];
 }
 
 // Core GAAP tags to pull
@@ -115,6 +117,8 @@ const GAAP_TAGS = {
   grossProfit: ['GrossProfit'],
   cash: ['CashAndCashEquivalentsAtCarryingValue'],
   longTermDebt: ['LongTermDebt', 'LongTermDebtNoncurrent'],
+  currentAssets: ['AssetsCurrent'],
+  currentLiabilities: ['LiabilitiesCurrent'],
 } as const;
 
 function extractFactData(
@@ -188,6 +192,8 @@ export async function getCompanyFundamentals(
       grossProfit: extractFactData(data.facts, GAAP_TAGS.grossProfit),
       cash: extractFactData(data.facts, GAAP_TAGS.cash),
       longTermDebt: extractFactData(data.facts, GAAP_TAGS.longTermDebt),
+      currentAssets: extractFactData(data.facts, GAAP_TAGS.currentAssets),
+      currentLiabilities: extractFactData(data.facts, GAAP_TAGS.currentLiabilities),
     };
   });
 }
@@ -258,7 +264,98 @@ export async function getRecentFilings(
   });
 }
 
-// ─── Computed Metrics ───
+// ─── Scoring-compatible metrics for fundamentals-score.ts ───
+
+export interface EdgarScoringMetrics {
+  netMargin: number | null;
+  grossMargin: number | null;
+  roe: number | null;
+  revenueGrowth: number | null;
+  epsGrowth: number | null;
+  eps: number | null;       // TTM EPS for P/E calc
+  revenue: number | null;   // TTM revenue for P/S calc
+  equity: number | null;    // for P/B calc
+  debtToEquity: number | null;
+  currentRatio: number | null;
+  cashToDebt: number | null;
+}
+
+/**
+ * Extract scoring metrics from EDGAR XBRL data.
+ * Used as a third-tier fallback when Polygon and Finnhub lack data.
+ */
+export function extractScoringMetrics(f: CompanyFundamentals): EdgarScoringMetrics {
+  const getLatest = (data: FundamentalDataPoint[]) =>
+    data.length > 0 ? data[data.length - 1].value : null;
+
+  const getLatestAnnual = (data: FundamentalDataPoint[]) => {
+    const annuals = data.filter((d) => d.form === '10-K');
+    return annuals.length > 0 ? annuals[annuals.length - 1].value : null;
+  };
+
+  const getPrevAnnual = (data: FundamentalDataPoint[]) => {
+    const annuals = data.filter((d) => d.form === '10-K');
+    return annuals.length >= 2 ? annuals[annuals.length - 2].value : null;
+  };
+
+  // TTM from last 4 quarterly/annual filings
+  const getTTM = (data: FundamentalDataPoint[]) => {
+    const quarterly = data.filter((d) => d.form === '10-Q' || d.form === '10-K');
+    if (quarterly.length < 4) return getLatestAnnual(data);
+    const last4 = quarterly.slice(-4);
+    return last4.reduce((sum, d) => sum + d.value, 0);
+  };
+
+  const ttmRevenue = getTTM(f.revenue);
+  const ttmNetIncome = getTTM(f.netIncome);
+  const ttmGrossProfit = getTTM(f.grossProfit);
+  const ttmEPS = getTTM(f.eps);
+
+  const latestEquity = getLatest(f.stockholdersEquity);
+  const latestDebt = getLatest(f.longTermDebt);
+  const latestCash = getLatest(f.cash);
+  const latestCurrentAssets = getLatest(f.currentAssets);
+  const latestCurrentLiabilities = getLatest(f.currentLiabilities);
+
+  // Growth: compare latest annual to prior annual
+  const latestAnnualRev = getLatestAnnual(f.revenue);
+  const prevAnnualRev = getPrevAnnual(f.revenue);
+  const latestAnnualEPS = getLatestAnnual(f.eps);
+  const prevAnnualEPS = getPrevAnnual(f.eps);
+
+  let revenueGrowth: number | null = null;
+  if (latestAnnualRev !== null && prevAnnualRev !== null && prevAnnualRev !== 0) {
+    revenueGrowth = ((latestAnnualRev - prevAnnualRev) / Math.abs(prevAnnualRev)) * 100;
+  }
+
+  let epsGrowth: number | null = null;
+  if (latestAnnualEPS !== null && prevAnnualEPS !== null && prevAnnualEPS !== 0) {
+    epsGrowth = ((latestAnnualEPS - prevAnnualEPS) / Math.abs(prevAnnualEPS)) * 100;
+  }
+
+  return {
+    netMargin: ttmRevenue && ttmNetIncome ? (ttmNetIncome / ttmRevenue) * 100 : null,
+    grossMargin: ttmRevenue && ttmGrossProfit ? (ttmGrossProfit / ttmRevenue) * 100 : null,
+    roe: ttmNetIncome !== null && latestEquity && latestEquity > 0
+      ? (ttmNetIncome / latestEquity) * 100 : null,
+    revenueGrowth,
+    epsGrowth,
+    eps: ttmEPS,
+    revenue: ttmRevenue,
+    equity: latestEquity,
+    debtToEquity: latestDebt !== null && latestEquity && latestEquity > 0
+      ? latestDebt / latestEquity : null,
+    currentRatio: latestCurrentAssets !== null && latestCurrentLiabilities && latestCurrentLiabilities > 0
+      ? latestCurrentAssets / latestCurrentLiabilities : null,
+    cashToDebt: latestCash !== null && latestDebt !== null && latestDebt > 0
+      ? latestCash / latestDebt
+      : latestCash !== null && (latestDebt === null || latestDebt === 0)
+        ? 10 // no debt = excellent
+        : null,
+  };
+}
+
+// ─── Computed Metrics (legacy, used by /api/edgar endpoint) ───
 
 export interface ComputedMetrics {
   ttmRevenue: number | null;

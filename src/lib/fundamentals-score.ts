@@ -57,6 +57,7 @@
 
 import { getStockFinancials, getSnapshot, getTickerDetails, type StockFinancials } from './polygon';
 import { getEarnings, getBasicFinancials, type EarningsEstimate, type BasicFinancials } from './finnhub';
+import { getCompanyFundamentals, extractScoringMetrics, type EdgarScoringMetrics } from './edgar';
 import { withCache, TTL } from './cache';
 
 // ─── Types ───
@@ -449,6 +450,39 @@ function backfillFromFinnhub(metrics: ComputedMetrics, fh: BasicFinancials): voi
   if (metrics.currentRatio === null && fh.currentRatio !== null) metrics.currentRatio = fh.currentRatio;
 }
 
+/** Fill in any null metrics from SEC EDGAR XBRL data (third-tier fallback) */
+function backfillFromEdgar(
+  metrics: ComputedMetrics,
+  edgar: EdgarScoringMetrics,
+  price: number,
+  marketCap: number,
+): void {
+  // Profitability
+  if (metrics.netMargin === null && edgar.netMargin !== null) metrics.netMargin = edgar.netMargin;
+  if (metrics.grossMargin === null && edgar.grossMargin !== null) metrics.grossMargin = edgar.grossMargin;
+  if (metrics.roe === null && edgar.roe !== null) metrics.roe = edgar.roe;
+
+  // Growth
+  if (metrics.revenueGrowth === null && edgar.revenueGrowth !== null) metrics.revenueGrowth = edgar.revenueGrowth;
+  if (metrics.epsGrowth === null && edgar.epsGrowth !== null) metrics.epsGrowth = edgar.epsGrowth;
+
+  // Valuation — compute from EDGAR financials + live price/marketCap
+  if (metrics.pe === null && edgar.eps !== null && edgar.eps > 0 && price > 0) {
+    metrics.pe = price / edgar.eps;
+  }
+  if (metrics.pb === null && edgar.equity !== null && edgar.equity > 0 && marketCap > 0) {
+    metrics.pb = marketCap / edgar.equity;
+  }
+  if (metrics.ps === null && edgar.revenue !== null && edgar.revenue > 0 && marketCap > 0) {
+    metrics.ps = marketCap / edgar.revenue;
+  }
+
+  // Financial Health
+  if (metrics.debtToEquity === null && edgar.debtToEquity !== null) metrics.debtToEquity = edgar.debtToEquity;
+  if (metrics.currentRatio === null && edgar.currentRatio !== null) metrics.currentRatio = edgar.currentRatio;
+  if (metrics.cashToDebt === null && edgar.cashToDebt !== null) metrics.cashToDebt = edgar.cashToDebt;
+}
+
 // ─── Main Scoring Function ───
 
 export async function computeFundamentalsScore(symbol: string): Promise<FundamentalsScore> {
@@ -467,22 +501,24 @@ export async function computeFundamentalsScore(symbol: string): Promise<Fundamen
   }
 
   return withCache(`fundamentals-score:${symbol}`, TTL.FUNDAMENTALS, async () => {
-    // Fetch all data from Polygon + Finnhub in parallel
-    const [annuals, quarters, snapshot, tickerDetails, earnings, finnhubMetrics] = await Promise.all([
+    // Fetch all data from Polygon + Finnhub + EDGAR in parallel
+    const [annuals, quarters, snapshot, tickerDetails, earnings, finnhubMetrics, edgarFundamentals] = await Promise.all([
       getStockFinancials(symbol, 'annual', 3).catch(() => []),
       getStockFinancials(symbol, 'quarterly', 8).catch(() => []),
       getSnapshot(symbol).catch(() => null),
       getTickerDetails(symbol).catch(() => null),
       getEarnings(symbol).catch(() => []),
       getBasicFinancials(symbol).catch(() => null),
+      getCompanyFundamentals(symbol).catch(() => null),
     ]);
 
     const price = snapshot?.price ?? 0;
     const marketCap = tickerDetails?.marketCap ?? 0;
 
     const hasPolygonFinancials = annuals.length > 0 || quarters.length > 0;
+    const edgarMetrics = edgarFundamentals ? extractScoringMetrics(edgarFundamentals) : null;
 
-    if (!hasPolygonFinancials && !finnhubMetrics) {
+    if (!hasPolygonFinancials && !finnhubMetrics && !edgarMetrics) {
       return {
         symbol,
         total: 0,
@@ -502,6 +538,11 @@ export async function computeFundamentalsScore(symbol: string): Promise<Fundamen
     // Fill gaps with Finnhub pre-computed metrics where Polygon data is missing
     if (finnhubMetrics) {
       backfillFromFinnhub(metrics, finnhubMetrics);
+    }
+
+    // Fill remaining gaps from SEC EDGAR XBRL filings (third fallback)
+    if (edgarMetrics) {
+      backfillFromEdgar(metrics, edgarMetrics, price, marketCap);
     }
 
     const profitability = scoreProfitability(metrics.netMargin, metrics.grossMargin, metrics.roe);
