@@ -3,90 +3,134 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-const navItems = [
+interface NavItem {
+  label: string;
+  href: string;
+  icon: React.ReactNode;
+}
+
+interface NavGroup {
+  section: string;
+  items: NavItem[];
+}
+
+const navGroups: NavGroup[] = [
   {
-    label: 'Macro',
-    href: '/macro',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6" />
-      </svg>
-    ),
+    section: 'Markets',
+    items: [
+      {
+        label: 'Macro',
+        href: '/macro',
+        icon: (
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6" />
+          </svg>
+        ),
+      },
+      {
+        label: 'Sectors',
+        href: '/sectors',
+        icon: (
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+          </svg>
+        ),
+      },
+      {
+        label: 'Alerts',
+        href: '/alerts',
+        icon: (
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+          </svg>
+        ),
+      },
+    ],
   },
   {
-    label: 'Sectors',
-    href: '/sectors',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
-      </svg>
-    ),
+    section: 'Portfolio',
+    items: [
+      {
+        label: 'Holdings',
+        href: '/portfolio',
+        icon: (
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
+          </svg>
+        ),
+      },
+      {
+        label: 'Analytics',
+        href: '/analytics',
+        icon: (
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z" />
+          </svg>
+        ),
+      },
+    ],
   },
   {
-    label: 'Portfolio',
-    href: '/portfolio',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
-      </svg>
-    ),
+    section: 'Research',
+    items: [
+      {
+        label: 'Ticker',
+        href: '/ticker',
+        icon: (
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+          </svg>
+        ),
+      },
+      {
+        label: 'Watchlist',
+        href: '/watchlist-analytics',
+        icon: (
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        ),
+      },
+    ],
   },
   {
-    label: 'Analytics',
-    href: '/analytics',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Watch Analytics',
-    href: '/watchlist-analytics',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Guide',
-    href: '/guide',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Teaching',
-    href: '/teaching',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.62 48.62 0 0 1 12 20.904a48.62 48.62 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a23.54 23.54 0 0 0-2.688 3.078c.727-.16 1.464-.292 2.209-.396m15.961-2.682a23.54 23.54 0 0 1 2.688 3.078 60.436 60.436 0 0 0-2.209-.396m-13.752-2.682L12 3l7.769 7.147M12 3v7.147" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Ticker',
-    href: '/ticker',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Alerts',
-    href: '/alerts',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
-      </svg>
-    ),
+    section: 'Learn',
+    items: [
+      {
+        label: 'Guide',
+        href: '/guide',
+        icon: (
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+          </svg>
+        ),
+      },
+      {
+        label: 'Case Studies',
+        href: '/teaching',
+        icon: (
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.62 48.62 0 0 1 12 20.904a48.62 48.62 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a23.54 23.54 0 0 0-2.688 3.078c.727-.16 1.464-.292 2.209-.396m15.961-2.682a23.54 23.54 0 0 1 2.688 3.078 60.436 60.436 0 0 0-2.209-.396m-13.752-2.682L12 3l7.769 7.147M12 3v7.147" />
+          </svg>
+        ),
+      },
+    ],
   },
 ];
+
+// Flat list for mobile nav — show the key pages only
+const mobileNavItems: NavItem[] = [
+  navGroups[0].items[0], // Macro
+  navGroups[1].items[0], // Holdings
+  navGroups[2].items[0], // Ticker
+  navGroups[2].items[1], // Watchlist
+  navGroups[0].items[2], // Alerts
+];
+
+function isActive(pathname: string | null, href: string): boolean {
+  return pathname === href || (pathname?.startsWith(href + '/') ?? false);
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -102,33 +146,40 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3">
-        <ul className="space-y-1">
-          {navItems.map((item) => {
-            const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
-            return (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  className={`
-                    flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
-                    transition-all duration-150
-                    ${
-                      isActive
-                        ? 'bg-accent-blue/10 text-accent-blue'
-                        : 'text-black/55 hover:bg-black/[0.03] hover:text-black/75'
-                    }
-                  `}
-                >
-                  <span className={isActive ? 'text-accent-blue' : 'text-black/35'}>
-                    {item.icon}
-                  </span>
-                  {item.label}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+      <nav className="flex-1 px-3 overflow-y-auto">
+        {navGroups.map((group) => (
+          <div key={group.section} className="mb-4">
+            <p className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-black/30">
+              {group.section}
+            </p>
+            <ul className="space-y-0.5">
+              {group.items.map((item) => {
+                const active = isActive(pathname, item.href);
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      className={`
+                        flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium
+                        transition-all duration-150
+                        ${
+                          active
+                            ? 'bg-accent-blue/10 text-accent-blue'
+                            : 'text-black/55 hover:bg-black/[0.03] hover:text-black/75'
+                        }
+                      `}
+                    >
+                      <span className={active ? 'text-accent-blue' : 'text-black/35'}>
+                        {item.icon}
+                      </span>
+                      {item.label}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
       </nav>
 
       {/* Footer */}
@@ -141,15 +192,15 @@ export function Sidebar() {
   );
 }
 
-// Mobile bottom nav
+// Mobile bottom nav — key pages only to avoid crowding
 export function MobileNav() {
   const pathname = usePathname();
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-2xl border-t border-black/[0.06] z-40 md:hidden safe-area-inset-bottom">
       <ul className="flex items-center justify-around px-2 py-2">
-        {navItems.map((item) => {
-          const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
+        {mobileNavItems.map((item) => {
+          const active = isActive(pathname, item.href);
           return (
             <li key={item.href}>
               <Link
@@ -157,7 +208,7 @@ export function MobileNav() {
                 className={`
                   flex flex-col items-center gap-1 px-3 py-1.5 rounded-lg
                   transition-colors
-                  ${isActive ? 'text-accent-blue' : 'text-black/35'}
+                  ${active ? 'text-accent-blue' : 'text-black/35'}
                 `}
               >
                 {item.icon}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { Card, CardTitle, MetricCard } from '@/components/ui/Card';
 import { LoadingPage } from '@/components/ui/Loading';
 import { Badge } from '@/components/ui/Badge';
@@ -401,6 +402,14 @@ export default function WatchlistAnalyticsPage() {
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
+          <div className="flex items-center gap-3 mb-1">
+            <Link
+              href="/portfolio"
+              className="text-sm font-medium text-black/40 hover:text-accent-blue transition-colors"
+            >
+              &larr; Portfolio
+            </Link>
+          </div>
           <h2 className="text-2xl font-semibold text-black/85 tracking-tight">Watchlist Analytics</h2>
           <p className="text-sm text-black/45 mt-1">
             Relative strength, correlations, and volatility for watched stocks
@@ -448,7 +457,12 @@ export default function WatchlistAnalyticsPage() {
               {relativeStrength.map((r) => (
                 <tr key={r.symbol} className="border-b border-black/[0.03] hover:bg-black/[0.02] transition-colors">
                   <td className="px-4 py-3">
-                    <span className="text-sm font-semibold text-black/85">{r.symbol}</span>
+                    <Link
+                      href={`/ticker?symbol=${r.symbol}`}
+                      className="text-sm font-semibold text-black/85 hover:text-accent-blue transition-colors"
+                    >
+                      {r.symbol}
+                    </Link>
                   </td>
                   <td className="px-4 py-3">
                     <Badge variant={categoryBadge(r.category)}>{r.category}</Badge>

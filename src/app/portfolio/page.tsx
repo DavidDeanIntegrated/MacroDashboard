@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { Card, CardTitle, MetricCard } from '@/components/ui/Card';
 import { LoadingPage, ErrorState, EmptyState } from '@/components/ui/Loading';
 import { Badge, TrendIndicator } from '@/components/ui/Badge';
@@ -251,7 +252,14 @@ export default function PortfolioPage() {
                     }`}
                   >
                     <td className="px-4 py-3">
-                      <span className="font-semibold text-sm text-black/85">{pos.symbol}</span>
+                      <Link
+                        href={`/ticker?symbol=${pos.symbol}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="font-semibold text-sm text-black/85 hover:text-accent-blue transition-colors"
+                        title={`View ${pos.symbol} details`}
+                      >
+                        {pos.symbol}
+                      </Link>
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant={categoryBadge(pos.category)}>{pos.category}</Badge>
@@ -423,9 +431,17 @@ export default function PortfolioPage() {
       {/* ═══ Watching Section ═══ */}
       {watchlist && watchlist.length > 0 && (
         <>
-          <div className="pt-4 border-t border-black/[0.06]">
-            <h2 className="text-2xl font-semibold text-black/85 tracking-tight">Watching</h2>
-            <p className="text-sm text-black/45 mt-1">Stocks you&apos;re tracking — no position held</p>
+          <div className="pt-4 border-t border-black/[0.06] flex items-end justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold text-black/85 tracking-tight">Watching</h2>
+              <p className="text-sm text-black/45 mt-1">Stocks you&apos;re tracking — no position held</p>
+            </div>
+            <Link
+              href="/watchlist-analytics"
+              className="text-sm font-medium text-accent-blue hover:text-accent-blue/80 transition-colors"
+            >
+              Watchlist Analytics &rarr;
+            </Link>
           </div>
 
           {/* Watchlist Summary Cards */}
@@ -499,7 +515,14 @@ export default function PortfolioPage() {
                       }`}
                     >
                       <td className="px-4 py-3">
-                        <span className="font-semibold text-sm text-black/85">{pos.symbol}</span>
+                        <Link
+                          href={`/ticker?symbol=${pos.symbol}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="font-semibold text-sm text-black/85 hover:text-accent-blue transition-colors"
+                          title={`View ${pos.symbol} details`}
+                        >
+                          {pos.symbol}
+                        </Link>
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant={watchCategoryBadge(pos.category)}>{pos.category}</Badge>
