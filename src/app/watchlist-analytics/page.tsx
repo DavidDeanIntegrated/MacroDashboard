@@ -189,7 +189,7 @@ export default function WatchlistAnalyticsPage() {
 
   // Fundamentals scores for watchlist stocks
   const watchFundSymbols = useMemo(() => WATCH_STOCKS.map((h) => h.symbol), []);
-  const { data: watchFundScores, loading: fundScoresLoading } = useFundamentalsScores(watchFundSymbols);
+  const { data: watchFundScores, loading: fundScoresLoading, error: fundScoresError } = useFundamentalsScores(watchFundSymbols);
 
   if (loading) return <LoadingPage />;
 
@@ -989,6 +989,7 @@ export default function WatchlistAnalyticsPage() {
       <FundamentalsScoreSection
         scores={watchFundScores}
         loading={fundScoresLoading}
+        error={fundScoresError}
         title="Fundamental Analysis Scores"
         subtitle="Composite score (0-100) for each watchlist stock based on profitability, growth, valuation, financial health, and earnings quality"
       />

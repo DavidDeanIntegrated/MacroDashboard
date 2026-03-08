@@ -132,11 +132,13 @@ function ScoreDetail({ score }: { score: ScoreData }) {
 export function FundamentalsScoreSection({
   scores,
   loading,
+  error,
   title = 'Fundamental Analysis Scores',
   subtitle = 'Composite score (0–100) based on profitability, growth, valuation, financial health, and earnings quality',
 }: {
   scores: ScoreData[] | null;
   loading: boolean;
+  error?: string | null;
   title?: string;
   subtitle?: string;
 }) {
@@ -149,6 +151,18 @@ export function FundamentalsScoreSection({
         <p className="text-xs text-black/40 mt-1">{subtitle}</p>
         <div className="flex items-center justify-center h-32 text-black/25 text-sm mt-4">
           Loading fundamental scores...
+        </div>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardTitle>{title}</CardTitle>
+        <p className="text-xs text-black/40 mt-1">{subtitle}</p>
+        <div className="flex items-center justify-center h-32 text-red-400/60 text-sm mt-4">
+          Failed to load scores: {error}
         </div>
       </Card>
     );

@@ -26,7 +26,7 @@ export async function getTickerToCIK(): Promise<Record<string, number>> {
   return withCache('edgar:tickers', TTL.FUNDAMENTALS * 24, async () => {
     const data = await fetchJson<Record<string, CompanyTickerEntry>>(
       'https://www.sec.gov/files/company_tickers.json',
-      { headers: edgarHeaders(), provider: 'EDGAR', timeoutMs: 20000 }
+      { headers: edgarHeaders(), provider: 'EDGAR', timeoutMs: 20000, retries: 1 }
     );
 
     const map: Record<string, number> = {};
@@ -215,7 +215,7 @@ export async function getCompanyFundamentals(
   return withCache(cacheKey, TTL.FUNDAMENTALS, async () => {
     const data = await fetchJson<CompanyFactsResponse>(
       `${config.edgar.baseUrl}/api/xbrl/companyfacts/CIK${String(cik).padStart(10, '0')}.json`,
-      { headers: edgarHeaders(), provider: 'EDGAR' }
+      { headers: edgarHeaders(), provider: 'EDGAR', retries: 1 }
     );
 
     return {

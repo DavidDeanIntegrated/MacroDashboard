@@ -66,7 +66,7 @@ export default function PortfolioPage() {
 
   // Fundamentals scores for portfolio holdings
   const portfolioSymbols = useMemo(() => HOLDINGS.map((h) => h.symbol), []);
-  const { data: portfolioScores, loading: scoresLoading } = useFundamentalsScores(portfolioSymbols);
+  const { data: portfolioScores, loading: scoresLoading, error: scoresError } = useFundamentalsScores(portfolioSymbols);
 
   // Watchlist
   const { data: watchlist } = useWatchlist();
@@ -77,7 +77,7 @@ export default function PortfolioPage() {
 
   // Fundamentals scores for watchlist stocks
   const watchlistSymbols = useMemo(() => WATCHLIST.map((w) => w.symbol), []);
-  const { data: watchlistScores, loading: watchScoresLoading } = useFundamentalsScores(watchlistSymbols);
+  const { data: watchlistScores, loading: watchScoresLoading, error: watchScoresError } = useFundamentalsScores(watchlistSymbols);
 
   if (loading) return <LoadingPage />;
   if (error) return <ErrorState message={error} onRetry={refresh} />;
@@ -380,6 +380,7 @@ export default function PortfolioPage() {
       <FundamentalsScoreSection
         scores={portfolioScores}
         loading={scoresLoading}
+        error={scoresError}
         title="Portfolio Fundamental Scores"
         subtitle="Composite fundamental analysis for your held positions — ranked by score"
       />
@@ -621,6 +622,7 @@ export default function PortfolioPage() {
           <FundamentalsScoreSection
             scores={watchlistScores}
             loading={watchScoresLoading}
+            error={watchScoresError}
             title="Watchlist Fundamental Scores"
             subtitle="Composite fundamental analysis for watched stocks — ranked by score"
           />

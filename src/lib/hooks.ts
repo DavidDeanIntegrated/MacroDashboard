@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 interface UseApiOptions {
   refreshInterval?: number; // ms, 0 = no auto-refresh
   enabled?: boolean;
+  timeoutMs?: number; // client-side request timeout (default: 60s)
 }
 
 interface UseApiResult<T> {
@@ -18,7 +19,7 @@ export function useApi<T>(
   url: string | null,
   options: UseApiOptions = {}
 ): UseApiResult<T> {
-  const { refreshInterval = 0, enabled = true } = options;
+  const { refreshInterval = 0, enabled = true, timeoutMs = 60000 } = options;
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -26,9 +27,12 @@ export function useApi<T>(
   const fetchData = useCallback(async () => {
     if (!url || !enabled) return;
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
       setLoading(true);
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: controller.signal });
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         throw new Error(err.error || `HTTP ${response.status}`);
@@ -37,11 +41,16 @@ export function useApi<T>(
       setData(result);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setError('Request timed out');
+      } else {
+        setError(err instanceof Error ? err.message : 'An error occurred');
+      }
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
     }
-  }, [url, enabled]);
+  }, [url, enabled, timeoutMs]);
 
   useEffect(() => {
     fetchData();
