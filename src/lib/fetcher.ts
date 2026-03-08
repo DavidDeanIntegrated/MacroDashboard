@@ -3,6 +3,7 @@
 interface FetchOptions extends RequestInit {
   retries?: number;
   backoffMs?: number;
+  timeoutMs?: number;
 }
 
 export class ApiError extends Error {
@@ -20,11 +21,16 @@ export async function resilientFetch(
   url: string,
   options: FetchOptions = {}
 ): Promise<Response> {
-  const { retries = 3, backoffMs = 1000, ...fetchOptions } = options;
+  const { retries = 3, backoffMs = 1000, timeoutMs = 10000, ...fetchOptions } = options;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const response = await fetch(url, fetchOptions);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      const response = await fetch(url, {
+        ...fetchOptions,
+        signal: fetchOptions.signal || controller.signal,
+      }).finally(() => clearTimeout(timeout));
 
       // Rate limited — back off and retry
       if (response.status === 429 && attempt < retries) {

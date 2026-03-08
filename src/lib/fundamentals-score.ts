@@ -625,23 +625,35 @@ function emptyBreakdown(): FundamentalsBreakdown {
 
 // ─── Batch scoring ───
 
+/** Score a single stock with a hard timeout to prevent batch stalls */
+function scoreWithTimeout(sym: string, timeoutMs = 30000): Promise<FundamentalsScore> {
+  const fallback: FundamentalsScore = {
+    symbol: sym,
+    total: 0,
+    grade: 'Hold' as const,
+    gradeColor: 'bg-black/[0.04] text-black/45 border-black/[0.06]',
+    breakdown: emptyBreakdown(),
+    rationale: 'Unable to fetch fundamental data for this stock.',
+    unavailable: true,
+    unavailableReason: 'Data fetch failed',
+  };
+
+  return Promise.race([
+    computeFundamentalsScore(sym).catch(() => fallback),
+    new Promise<FundamentalsScore>((resolve) =>
+      setTimeout(() => resolve({ ...fallback, unavailableReason: 'Timed out' }), timeoutMs)
+    ),
+  ]);
+}
+
 export async function computeAllScores(symbols: string[]): Promise<FundamentalsScore[]> {
-  const CONCURRENCY = 4;
+  const CONCURRENCY = 5;
   const results: FundamentalsScore[] = [];
 
   for (let i = 0; i < symbols.length; i += CONCURRENCY) {
     const batch = symbols.slice(i, i + CONCURRENCY);
     const batchResults = await Promise.all(
-      batch.map((sym) => computeFundamentalsScore(sym).catch(() => ({
-        symbol: sym,
-        total: 0,
-        grade: 'Hold' as const,
-        gradeColor: 'bg-black/[0.04] text-black/45 border-black/[0.06]',
-        breakdown: emptyBreakdown(),
-        rationale: 'Unable to fetch fundamental data for this stock.',
-        unavailable: true,
-        unavailableReason: 'Data fetch failed',
-      })))
+      batch.map((sym) => scoreWithTimeout(sym))
     );
     results.push(...batchResults);
   }
