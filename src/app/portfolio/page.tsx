@@ -8,6 +8,7 @@ import { Badge, TrendIndicator } from '@/components/ui/Badge';
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart';
 import { AllocationPieChart } from '@/components/charts/AllocationPieChart';
 import { FundamentalsScoreSection } from '@/components/FundamentalsScoreCard';
+import { AllWeatherSection } from '@/components/AllWeatherSection';
 import { usePortfolio, usePortfolioChart, usePolygonAggregates, usePolygonRSI, usePortfolioDividends, useWatchlist, useFundamentalsScores } from '@/lib/hooks';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/format';
 import { CATEGORY_CONFIG, HOLDINGS, WATCHLIST, WATCHLIST_CATEGORY_CONFIG } from '@/lib/holdings';
@@ -383,6 +384,12 @@ export default function PortfolioPage() {
         error={scoresError}
         title="Portfolio Fundamental Scores"
         subtitle="Composite fundamental analysis for your held positions — ranked by score"
+      />
+
+      {/* All-Weather Strategy */}
+      <AllWeatherSection
+        positions={portfolio.positions}
+        portfolioValue={portfolio.portfolioValue}
       />
 
       {/* Dividend Calendar */}
