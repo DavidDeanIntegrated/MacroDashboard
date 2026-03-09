@@ -17,6 +17,7 @@ import {
   usePolygonMACD,
   usePolygonSMA,
 } from '@/lib/hooks';
+import { HOLDINGS, WATCHLIST } from '@/lib/holdings';
 import { formatCurrency, formatPercent, formatDate, timeAgo } from '@/lib/format';
 
 type ChartTimeframe = '1min' | '5min' | '15min' | '1hour' | '1day';
@@ -40,7 +41,8 @@ export default function TickerPage() {
     }
   };
 
-  const quickTickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'SPY'];
+  const portfolioTickers = HOLDINGS.map((h) => h.symbol);
+  const watchlistTickers = WATCHLIST.map((w) => w.symbol).filter((s) => !portfolioTickers.includes(s));
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -79,24 +81,50 @@ export default function TickerPage() {
           </button>
         </form>
 
-        {/* Quick picks */}
-        <div className="flex flex-wrap gap-2 mt-4">
-          {quickTickers.map((t) => (
-            <button
-              key={t}
-              onClick={() => {
-                setTicker(t);
-                setActiveTicker(t);
-              }}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                activeTicker === t
-                  ? 'bg-accent-blue text-white'
-                  : 'bg-black/[0.04] text-black/55 hover:bg-black/[0.08]'
-              }`}
-            >
-              {t}
-            </button>
-          ))}
+        {/* Quick picks — Portfolio */}
+        <div className="mt-4">
+          <p className="text-xxs font-semibold text-black/35 uppercase tracking-wider mb-2">Portfolio</p>
+          <div className="flex flex-wrap gap-2">
+            {portfolioTickers.map((t) => (
+              <button
+                key={t}
+                onClick={() => {
+                  setTicker(t);
+                  setActiveTicker(t);
+                }}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                  activeTicker === t
+                    ? 'bg-accent-blue text-white'
+                    : 'bg-black/[0.04] text-black/55 hover:bg-black/[0.08]'
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Quick picks — Watchlist */}
+        <div className="mt-3">
+          <p className="text-xxs font-semibold text-black/35 uppercase tracking-wider mb-2">Watchlist</p>
+          <div className="flex flex-wrap gap-2">
+            {watchlistTickers.map((t) => (
+              <button
+                key={t}
+                onClick={() => {
+                  setTicker(t);
+                  setActiveTicker(t);
+                }}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                  activeTicker === t
+                    ? 'bg-accent-blue text-white'
+                    : 'bg-black/[0.04] text-black/55 hover:bg-black/[0.08]'
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
         </div>
       </Card>
 
