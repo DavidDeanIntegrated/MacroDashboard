@@ -44,6 +44,7 @@ interface ScoreData {
   rationale: string;
   unavailable?: boolean;
   unavailableReason?: string;
+  preRevenue?: boolean;
 }
 
 function pillarBar(label: string, pts: number, max: number) {
@@ -60,13 +61,13 @@ function pillarBar(label: string, pts: number, max: number) {
   );
 }
 
-function metricRow(label: string, value: number | null, suffix: string, pts: number, maxPts: number) {
+function metricRow(label: string, value: number | null, suffix: string, pts: number, maxPts: number, naLabel = 'N/A') {
   return (
     <div className="flex items-center justify-between text-xs">
       <span className="text-black/45">{label}</span>
       <div className="flex items-center gap-2">
         <span className="text-black/65 tabular-nums">
-          {value !== null ? `${value.toFixed(1)}${suffix}` : 'N/A'}
+          {value !== null ? `${value.toFixed(1)}${suffix}` : naLabel}
         </span>
         <span className="font-semibold text-black/75 tabular-nums w-8 text-right">{pts}/{maxPts}</span>
       </div>
@@ -76,14 +77,20 @@ function metricRow(label: string, value: number | null, suffix: string, pts: num
 
 function ScoreDetail({ score }: { score: ScoreData }) {
   const b = score.breakdown;
+  const pr = score.preRevenue ? 'Pre-revenue' : 'N/A';
   return (
     <div className="space-y-4 mt-4 pt-4 border-t border-black/[0.06]">
+      {score.preRevenue && (
+        <div className="px-3 py-2 bg-amber-50 border border-amber-200/60 rounded-lg">
+          <p className="text-xs text-amber-700">Pre-revenue company — profitability, growth, and earnings metrics are not yet applicable. Score reflects available balance sheet and valuation data only.</p>
+        </div>
+      )}
       {/* Profitability */}
       <div>
         <p className="text-xs font-semibold text-black/60 uppercase tracking-wider mb-1.5">Profitability ({b.profitabilityPts}/{b.profitabilityMax})</p>
         <div className="space-y-1">
-          {metricRow('Net Margin', b.profitabilityDetail.netMargin, '%', b.profitabilityDetail.netMarginPts, 10)}
-          {metricRow('Gross Margin', b.profitabilityDetail.grossMargin, '%', b.profitabilityDetail.grossMarginPts, 8)}
+          {metricRow('Net Margin', b.profitabilityDetail.netMargin, '%', b.profitabilityDetail.netMarginPts, 10, pr)}
+          {metricRow('Gross Margin', b.profitabilityDetail.grossMargin, '%', b.profitabilityDetail.grossMarginPts, 8, pr)}
           {metricRow('ROE', b.profitabilityDetail.roe, '%', b.profitabilityDetail.roePts, 7)}
         </div>
       </div>
@@ -91,17 +98,17 @@ function ScoreDetail({ score }: { score: ScoreData }) {
       <div>
         <p className="text-xs font-semibold text-black/60 uppercase tracking-wider mb-1.5">Growth ({b.growthPts}/{b.growthMax})</p>
         <div className="space-y-1">
-          {metricRow('Revenue Growth', b.growthDetail.revenueGrowth, '%', b.growthDetail.revenueGrowthPts, 10)}
-          {metricRow('EPS Growth', b.growthDetail.epsGrowth, '%', b.growthDetail.epsGrowthPts, 10)}
+          {metricRow('Revenue Growth', b.growthDetail.revenueGrowth, '%', b.growthDetail.revenueGrowthPts, 10, pr)}
+          {metricRow('EPS Growth', b.growthDetail.epsGrowth, '%', b.growthDetail.epsGrowthPts, 10, pr)}
         </div>
       </div>
       {/* Valuation */}
       <div>
         <p className="text-xs font-semibold text-black/60 uppercase tracking-wider mb-1.5">Valuation ({b.valuationPts}/{b.valuationMax})</p>
         <div className="space-y-1">
-          {metricRow('P/E', b.valuationDetail.pe, 'x', b.valuationDetail.pePts, 10)}
+          {metricRow('P/E', b.valuationDetail.pe, 'x', b.valuationDetail.pePts, 10, pr)}
           {metricRow('P/B', b.valuationDetail.pb, 'x', b.valuationDetail.pbPts, 5)}
-          {metricRow('P/S', b.valuationDetail.ps, 'x', b.valuationDetail.psPts, 5)}
+          {metricRow('P/S', b.valuationDetail.ps, 'x', b.valuationDetail.psPts, 5, pr)}
         </div>
       </div>
       {/* Financial Health */}
@@ -208,6 +215,11 @@ export function FundamentalsScoreSection({
                     <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-semibold border ${score.gradeColor}`}>
                       {score.grade}
                     </span>
+                    {score.preRevenue && (
+                      <span className="inline-block px-2 py-0.5 rounded-md text-xs font-medium border border-amber-200 bg-amber-50 text-amber-700">
+                        Pre-revenue
+                      </span>
+                    )}
                     <span className="text-2xl font-black text-black/80 tabular-nums">{score.total}</span>
                     <span className="text-xs text-black/35">/100</span>
                   </div>

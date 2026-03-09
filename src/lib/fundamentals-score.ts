@@ -125,6 +125,7 @@ export interface FundamentalsScore {
   rationale: string;
   unavailable?: boolean;
   unavailableReason?: string;
+  preRevenue?: boolean;
 }
 
 // ─── Scoring Functions ───
@@ -268,7 +269,7 @@ function getGrade(total: number): { grade: FundamentalsScore['grade']; color: st
   return { grade: 'Poor', color: 'bg-accent-red/10 text-red-700 border-red-100' };
 }
 
-function buildRationale(breakdown: FundamentalsBreakdown): string {
+function buildRationale(breakdown: FundamentalsBreakdown, preRevenue = false): string {
   const parts: string[] = [];
   const { profitabilityPts, growthPts, valuationPts, healthPts, earningsQualityPts } = breakdown;
   const pd = breakdown.profitabilityDetail;
@@ -277,7 +278,9 @@ function buildRationale(breakdown: FundamentalsBreakdown): string {
   const hd = breakdown.healthDetail;
   const ed = breakdown.earningsQualityDetail;
 
-  if (profitabilityPts >= 20) {
+  if (preRevenue) {
+    parts.push('Pre-revenue company — profitability, growth, and valuation metrics are not yet applicable.');
+  } else if (profitabilityPts >= 20) {
     parts.push(`Highly profitable with${pd.netMargin !== null ? ` ${pd.netMargin.toFixed(1)}% net margin` : ''}${pd.grossMargin !== null ? `, ${pd.grossMargin.toFixed(1)}% gross margin` : ''}${pd.roe !== null ? `, and ${pd.roe.toFixed(1)}% ROE` : ''}.`);
   } else if (profitabilityPts >= 10) {
     parts.push(`Decent profitability${pd.netMargin !== null ? ` (${pd.netMargin.toFixed(1)}% net margin)` : ''}, though there's room for margin expansion.`);
@@ -287,17 +290,23 @@ function buildRationale(breakdown: FundamentalsBreakdown): string {
     parts.push('Currently unprofitable or insufficient profitability data.');
   }
 
-  if (growthPts >= 16) {
-    parts.push(`Strong growth trajectory${gd.revenueGrowth !== null ? ` with ${gd.revenueGrowth.toFixed(1)}% revenue growth` : ''}${gd.epsGrowth !== null ? ` and ${gd.epsGrowth.toFixed(1)}% EPS growth` : ''}.`);
-  } else if (growthPts >= 8) {
-    parts.push(`Moderate growth${gd.revenueGrowth !== null ? ` (${gd.revenueGrowth.toFixed(1)}% revenue)` : ''}.`);
-  } else if (growthPts > 0) {
-    parts.push('Growth is slowing but still positive.');
-  } else {
-    parts.push('Revenue or earnings are declining, indicating headwinds.');
+  if (!preRevenue) {
+    if (growthPts >= 16) {
+      parts.push(`Strong growth trajectory${gd.revenueGrowth !== null ? ` with ${gd.revenueGrowth.toFixed(1)}% revenue growth` : ''}${gd.epsGrowth !== null ? ` and ${gd.epsGrowth.toFixed(1)}% EPS growth` : ''}.`);
+    } else if (growthPts >= 8) {
+      parts.push(`Moderate growth${gd.revenueGrowth !== null ? ` (${gd.revenueGrowth.toFixed(1)}% revenue)` : ''}.`);
+    } else if (growthPts > 0) {
+      parts.push('Growth is slowing but still positive.');
+    } else {
+      parts.push('Revenue or earnings are declining, indicating headwinds.');
+    }
   }
 
-  if (valuationPts >= 15) {
+  if (preRevenue) {
+    if (vd.pb !== null) {
+      parts.push(`Trading at ${vd.pb.toFixed(1)}x book value.`);
+    }
+  } else if (valuationPts >= 15) {
     parts.push(`Attractively valued${vd.pe !== null ? ` at ${vd.pe.toFixed(1)}x earnings` : ''}${vd.pb !== null ? `, ${vd.pb.toFixed(1)}x book` : ''}.`);
   } else if (valuationPts >= 8) {
     parts.push(`Fairly valued${vd.pe !== null ? ` (${vd.pe.toFixed(1)}x PE)` : ''}, not stretched but not a bargain.`);
@@ -478,6 +487,16 @@ interface ComputedMetrics {
   cashToDebt: number | null;
 }
 
+/** Detect pre-revenue / early-stage companies where revenue-based metrics are meaningless */
+function isPreRevenue(metrics: ComputedMetrics): boolean {
+  // If profitability, growth, valuation (P/E, P/S), and earnings quality are all null/zero,
+  // but balance sheet data may exist — this is likely a pre-revenue company
+  const hasNoRevenueBased = metrics.netMargin === null && metrics.grossMargin === null
+    && metrics.revenueGrowth === null && metrics.epsGrowth === null
+    && metrics.pe === null && metrics.ps === null;
+  return hasNoRevenueBased;
+}
+
 function emptyMetrics(): ComputedMetrics {
   return {
     netMargin: null, grossMargin: null, roe: null,
@@ -600,6 +619,8 @@ export async function computeFundamentalsScore(symbol: string): Promise<Fundamen
       backfillFromEdgar(metrics, edgarMetrics, price, marketCap);
     }
 
+    const preRevenue = isPreRevenue(metrics);
+
     const profitability = scoreProfitability(metrics.netMargin, metrics.grossMargin, metrics.roe);
     const growth = scoreGrowth(metrics.revenueGrowth, metrics.epsGrowth);
     const valuation = scoreValuation(metrics.pe, metrics.pb, metrics.ps);
@@ -657,9 +678,9 @@ export async function computeFundamentalsScore(symbol: string): Promise<Fundamen
       },
     };
 
-    const rationale = buildRationale(breakdown);
+    const rationale = buildRationale(breakdown, preRevenue);
 
-    return { symbol, total, grade, gradeColor: color, breakdown, rationale };
+    return { symbol, total, grade, gradeColor: color, breakdown, rationale, preRevenue };
   });
 }
 
