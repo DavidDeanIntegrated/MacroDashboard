@@ -18,9 +18,11 @@ interface AllocationEntry {
 interface AllocationPieChartProps {
   data: AllocationEntry[];
   height?: number;
+  centerLabel?: string;
+  centerSublabel?: string;
 }
 
-export function AllocationPieChart({ data, height = 280 }: AllocationPieChartProps) {
+export function AllocationPieChart({ data, height = 280, centerLabel, centerSublabel }: AllocationPieChartProps) {
   const [activeIndex, setActiveIndex] = useState<number | undefined>(undefined);
 
   const onEnter = useCallback((_: unknown, index: number) => {
@@ -82,6 +84,16 @@ export function AllocationPieChart({ data, height = 280 }: AllocationPieChartPro
                 );
               }}
             />
+            {centerLabel && (
+              <text x="50%" y={centerSublabel ? "47%" : "50%"} textAnchor="middle" dominantBaseline="central" className="fill-black/75 text-sm font-semibold" style={{ fontSize: 14 }}>
+                {centerLabel}
+              </text>
+            )}
+            {centerSublabel && (
+              <text x="50%" y="57%" textAnchor="middle" dominantBaseline="central" className="fill-black/35 text-xs" style={{ fontSize: 11 }}>
+                {centerSublabel}
+              </text>
+            )}
           </PieChart>
         </ResponsiveContainer>
       </div>

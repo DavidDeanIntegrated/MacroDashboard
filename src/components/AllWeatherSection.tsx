@@ -256,11 +256,9 @@ export function AllWeatherSection({
                 color: s.color,
               }))}
               height={240}
+              centerLabel={formatCurrency(portfolioValue)}
+              centerSublabel="Total Value"
             />
-            <div className="text-center mt-2">
-              <p className="text-xs text-black/35">Total Portfolio Value</p>
-              <p className="text-lg font-semibold text-black/75 tabular-nums">{formatCurrency(portfolioValue)}</p>
-            </div>
           </div>
           {/* Horizontal bar comparison */}
           <div className="lg:w-3/5">

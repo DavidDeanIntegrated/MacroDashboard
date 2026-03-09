@@ -208,6 +208,8 @@ export default function PortfolioPage() {
               value: weight,
               color: BADGE_COLORS[categoryBadge(category)] || '#8E8E93',
             }))}
+            centerLabel={formatCurrency(portfolio.portfolioValue)}
+            centerSublabel="Total Value"
           />
         </div>
       </Card>
