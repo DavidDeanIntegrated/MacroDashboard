@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface UseApiOptions {
   refreshInterval?: number; // ms, 0 = no auto-refresh
@@ -23,6 +23,7 @@ export function useApi<T>(
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const hasDataRef = useRef(false);
 
   const fetchData = useCallback(async () => {
     if (!url || !enabled) return;
@@ -31,7 +32,9 @@ export function useApi<T>(
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      setLoading(true);
+      // Only show loading skeleton on initial fetch, not background refreshes
+      // This prevents the page from jumping to the top when data silently refreshes
+      if (!hasDataRef.current) setLoading(true);
       const response = await fetch(url, { signal: controller.signal });
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
@@ -39,8 +42,11 @@ export function useApi<T>(
       }
       const result = await response.json();
       setData(result);
+      hasDataRef.current = true;
       setError(null);
     } catch (err) {
+      // On background refresh failures, keep existing data and don't show error
+      if (hasDataRef.current) return;
       if (err instanceof DOMException && err.name === 'AbortError') {
         setError('Request timed out');
       } else {
@@ -51,6 +57,14 @@ export function useApi<T>(
       setLoading(false);
     }
   }, [url, enabled, timeoutMs]);
+
+  // Reset when URL changes (new data source)
+  useEffect(() => {
+    hasDataRef.current = false;
+    setData(null);
+    setLoading(true);
+    setError(null);
+  }, [url]);
 
   useEffect(() => {
     fetchData();
