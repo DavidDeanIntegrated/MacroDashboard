@@ -25,6 +25,7 @@ export const HOLDINGS: Holding[] = [
   { symbol: 'BCI',  qty: 7.057182,   category: 'Commodity' },
   { symbol: 'PLTR', qty: 1.041579,   category: 'High Conviction' },
   { symbol: 'RKLB', qty: 1.700972,   category: 'High Conviction' },
+  { symbol: 'RVI',  qty: 2,          category: 'High Conviction' },
 ];
 
 // Category display order and badge variants
