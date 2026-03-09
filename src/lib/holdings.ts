@@ -227,6 +227,7 @@ export const WATCHLIST: WatchlistStock[] = [
   { symbol: 'DVN',   category: 'Energy' },
   { symbol: 'OXY',   category: 'Energy' },
   { symbol: 'CEG',   category: 'Nuclear / Energy' },
+  { symbol: 'OKLO',  category: 'Nuclear / Energy' },
   { symbol: 'VST',   category: 'Power / Utilities' },
   { symbol: 'TLN',   category: 'Power / Utilities' },
   { symbol: 'FLNC',  category: 'Energy Storage' },
