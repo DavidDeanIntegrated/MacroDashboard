@@ -326,6 +326,21 @@ function TickerDetail({
                         </Badge>
                       )}
                     </div>
+                    {sma50Data.length > 0 && sma200Data.length > 0 && (() => {
+                      const sma50Val = sma50Data[sma50Data.length - 1].value;
+                      const sma200Val = sma200Data[sma200Data.length - 1].value;
+                      const isGolden = sma50Val > sma200Val;
+                      const gapPct = ((sma50Val - sma200Val) / sma200Val * 100).toFixed(1);
+                      return (
+                        <p className="text-xs text-black/40 mb-2 leading-relaxed">
+                          The 50-day SMA smooths short-term noise to show the intermediate trend, while the 200-day SMA reveals the long-term trend.
+                          {isGolden
+                            ? ` The 50-day is ${gapPct}% above the 200-day (Golden Cross), a bullish signal suggesting upward momentum and institutional buying pressure.`
+                            : ` The 50-day is ${Math.abs(Number(gapPct))}% below the 200-day (Death Cross), a bearish signal suggesting weakening momentum and potential further downside.`
+                          }
+                        </p>
+                      );
+                    })()}
                     <TimeSeriesChart
                       data={sma50Data}
                       color="#FF9500"
@@ -351,6 +366,24 @@ function TickerDetail({
                         );
                       })()}
                     </div>
+                    {(() => {
+                      const latest = rsiData[rsiData.length - 1].value;
+                      return (
+                        <p className="text-xs text-black/40 mb-2 leading-relaxed">
+                          RSI measures the speed and magnitude of recent price changes on a 0–100 scale.
+                          {latest > 70
+                            ? ` At ${latest.toFixed(1)}, the stock is overbought — buying pressure has been unusually strong and a pullback or consolidation is more likely. Consider waiting for a cooler entry.`
+                            : latest > 60
+                            ? ` At ${latest.toFixed(1)}, momentum is bullish but approaching overbought territory. The trend is healthy but watch for signs of exhaustion.`
+                            : latest >= 40
+                            ? ` At ${latest.toFixed(1)}, momentum is neutral — neither buyers nor sellers dominate. The stock could break in either direction from here.`
+                            : latest >= 30
+                            ? ` At ${latest.toFixed(1)}, momentum is weakening and approaching oversold territory. Sellers are in control but a bounce could be near.`
+                            : ` At ${latest.toFixed(1)}, the stock is oversold — selling pressure has been extreme and a relief rally or reversal becomes more likely. Potential contrarian buy signal.`
+                          }
+                        </p>
+                      );
+                    })()}
                     <TimeSeriesChart
                       data={rsiData}
                       color="#AF52DE"
@@ -380,6 +413,26 @@ function TickerDetail({
                         );
                       })()}
                     </div>
+                    {(() => {
+                      const latest = macdData[macdData.length - 1];
+                      const prev = macdData.length >= 2 ? macdData[macdData.length - 2] : null;
+                      const histExpanding = prev ? Math.abs(latest.histogram) > Math.abs(prev.histogram) : false;
+                      const crossingOver = prev && prev.histogram <= 0 && latest.histogram > 0;
+                      const crossingUnder = prev && prev.histogram >= 0 && latest.histogram < 0;
+                      return (
+                        <p className="text-xs text-black/40 mb-2 leading-relaxed">
+                          MACD tracks the relationship between two moving averages (12-day and 26-day EMA). When the MACD line crosses above the signal line, it generates a buy signal; below generates a sell signal.
+                          {crossingOver
+                            ? ' The MACD just crossed above the signal line — a bullish crossover suggesting momentum is shifting upward. This is often an early buy signal.'
+                            : crossingUnder
+                            ? ' The MACD just crossed below the signal line — a bearish crossover suggesting momentum is turning negative. This is often an early sell signal.'
+                            : latest.histogram > 0
+                            ? ` The histogram is positive${histExpanding ? ' and expanding' : ' but narrowing'}, indicating bullish momentum is ${histExpanding ? 'strengthening' : 'fading — watch for a potential bearish crossover'}.`
+                            : ` The histogram is negative${histExpanding ? ' and expanding' : ' but narrowing'}, indicating bearish momentum is ${histExpanding ? 'intensifying — further downside likely' : 'weakening — a bullish crossover may be forming'}.`
+                          }
+                        </p>
+                      );
+                    })()}
                     <TimeSeriesChart
                       data={macdData.map((d) => ({ date: d.date, value: d.macd }))}
                       color="#007AFF"
