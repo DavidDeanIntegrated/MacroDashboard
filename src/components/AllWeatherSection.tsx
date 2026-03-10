@@ -5,6 +5,7 @@ import { Card, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { AllocationPieChart } from '@/components/charts/AllocationPieChart';
 import { formatCurrency } from '@/lib/format';
+import { useSpyDrawdown } from '@/lib/hooks';
 import type { HoldingPosition } from '@/lib/holdings';
 
 // ─── Sleeve Definitions ───
@@ -229,6 +230,7 @@ export function AllWeatherSection({
 }) {
   const sleeves = computeSleeveData(positions);
   const subSleeves = computeSubSleeveData(positions);
+  const spy = useSpyDrawdown();
 
   return (
     <>
@@ -299,6 +301,90 @@ export function AllWeatherSection({
             </tbody>
           </table>
         </div>
+      </Card>
+
+      {/* ─── SPY Drawdown Calculator ─── */}
+      <Card>
+        <CardTitle>SPY Drawdown — Rolling 3-Month High</CardTitle>
+        <p className="text-xs text-black/40 mt-1">
+          SGOV deployment trigger: SPY drops 10% from rolling 3-month high
+        </p>
+        {spy.loading ? (
+          <div className="mt-4 text-sm text-black/30">Loading SPY data...</div>
+        ) : spy.error ? (
+          <div className="mt-4 text-sm text-red-500/70">Failed to load SPY data</div>
+        ) : spy.drawdownPct !== null ? (
+          <div className="mt-5 flex items-start gap-6">
+            {/* Main drawdown number */}
+            <div className="flex-shrink-0">
+              <div className={`text-4xl font-bold tabular-nums tracking-tight ${
+                spy.drawdownPct <= -25 ? 'text-red-600' :
+                spy.drawdownPct <= -15 ? 'text-red-500' :
+                spy.drawdownPct <= -10 ? 'text-orange-500' :
+                spy.drawdownPct <= -5 ? 'text-amber-500' :
+                'text-emerald-600'
+              }`}>
+                {spy.drawdownPct > 0 ? '+' : ''}{spy.drawdownPct.toFixed(2)}%
+              </div>
+              <p className="text-xs text-black/40 mt-1">from 3-month high</p>
+            </div>
+
+            {/* Detail stats */}
+            <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div>
+                <p className="text-xs text-black/40">Current Price</p>
+                <p className="text-sm font-semibold tabular-nums text-black/75">${spy.currentPrice!.toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-black/40">3-Month High</p>
+                <p className="text-sm font-semibold tabular-nums text-black/75">${spy.rollingHigh!.toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-black/40">10% Trigger</p>
+                <p className="text-sm font-semibold tabular-nums text-black/75">${(spy.rollingHigh! * 0.90).toFixed(2)}</p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Trigger proximity bar */}
+        {spy.drawdownPct !== null && (
+          <div className="mt-5">
+            <div className="flex justify-between text-[10px] text-black/35 mb-1.5">
+              <span>0%</span>
+              <span>-10% trigger</span>
+              <span>-15%</span>
+              <span>-25%</span>
+            </div>
+            <div className="relative h-2.5 bg-black/[0.04] rounded-full overflow-hidden">
+              {/* Trigger zone markers */}
+              <div className="absolute left-[40%] top-0 bottom-0 w-px bg-orange-400/50" />
+              <div className="absolute left-[60%] top-0 bottom-0 w-px bg-red-400/50" />
+              <div className="absolute left-[100%] top-0 bottom-0 w-px bg-red-600/50" />
+              {/* Current drawdown indicator */}
+              <div
+                className={`absolute top-0 bottom-0 left-0 rounded-full transition-all ${
+                  spy.drawdownPct <= -25 ? 'bg-red-600' :
+                  spy.drawdownPct <= -15 ? 'bg-red-500' :
+                  spy.drawdownPct <= -10 ? 'bg-orange-500' :
+                  spy.drawdownPct <= -5 ? 'bg-amber-400' :
+                  'bg-emerald-500'
+                }`}
+                style={{ width: `${Math.min(Math.abs(spy.drawdownPct) / 25 * 100, 100)}%` }}
+              />
+            </div>
+            <div className="mt-3 text-xs text-black/45">
+              {spy.drawdownPct > -10
+                ? `SPY needs to drop to $${(spy.rollingHigh! * 0.90).toFixed(2)} (${(spy.drawdownPct + 10).toFixed(1)}% more) to trigger SGOV deployment into VTI`
+                : spy.drawdownPct > -15
+                ? 'Tier 1 triggered — deploy ~$180 SGOV into VTI'
+                : spy.drawdownPct > -25
+                ? 'Tier 2 triggered — deploy ~$180 SGOV into Quality Compounders (NVDA/MSFT/TSM)'
+                : 'Tier 3 triggered — aggressive deployment: VTI + VXUS + high-conviction names'
+              }
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* ─── Investment Thesis ─── */}

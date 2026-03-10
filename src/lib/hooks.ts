@@ -397,3 +397,28 @@ export function useFundamentalsScores(symbols: string[]) {
     unavailableReason?: string;
   }>>(syms ? `/api/finnhub?action=fundamentals-score&symbols=${syms}` : null);
 }
+
+// ─── SPY Drawdown from Rolling 3-Month High ───
+
+export function useSpyDrawdown() {
+  const { data: bars, loading, error } = usePolygonAggregates('SPY', '1day');
+
+  if (!bars || bars.length === 0) {
+    return { loading, error, drawdownPct: null, currentPrice: null, rollingHigh: null, rollingHighDate: null };
+  }
+
+  // Find the highest close in the dataset (default ~90 trading days for 1day timeframe)
+  let rollingHigh = -Infinity;
+  let rollingHighDate = '';
+  for (const bar of bars) {
+    if (bar.close > rollingHigh) {
+      rollingHigh = bar.close;
+      rollingHighDate = bar.date;
+    }
+  }
+
+  const currentPrice = bars[bars.length - 1].close;
+  const drawdownPct = ((currentPrice - rollingHigh) / rollingHigh) * 100;
+
+  return { loading, error, drawdownPct, currentPrice, rollingHigh, rollingHighDate };
+}
