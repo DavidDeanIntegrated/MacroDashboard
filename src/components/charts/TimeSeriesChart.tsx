@@ -4,6 +4,8 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   Tooltip,
@@ -178,16 +180,7 @@ export function MultiSeriesChart({
 
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
-        <defs>
-          {series.map((s) => (
-            <linearGradient key={s.key} id={`grad-${s.key}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={s.color} stopOpacity={0.08} />
-              <stop offset="100%" stopColor={s.color} stopOpacity={0.01} />
-            </linearGradient>
-          ))}
-        </defs>
-
+      <LineChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
 
         <XAxis
@@ -224,18 +217,17 @@ export function MultiSeriesChart({
         />
 
         {series.map((s) => (
-          <Area
+          <Line
             key={s.key}
             type="monotone"
             dataKey={s.key}
             name={s.name}
             stroke={s.color}
             strokeWidth={1.5}
-            fill={`url(#grad-${s.key})`}
             dot={false}
           />
         ))}
-      </AreaChart>
+      </LineChart>
     </ResponsiveContainer>
   );
 }
