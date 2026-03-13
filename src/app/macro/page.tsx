@@ -377,7 +377,7 @@ export default function MacroPage() {
     { info: INDICATOR_INFO['UMCSENT'], data: data.consumerSentiment, suffix: '' },
     { info: INDICATOR_INFO['PERMIT'], data: data.buildingPermits, suffix: 'K' },
     { info: INDICATOR_INFO['MANEMP'], data: data.ismManufacturing, suffix: '' },
-    { info: INDICATOR_INFO['ICSA'], data: data.initialClaims, suffix: 'K' },
+    { info: INDICATOR_INFO['ICSA'], data: data.initialClaims.map((d) => ({ ...d, value: d.value / 1000 })), suffix: 'K' },
     { info: INDICATOR_INFO['M2SL'], data: data.m2, suffix: 'B' },
   ];
 
@@ -865,7 +865,7 @@ export default function MacroPage() {
         <Card>
           <CardTitle>Initial Jobless Claims (Weekly)</CardTitle>
           <TimeSeriesChart
-            data={filterByPeriod(data.initialClaims, period)}
+            data={filterByPeriod(data.initialClaims, period).map((d) => ({ ...d, value: d.value / 1000 }))}
             color="#FF3B30"
             height={250}
             gradientId="icsa"
@@ -1043,7 +1043,7 @@ export default function MacroPage() {
                     }`}>
                       <div className="flex items-center gap-2 mb-1.5">
                         <Badge variant={signal.badge}>{signal.regime}</Badge>
-                        <span className="text-xs text-black/40">Current reading: {latest.toFixed(2)}%</span>
+                        <span className="text-xs text-black/40">Current reading: {latest.toFixed(2)}{indicator.suffix}</span>
                       </div>
                       <p className="text-xs text-black/60 leading-relaxed">
                         {signal.explanation}
