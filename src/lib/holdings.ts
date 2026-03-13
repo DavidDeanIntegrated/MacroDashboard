@@ -452,8 +452,10 @@ export async function getPortfolioChart(
 
     // Build a map: timestamp → { symbol → close }
     const dateMap = new Map<string, Map<string, number>>();
+    const intradaySymbolsWithData = new Set<string>();
 
     for (const { symbol, bars } of stockBars) {
+      if (bars.length > 0) intradaySymbolsWithData.add(symbol);
       for (const bar of bars) {
         // Round to 5-min bucket
         const d = new Date(bar.date);
@@ -465,6 +467,7 @@ export async function getPortfolioChart(
     }
 
     if (btcHolding) {
+      if (btcBars.size > 0) intradaySymbolsWithData.add('BTC');
       btcBars.forEach((close, ts) => {
         const d = new Date(ts);
         d.setMinutes(Math.floor(d.getMinutes() / 5) * 5, 0, 0);
@@ -485,7 +488,7 @@ export async function getPortfolioChart(
 
     const sortedDates = Array.from(dateMap.keys()).sort();
     const lastKnown = new Map<string, number>();
-    const totalHoldings = HOLDINGS.length;
+    const requiredIntraday = intradaySymbolsWithData.size;
 
     const result: Array<{ date: string; value: number }> = [];
 
@@ -499,7 +502,7 @@ export async function getPortfolioChart(
     for (const ts of sortedDates) {
       const prices = dateMap.get(ts)!;
       prices.forEach((price, symbol) => lastKnown.set(symbol, price));
-      if (lastKnown.size < totalHoldings) continue;
+      if (lastKnown.size < requiredIntraday) continue;
       let total = 0;
       for (const h of HOLDINGS) {
         total += h.qty * (lastKnown.get(h.symbol) || 0);
@@ -540,7 +543,11 @@ export async function getPortfolioChart(
   // Build a map: date → { symbol → close }
   const dateMap = new Map<string, Map<string, number>>();
 
+  // Track which symbols actually have bar data
+  const symbolsWithData = new Set<string>();
+
   for (const { symbol, bars } of stockBars) {
+    if (bars.length > 0) symbolsWithData.add(symbol);
     for (const bar of bars) {
       const date = bar.date.split('T')[0];
       if (!dateMap.has(date)) dateMap.set(date, new Map());
@@ -550,6 +557,7 @@ export async function getPortfolioChart(
 
   // Merge BTC
   if (btcHolding) {
+    if (btcBars.size > 0) symbolsWithData.add('BTC');
     Array.from(btcBars.entries()).forEach(([date, close]) => {
       if (!dateMap.has(date)) dateMap.set(date, new Map());
       dateMap.get(date)!.set('BTC', close);
@@ -558,18 +566,19 @@ export async function getPortfolioChart(
 
   // Sort dates and compute portfolio value per day,
   // carrying forward the last known price for each symbol (handles weekends/holidays).
-  // Skip early dates where not all holdings have appeared yet to avoid artificial dips.
+  // Only wait for symbols that actually have bar data — symbols with no data (failed fetches,
+  // unlisted) are excluded from the threshold so they don't block the entire chart.
   const sortedDates = Array.from(dateMap.keys()).sort();
   const lastKnown = new Map<string, number>();
-  const totalHoldings = HOLDINGS.length;
+  const requiredSymbols = symbolsWithData.size;
 
   const result: Array<{ date: string; value: number }> = [];
   for (const date of sortedDates) {
     const prices = dateMap.get(date)!;
     prices.forEach((price, symbol) => lastKnown.set(symbol, price));
 
-    // Only emit once we have prices for all holdings
-    if (lastKnown.size < totalHoldings) continue;
+    // Start emitting once we've seen all symbols that have data
+    if (lastKnown.size < requiredSymbols) continue;
 
     let total = 0;
     for (const h of HOLDINGS) {
