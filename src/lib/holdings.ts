@@ -477,18 +477,17 @@ export async function getPortfolioChart(
       });
     }
 
-    // Compute previous-close portfolio value as baseline
-    const prevCloseMap = new Map<string, number>();
+    // Compute previous-close portfolio value as baseline — only for symbols with intraday data
+    // so the baseline matches what the chart will actually show
     let prevCloseTotal = 0;
     for (const { symbol, prevClose } of prevCloses) {
-      prevCloseMap.set(symbol, prevClose);
+      if (!intradaySymbolsWithData.has(symbol)) continue;
       const holding = HOLDINGS.find((h) => h.symbol === symbol);
       if (holding) prevCloseTotal += holding.qty * prevClose;
     }
 
     const sortedDates = Array.from(dateMap.keys()).sort();
     const lastKnown = new Map<string, number>();
-    const requiredIntraday = intradaySymbolsWithData.size;
 
     const result: Array<{ date: string; value: number }> = [];
 
@@ -502,12 +501,13 @@ export async function getPortfolioChart(
     for (const ts of sortedDates) {
       const prices = dateMap.get(ts)!;
       prices.forEach((price, symbol) => lastKnown.set(symbol, price));
-      if (lastKnown.size < requiredIntraday) continue;
+      // Only sum holdings that have intraday data to match the baseline
       let total = 0;
       for (const h of HOLDINGS) {
+        if (!intradaySymbolsWithData.has(h.symbol)) continue;
         total += h.qty * (lastKnown.get(h.symbol) || 0);
       }
-      result.push({ date: ts, value: Math.round(total * 100) / 100 });
+      if (total > 0) result.push({ date: ts, value: Math.round(total * 100) / 100 });
     }
 
     // If no intraday bars (weekend/holiday), show a flat line at prev close
@@ -543,42 +543,59 @@ export async function getPortfolioChart(
   // Build a map: date → { symbol → close }
   const dateMap = new Map<string, Map<string, number>>();
 
-  // Track which symbols actually have bar data
-  const symbolsWithData = new Set<string>();
+  // Track earliest bar date per symbol to identify which symbols have data
+  // covering the full period vs. those that only appear very recently
+  const symbolEarliestDate = new Map<string, string>();
 
   for (const { symbol, bars } of stockBars) {
-    if (bars.length > 0) symbolsWithData.add(symbol);
     for (const bar of bars) {
       const date = bar.date.split('T')[0];
       if (!dateMap.has(date)) dateMap.set(date, new Map());
       dateMap.get(date)!.set(symbol, bar.close);
+      if (!symbolEarliestDate.has(symbol) || date < symbolEarliestDate.get(symbol)!) {
+        symbolEarliestDate.set(symbol, date);
+      }
     }
   }
 
   // Merge BTC
   if (btcHolding) {
-    if (btcBars.size > 0) symbolsWithData.add('BTC');
     Array.from(btcBars.entries()).forEach(([date, close]) => {
       if (!dateMap.has(date)) dateMap.set(date, new Map());
       dateMap.get(date)!.set('BTC', close);
+      if (!symbolEarliestDate.has('BTC') || date < symbolEarliestDate.get('BTC')!) {
+        symbolEarliestDate.set('BTC', date);
+      }
     });
   }
 
-  // Sort dates and compute portfolio value per day,
-  // carrying forward the last known price for each symbol (handles weekends/holidays).
-  // Only wait for symbols that actually have bar data — symbols with no data (failed fetches,
-  // unlisted) are excluded from the threshold so they don't block the entire chart.
+  // Determine which symbols have data early enough to be included from the start.
+  // Symbols whose data starts more than halfway through the period are "late starters"
+  // and shouldn't block the chart from rendering.
   const sortedDates = Array.from(dateMap.keys()).sort();
-  const lastKnown = new Map<string, number>();
-  const requiredSymbols = symbolsWithData.size;
+  if (sortedDates.length === 0) return [];
 
+  const midpointDate = sortedDates[Math.floor(sortedDates.length / 2)];
+  const earlySymbols = new Set<string>();
+  Array.from(symbolEarliestDate.entries()).forEach(([symbol, earliest]) => {
+    if (earliest <= midpointDate) earlySymbols.add(symbol);
+  });
+  // Need at least 1 early symbol to start the chart
+  const requiredSymbols = Math.max(1, earlySymbols.size);
+
+  const lastKnown = new Map<string, number>();
   const result: Array<{ date: string; value: number }> = [];
+
   for (const date of sortedDates) {
     const prices = dateMap.get(date)!;
     prices.forEach((price, symbol) => lastKnown.set(symbol, price));
 
-    // Start emitting once we've seen all symbols that have data
-    if (lastKnown.size < requiredSymbols) continue;
+    // Count how many early symbols we've seen so far
+    let earlySeen = 0;
+    Array.from(earlySymbols).forEach((s) => {
+      if (lastKnown.has(s)) earlySeen++;
+    });
+    if (earlySeen < requiredSymbols) continue;
 
     let total = 0;
     for (const h of HOLDINGS) {
