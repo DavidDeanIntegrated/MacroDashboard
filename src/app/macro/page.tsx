@@ -27,6 +27,7 @@ interface MacroDashboard {
   ismManufacturing: Array<{ date: string; value: number }>;
   initialClaims: Array<{ date: string; value: number }>;
   m2: Array<{ date: string; value: number }>;
+  moveIndex: Array<{ date: string; value: number }>;
   regime: {
     regime: string;
     label: string;
@@ -292,6 +293,21 @@ const INDICATOR_INFO: Record<string, IndicatorInfo> = {
       return { regime: 'Excess liquidity', badge: 'blue', explanation: 'Very high M2 levels. Excess liquidity supports asset prices in the near term but may feed inflation with a 12-18 month lag.' };
     },
   },
+  MOVE: {
+    key: 'MOVE',
+    label: 'MOVE Index (Bond Volatility)',
+    description:
+      'The Merrill Lynch Option Volatility Estimate — the bond market\'s VIX. Measures expected volatility in US Treasury options across the yield curve. When MOVE spikes, it signals uncertainty about rate policy, credit conditions, and macro trajectory. Bond volatility often leads equity volatility.',
+    regimeSignal: (v) => {
+      if (v > 150)
+        return { regime: 'Crisis / Dislocation', badge: 'red', explanation: 'MOVE above 150 signals extreme bond market stress. Historically seen during financial crises (2008, 2020, 2023 banking crisis). Liquidity is drying up and Treasury market functioning may be impaired.' };
+      if (v > 120)
+        return { regime: 'Elevated stress', badge: 'orange', explanation: 'Bond volatility elevated — rate uncertainty is high. The market is pricing in significant policy uncertainty. Typically accompanies aggressive Fed tightening or macro inflection points.' };
+      if (v > 80)
+        return { regime: 'Normal', badge: 'green', explanation: 'MOVE in the 80-120 range reflects typical rate uncertainty. Bond markets are functioning normally with moderate hedging demand.' };
+      return { regime: 'Calm / Complacent', badge: 'blue', explanation: 'Very low bond volatility suggests strong consensus on rate path. Often seen during steady Fed policy. Can precede complacency — watch for a snapback.' };
+    },
+  },
 };
 
 export default function MacroPage() {
@@ -379,6 +395,7 @@ export default function MacroPage() {
     { info: INDICATOR_INFO['MANEMP'], data: data.ismManufacturing, suffix: '' },
     { info: INDICATOR_INFO['ICSA'], data: data.initialClaims.map((d) => ({ ...d, value: d.value / 1000 })), suffix: 'K' },
     { info: INDICATOR_INFO['M2SL'], data: data.m2, suffix: 'B' },
+    { info: INDICATOR_INFO['MOVE'], data: data.moveIndex || [], suffix: '' },
   ];
 
   return (
@@ -763,10 +780,10 @@ export default function MacroPage() {
         </Card>
       </div>
 
-      {/* VIX + Credit */}
+      {/* VIX + MOVE */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
-          <CardTitle>VIX — Fear Gauge</CardTitle>
+          <CardTitle>VIX — Equity Fear Gauge</CardTitle>
           <TimeSeriesChart
             data={filterByPeriod(data.vix, period)}
             color="#FF3B30"
@@ -780,19 +797,34 @@ export default function MacroPage() {
         </Card>
 
         <Card>
-          <CardTitle>High Yield Credit Spread</CardTitle>
+          <CardTitle>MOVE Index — Bond Volatility</CardTitle>
           <TimeSeriesChart
-            data={filterByPeriod(data.highYieldSpread, period)}
-            color="#AF52DE"
+            data={filterByPeriod(data.moveIndex || [], period)}
+            color="#FF6B35"
             height={250}
-            gradientId="hySpread"
-            valueFormatter={(v) => `${v.toFixed(2)}%`}
+            gradientId="move"
+            valueFormatter={(v) => v.toFixed(1)}
           />
           <p className="text-xs text-black/40 mt-3 leading-relaxed">
-            The premium investors demand for risky corporate bonds over Treasuries. Below 3.5% signals easy credit (risk-on). Above 5-6% signals stress. Above 8% means panic — credit markets are freezing and the Fed typically intervenes.
+            The Merrill Lynch Option Volatility Estimate — the bond market&apos;s VIX. Measures expected Treasury volatility from options prices. Below 80 = calm. 80-120 = normal. Above 120 = stress. Above 150 = crisis-level dislocation (2008, SVB crisis). Bond vol often leads equity vol.
           </p>
         </Card>
       </div>
+
+      {/* Credit Spread */}
+      <Card>
+        <CardTitle>High Yield Credit Spread</CardTitle>
+        <TimeSeriesChart
+          data={filterByPeriod(data.highYieldSpread, period)}
+          color="#AF52DE"
+          height={250}
+          gradientId="hySpread"
+          valueFormatter={(v) => `${v.toFixed(2)}%`}
+        />
+        <p className="text-xs text-black/40 mt-3 leading-relaxed">
+          The premium investors demand for risky corporate bonds over Treasuries. Below 3.5% signals easy credit (risk-on). Above 5-6% signals stress. Above 8% means panic — credit markets are freezing and the Fed typically intervenes.
+        </p>
+      </Card>
 
       {/* Industrial Production */}
       <Card>

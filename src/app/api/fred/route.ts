@@ -7,6 +7,7 @@ import {
   getUpcomingReleaseDates,
   FRED_SERIES,
 } from '@/lib/fred';
+import { getYahooSeries } from '@/lib/yahoo';
 import { invalidatePrefix } from '@/lib/cache';
 
 export async function GET(request: NextRequest) {
@@ -91,17 +92,21 @@ export async function GET(request: NextRequest) {
         };
 
         const entries = Object.entries(seriesMap);
-        const results = await Promise.all(
-          entries.map(async ([key, id]) => {
-            const data = await getFredSeries(id);
-            return [key, data] as const;
-          })
-        );
+        const [results, moveData] = await Promise.all([
+          Promise.all(
+            entries.map(async ([key, id]) => {
+              const data = await getFredSeries(id);
+              return [key, data] as const;
+            })
+          ),
+          getYahooSeries('^MOVE', '5y', '1d').catch(() => []),
+        ]);
 
         const dashboard: Record<string, unknown> = {};
         for (const [key, data] of results) {
           dashboard[key] = data;
         }
+        dashboard.moveIndex = moveData;
 
         // Add CPI YoY
         const cpiData = results.find(([k]) => k === 'cpi')?.[1] || [];
