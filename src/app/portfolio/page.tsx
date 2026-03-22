@@ -65,6 +65,9 @@ export default function PortfolioPage() {
   const { data: rsiData } = usePolygonRSI(selectedSymbol && selectedSymbol !== 'BTC' ? selectedSymbol : null);
   const { data: dividends } = usePortfolioDividends(HOLDINGS.map((h) => h.symbol));
 
+  // SPY drawdown from 3-month peak
+  const { data: spyDailyData } = usePolygonAggregates('SPY', '1day');
+
   // Fundamentals scores for portfolio holdings
   const portfolioSymbols = useMemo(() => HOLDINGS.map((h) => h.symbol), []);
   const { data: portfolioScores, loading: scoresLoading, error: scoresError } = useFundamentalsScores(portfolioSymbols);
@@ -79,6 +82,43 @@ export default function PortfolioPage() {
   // Fundamentals scores for watchlist stocks
   const watchlistSymbols = useMemo(() => WATCHLIST.map((w) => w.symbol), []);
   const { data: watchlistScores, loading: watchScoresLoading, error: watchScoresError } = useFundamentalsScores(watchlistSymbols);
+
+  // SPY drawdown from 3-month peak
+  const spyDrawdown = useMemo(() => {
+    if (!spyDailyData || spyDailyData.length === 0) return null;
+    const now = new Date();
+    const threeMonthsAgo = new Date(now);
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    const threeMonthStr = threeMonthsAgo.toISOString().split('T')[0];
+
+    const recent = spyDailyData.filter((d) => d.date >= threeMonthStr);
+    if (recent.length === 0) return null;
+
+    const peakBar = recent.reduce((best, bar) => (bar.high > best.high ? bar : best), recent[0]);
+    const latestBar = recent[recent.length - 1];
+    const currentPrice = latestBar.close;
+    const peakPrice = peakBar.high;
+    const drawdownPct = ((currentPrice - peakPrice) / peakPrice) * 100;
+    const drawdownPts = currentPrice - peakPrice;
+
+    // Days since peak
+    const peakDate = new Date(peakBar.date);
+    const daysSincePeak = Math.round((now.getTime() - peakDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    return {
+      currentPrice,
+      peakPrice,
+      peakDate: peakBar.date,
+      drawdownPct,
+      drawdownPts,
+      daysSincePeak,
+      // Severity thresholds
+      severity: drawdownPct <= -20 ? 'bear' as const
+        : drawdownPct <= -10 ? 'correction' as const
+        : drawdownPct <= -5 ? 'pullback' as const
+        : 'normal' as const,
+    };
+  }, [spyDailyData]);
 
   if (loading) return <LoadingPage />;
   if (error) return <ErrorState message={error} onRetry={refresh} />;
@@ -139,6 +179,100 @@ export default function PortfolioPage() {
           changeLabel="weight"
         />
       </div>
+
+      {/* SPY Drawdown from 3-Month Peak */}
+      {spyDrawdown && (
+        <Card>
+          <div className="flex items-center justify-between mb-3">
+            <CardTitle>SPY Drawdown from 3-Month Peak</CardTitle>
+            <Badge variant={
+              spyDrawdown.severity === 'bear' ? 'red'
+                : spyDrawdown.severity === 'correction' ? 'red'
+                : spyDrawdown.severity === 'pullback' ? 'orange'
+                : 'green'
+            }>
+              {spyDrawdown.severity === 'bear' ? 'Bear Market'
+                : spyDrawdown.severity === 'correction' ? 'Correction'
+                : spyDrawdown.severity === 'pullback' ? 'Pullback'
+                : 'Near Highs'}
+            </Badge>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div>
+              <p className="text-[10px] text-black/35 uppercase tracking-wider">Drawdown</p>
+              <p className={`text-2xl font-bold tabular-nums ${
+                spyDrawdown.drawdownPct <= -10 ? 'text-accent-red'
+                  : spyDrawdown.drawdownPct <= -5 ? 'text-accent-orange'
+                  : spyDrawdown.drawdownPct < 0 ? 'text-black/70'
+                  : 'text-accent-green'
+              }`}>
+                {spyDrawdown.drawdownPct >= 0 ? '+' : ''}{spyDrawdown.drawdownPct.toFixed(2)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] text-black/35 uppercase tracking-wider">Points</p>
+              <p className="text-lg font-semibold tabular-nums text-black/70">
+                {spyDrawdown.drawdownPts >= 0 ? '+' : ''}{spyDrawdown.drawdownPts.toFixed(2)}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] text-black/35 uppercase tracking-wider">SPY Now</p>
+              <p className="text-lg font-semibold tabular-nums text-black/70">
+                {formatCurrency(spyDrawdown.currentPrice)}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] text-black/35 uppercase tracking-wider">3-Mo Peak</p>
+              <p className="text-lg font-semibold tabular-nums text-black/70">
+                {formatCurrency(spyDrawdown.peakPrice)}
+              </p>
+              <p className="text-[10px] text-black/30 mt-0.5">{spyDrawdown.peakDate}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-black/35 uppercase tracking-wider">Days Since Peak</p>
+              <p className="text-lg font-semibold tabular-nums text-black/70">
+                {spyDrawdown.daysSincePeak}
+              </p>
+            </div>
+          </div>
+
+          {/* Visual drawdown bar */}
+          <div className="mt-4">
+            <div className="flex items-center justify-between text-[10px] text-black/35 mb-1">
+              <span>0%</span>
+              <span>-5%</span>
+              <span>-10%</span>
+              <span>-20%</span>
+            </div>
+            <div className="h-3 bg-black/[0.04] rounded-full overflow-hidden relative">
+              {/* Threshold markers */}
+              <div className="absolute left-[25%] top-0 bottom-0 w-px bg-black/10" />
+              <div className="absolute left-[50%] top-0 bottom-0 w-px bg-black/10" />
+              <div className="absolute left-[75%] top-0 bottom-0 w-px bg-black/10" />
+              {/* Drawdown fill */}
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  spyDrawdown.severity === 'bear' ? 'bg-accent-red'
+                    : spyDrawdown.severity === 'correction' ? 'bg-accent-red/80'
+                    : spyDrawdown.severity === 'pullback' ? 'bg-accent-orange'
+                    : 'bg-accent-green'
+                }`}
+                style={{ width: `${Math.min(Math.abs(spyDrawdown.drawdownPct) / 20 * 100, 100)}%` }}
+              />
+            </div>
+            <p className="text-xs text-black/40 mt-2">
+              {spyDrawdown.severity === 'bear'
+                ? 'Bear market territory (>20% decline). Historically rare — consider defensive positioning and dollar-cost averaging.'
+                : spyDrawdown.severity === 'correction'
+                ? 'Market correction (10-20% decline). Occurs roughly once per year on average. Often a buying opportunity for long-term investors.'
+                : spyDrawdown.severity === 'pullback'
+                ? 'Moderate pullback (5-10% decline). Normal market behavior — happens 3-4 times per year historically.'
+                : 'Market trading near recent highs. Drawdown under 5% is typical day-to-day volatility.'}
+            </p>
+          </div>
+        </Card>
+      )}
 
       {/* Portfolio Value Chart */}
       <Card>
