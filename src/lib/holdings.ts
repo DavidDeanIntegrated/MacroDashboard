@@ -21,7 +21,7 @@ export const HOLDINGS: Holding[] = [
   { symbol: 'VXUS', qty: 2.729559,   category: 'International' },
   { symbol: 'NVDA', qty: 1.069294,   category: 'Quality Compounder' },
   { symbol: 'TSM',  qty: 0.493206,   category: 'Quality Compounder' },
-  { symbol: 'MSFT', qty: 0.466907,   category: 'Quality Compounder' },
+  { symbol: 'MSFT', qty: 0.604955,   category: 'Quality Compounder' },
   { symbol: 'BCI',  qty: 7.057182,   category: 'Commodity' },
   { symbol: 'PLTR', qty: 1.041579,   category: 'High Conviction' },
   { symbol: 'RKLB', qty: 1.700972,   category: 'High Conviction' },
