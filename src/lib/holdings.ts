@@ -20,11 +20,11 @@ export const HOLDINGS: Holding[] = [
   { symbol: 'VTV',  qty: 1.600283,   category: 'Value' },
   { symbol: 'VXUS', qty: 3.09268,    category: 'International' },
   { symbol: 'AVGO', qty: 0.589972,   category: 'Quality Compounder' },
-  { symbol: 'NVDA', qty: 1.21,       category: 'Quality Compounder' },
+  { symbol: 'NVDA', qty: 1.208697,   category: 'Quality Compounder' },
   { symbol: 'TSM',  qty: 0.567437,   category: 'Quality Compounder' },
   { symbol: 'MSFT', qty: 0.678777,   category: 'Quality Compounder' },
   { symbol: 'BCI',  qty: 7.057182,   category: 'Commodity' },
-  { symbol: 'PLTR', qty: 1.48,       category: 'High Conviction' },
+  { symbol: 'PLTR', qty: 1.481339,   category: 'High Conviction' },
   { symbol: 'RKLB', qty: 1.700972,   category: 'High Conviction' },
   { symbol: 'RVI',  qty: 2.49,       category: 'High Conviction' },
 ];
