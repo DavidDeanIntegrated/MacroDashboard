@@ -36,8 +36,8 @@ const SUB_SLEEVE_TARGETS: SubSleeveTarget[] = [
   { label: 'VTI (Broad US Core)', symbols: ['VTI'], targetMin: 20, targetMax: 22, priority: 'Buy first' },
   { label: 'VTV (Value)', symbols: ['VTV'], targetMin: 7, targetMax: 9, priority: 'Buy if under' },
   { label: 'VXUS (International)', symbols: ['VXUS'], targetMin: 5.5, targetMax: 6.5, priority: 'Hold / Buy if under' },
-  { label: 'Quality Compounders', symbols: ['NVDA', 'TSM', 'MSFT'], targetMin: 14, targetMax: 16, priority: 'Sell if >17%, Buy if <13%' },
-  { label: 'High Conviction', symbols: ['PLTR', 'RKLB'], targetMin: 0, targetMax: 6.5, priority: 'Sell first if over' },
+  { label: 'Quality Compounders', symbols: ['AVGO', 'NVDA', 'TSM', 'MSFT', 'PLTR'], targetMin: 14, targetMax: 16, priority: 'Sell if >17%, Buy if <13%' },
+  { label: 'High Conviction', symbols: ['RKLB', 'RVI', 'SPCX'], targetMin: 0, targetMax: 6.5, priority: 'Sell first if over' },
 ];
 
 // ─── Helpers ───
