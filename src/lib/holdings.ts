@@ -14,19 +14,20 @@ export interface Holding {
 
 export const HOLDINGS: Holding[] = [
   { symbol: 'BTC',  qty: 0.00716019, category: 'Crypto' },
-  { symbol: 'VTI',  qty: 2.43,       category: 'Broad Market' },
-  { symbol: 'SGOV', qty: 6.27,       category: 'Dry Powder' },
+  { symbol: 'VTI',  qty: 2.211067,   category: 'Broad Market' },
+  { symbol: 'SGOV', qty: 6.284957,   category: 'Dry Powder' },
   { symbol: 'GLD',  qty: 1.309365,   category: 'Gold' },
   { symbol: 'VTV',  qty: 1.600283,   category: 'Value' },
   { symbol: 'VXUS', qty: 3.09268,    category: 'International' },
-  { symbol: 'AVGO', qty: 0.589972,   category: 'Quality Compounder' },
-  { symbol: 'NVDA', qty: 1.208697,   category: 'Quality Compounder' },
-  { symbol: 'TSM',  qty: 0.567437,   category: 'Quality Compounder' },
+  { symbol: 'AVGO', qty: 0.654571,   category: 'Quality Compounder' },
+  { symbol: 'NVDA', qty: 1.068803,   category: 'Quality Compounder' },
+  { symbol: 'TSM',  qty: 0.386095,   category: 'Quality Compounder' },
   { symbol: 'MSFT', qty: 0.678777,   category: 'Quality Compounder' },
+  { symbol: 'PLTR', qty: 1.481339,   category: 'Quality Compounder' },
   { symbol: 'BCI',  qty: 7.057182,   category: 'Commodity' },
-  { symbol: 'PLTR', qty: 1.481339,   category: 'High Conviction' },
-  { symbol: 'RKLB', qty: 1.700972,   category: 'High Conviction' },
-  { symbol: 'RVI',  qty: 2.49,       category: 'High Conviction' },
+  { symbol: 'RKLB', qty: 1.246552,   category: 'High Conviction' },
+  { symbol: 'RVI',  qty: 3.034064,   category: 'High Conviction' },
+  { symbol: 'SPCX', qty: 2,          category: 'High Conviction' },
 ];
 
 // Category display order and badge variants
