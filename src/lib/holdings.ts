@@ -15,11 +15,10 @@ export interface Holding {
 export const HOLDINGS: Holding[] = [
   { symbol: 'BTC',  qty: 0.00716019, category: 'Crypto' },
   { symbol: 'VTI',  qty: 2.211067,   category: 'Broad Market' },
-  { symbol: 'SGOV', qty: 6.284957,   category: 'Dry Powder' },
+  { symbol: 'SGOV', qty: 8.274412,   category: 'Dry Powder' },
   { symbol: 'GLD',  qty: 1.309365,   category: 'Gold' },
   { symbol: 'VTV',  qty: 1.600283,   category: 'Value' },
   { symbol: 'VXUS', qty: 3.09268,    category: 'International' },
-  { symbol: 'AVGO', qty: 0.654571,   category: 'Quality Compounder' },
   { symbol: 'NVDA', qty: 1.068803,   category: 'Quality Compounder' },
   { symbol: 'TSM',  qty: 0.386095,   category: 'Quality Compounder' },
   { symbol: 'MSFT', qty: 0.678777,   category: 'Quality Compounder' },
