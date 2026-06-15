@@ -205,8 +205,8 @@ const HOLDING_RATIONALES: { symbol: string; title: string; rationale: string }[]
   { symbol: 'VTV', title: 'Value Tilt — Margin of Safety', rationale: 'Value stocks historically outperform in inflationary periods and provide a margin of safety through lower valuations and higher dividend yields.' },
   { symbol: 'VXUS', title: 'International — Against US Survivorship Bias', rationale: 'International diversification hedges against US exceptionalism fading. Vanguard projects 4.9–6.9% annual returns for non-US equities next decade.' },
   { symbol: 'SGOV', title: 'Dry Powder — Tactical Cash Earning Yield', rationale: '0–3 month T-bill ETF earning ~4.5–5% yield. Tactical, not permanent — deploy on dips per the drawdown ladder. Never let this fall below ~$150 (emergency floor).' },
-  { symbol: 'NVDA+TSM+MSFT', title: 'Quality Compounders — Secular Growth at Scale', rationale: 'NVDA (AI compute monopoly), TSM (foundry monopoly), MSFT (enterprise cloud + AI). Quality compounders with durable moats. Combined 14–16% target — sell above 17%, buy below 13%.' },
-  { symbol: 'PLTR+RKLB', title: 'High Conviction — Asymmetric Bets', rationale: 'PLTR (AI/data analytics platform with government + commercial adoption) and RKLB (space launch + satellite bus). Hold-and-dilute names — never buy during rebalancing. Only add with new money on 20%+ dips from cost basis.' },
+  { symbol: 'AVGO+NVDA+TSM+MSFT+PLTR', title: 'Quality Compounders — Secular Growth at Scale', rationale: 'AVGO (semiconductors + infrastructure software), NVDA (AI compute monopoly), TSM (foundry monopoly), MSFT (enterprise cloud + AI), and PLTR (AI/data analytics platform with government + commercial adoption). Quality compounders with durable moats. Combined 14–16% target — sell above 17%, buy below 13%.' },
+  { symbol: 'RKLB+RVI+SPCX', title: 'High Conviction — Asymmetric Bets', rationale: 'RKLB (space launch + satellite bus) alongside RVI and SPCX — asymmetric, high-volatility bets held as hold-and-dilute positions. Never bought during rebalancing; only add with new money on 20%+ dips from cost basis, capped at ~6.5% combined.' },
   { symbol: 'BTC', title: 'Bitcoin — Digital Hard-Money Complement', rationale: 'Modern hard-asset hedge complementing gold. Combined with GLD forms the "real money" allocation. Will dilute naturally toward 8–12% target as the portfolio grows — no forced rebalance needed.' },
 ];
 
@@ -214,7 +214,7 @@ const HOLDING_RATIONALES: { symbol: string; title: string; rationale: string }[]
 
 const DRAWDOWN_LADDER = [
   { trigger: 'SPY –10%', triggerDetail: 'from rolling 3-month high', action: 'Buy VTI (broad US core)', amount: '~$180' },
-  { trigger: 'SPY –15%', triggerDetail: 'from rolling 3-month high', action: 'Buy Quality Compounders — equal split NVDA/MSFT/TSM', amount: '~$180' },
+  { trigger: 'SPY –15%', triggerDetail: 'from rolling 3-month high', action: 'Buy Quality Compounders — equal split across AVGO/NVDA/TSM/MSFT/PLTR', amount: '~$180' },
   { trigger: 'SPY –25%+ or VIX >40', triggerDetail: '', action: 'Aggressive — VTI + VXUS + high-conviction on sale', amount: '~$247 (remaining)' },
 ];
 
@@ -332,7 +332,7 @@ export function AllWeatherSection({
               { num: '1', title: 'No long-term bonds', desc: 'In a high-debt, rising-rate world, long-term Treasuries are the most vulnerable asset. Replaced with SGOV (0–3 month T-bills) as tactical dry powder earning ~4.5–5% yield.' },
               { num: '2', title: 'Higher equity allocation (55–60% vs 30%)', desc: 'Appropriate for a longer time horizon that can weather volatility in exchange for higher long-run compounding.' },
               { num: '3', title: 'Bitcoin as hard-money complement (8–12%)', desc: 'Modern digital store of value alongside traditional gold; held at cost and allowed to dilute naturally as the portfolio grows.' },
-              { num: '4', title: 'Quality compounders + high-conviction names', desc: 'Instead of a pure index approach — includes NVDA/TSM/MSFT (quality compounders with durable moats) and PLTR/RKLB (asymmetric high-conviction bets).' },
+              { num: '4', title: 'Quality compounders + high-conviction names', desc: 'Instead of a pure index approach — includes AVGO/NVDA/TSM/MSFT/PLTR (quality compounders with durable moats) and RKLB/RVI/SPCX (asymmetric high-conviction bets).' },
               { num: '5', title: 'Real assets at 14–16%', desc: 'GLD + BCI as the core inflation/devaluation hedge. Dalio\'s "buy stuff" principle applied with modern instruments.' },
             ].map((mod) => (
               <div key={mod.num} className="flex gap-3">
@@ -455,8 +455,8 @@ export function AllWeatherSection({
             <p className="text-xs font-semibold text-black/50 uppercase tracking-wider mb-2">Sell Priority Order (Equities Overweight)</p>
             <div className="space-y-1.5">
               {[
-                { num: '1st', action: 'Trim high-conviction (PLTR then RKLB)', reason: 'Most volatile, highest valuation risk' },
-                { num: '2nd', action: 'Trim quality compounders equally (NVDA/TSM/MSFT)', reason: 'If group >17%' },
+                { num: '1st', action: 'Trim high-conviction (RKLB / RVI / SPCX)', reason: 'Most volatile, highest valuation risk' },
+                { num: '2nd', action: 'Trim quality compounders equally (AVGO/NVDA/TSM/MSFT/PLTR)', reason: 'If group >17%' },
                 { num: '3rd', action: 'Trim VTI or VTV', reason: 'Only as last resort — most diversified' },
               ].map((item) => (
                 <div key={item.num} className="flex items-start gap-2">
@@ -499,7 +499,7 @@ export function AllWeatherSection({
                 <p className="text-xs font-semibold text-accent-orange mb-2">Equities Overweight (63%)</p>
                 <div className="space-y-1.5 text-xs text-black/55">
                   <p>Portfolio: $4,200 — need to sell ~$252</p>
-                  <p className="text-accent-red">Sell: $120 PLTR + $80 RKLB + $52 NVDA</p>
+                  <p className="text-accent-red">Sell: $120 RKLB + $80 RVI + $52 NVDA</p>
                   <p className="text-accent-green">Buy: $252 into SGOV</p>
                   <p className="text-black/35 mt-1">Result: Equities back to ~57%</p>
                 </div>
@@ -508,7 +508,7 @@ export function AllWeatherSection({
                 <p className="text-xs font-semibold text-accent-blue mb-2">Internal Rebalance (57% OK)</p>
                 <div className="space-y-1.5 text-xs text-black/55">
                   <p>Portfolio: $4,000 — high-conviction at 8%</p>
-                  <p className="text-accent-red">Sell: $50 PLTR + $30 RKLB</p>
+                  <p className="text-accent-red">Sell: $50 RKLB + $30 RVI</p>
                   <p className="text-accent-green">Buy: $80 into VTI</p>
                   <p className="text-black/35 mt-1">Result: Total equities unchanged, internal balance fixed</p>
                 </div>
@@ -525,9 +525,9 @@ export function AllWeatherSection({
             </div>
           </div>
 
-          {/* PLTR/RKLB rules */}
+          {/* High-conviction buy rules */}
           <div className="p-4 bg-accent-purple/[0.04] rounded-xl border border-accent-purple/10">
-            <p className="text-xs font-semibold text-black/60 mb-2">When to Buy PLTR/RKLB</p>
+            <p className="text-xs font-semibold text-black/60 mb-2">When to Buy High-Conviction (RKLB / RVI / SPCX)</p>
             <div className="space-y-1 text-xs text-black/50">
               <p>Only with new contributions (paycheck money) if:</p>
               <ul className="list-disc list-inside space-y-0.5 ml-2">
@@ -553,7 +553,7 @@ export function AllWeatherSection({
               { num: 2, target: 'VTI / VXUS', desc: 'Maintain core equity balance', color: '#007AFF' },
               { num: 3, target: 'GLD', desc: 'Continue building toward 12–15% over time', color: '#E6A700' },
               { num: 4, target: 'BCI', desc: 'Maintain at ~4% with occasional top-ups', color: '#FF9500' },
-              { num: 5, target: 'NVDA/TSM/MSFT', desc: 'Opportunistic adds on dips only', color: '#AF52DE' },
+              { num: 5, target: 'AVGO/NVDA/TSM/MSFT/PLTR', desc: 'Opportunistic adds on dips only', color: '#AF52DE' },
             ].map((item, i) => (
               <div key={item.num} className="flex gap-4">
                 <div className="flex flex-col items-center">
