@@ -49,6 +49,19 @@ const periodMap: Record<ChartPeriod, number> = {
   MAX: 999,
 };
 
+// Indicators (keyed by INDICATOR_INFO.key) where a rising value is a positive
+// signal. For everything else, a rising value is treated as negative (the
+// default "up = bad" convention used for VIX, MOVE, HY spread, unemployment,
+// CPI, initial claims, etc.).
+const HIGHER_IS_BETTER: Record<string, boolean> = {
+  T10Y2Y: true, // un-inverting yield curve
+  USALOLITONOSTSAM: true, // LEI
+  UMCSENT: true, // consumer sentiment
+  PERMIT: true, // building permits
+  MANEMP: true, // ISM manufacturing / employment
+  M2SL: true, // M2 money supply
+};
+
 function filterByPeriod(
   data: Array<{ date: string; value: number }>,
   period: ChartPeriod
@@ -401,14 +414,14 @@ export default function MacroPage() {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Page header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold text-black/85 tracking-tight">Macro Overview</h2>
           <p className="text-sm text-black/45 mt-1">
             Economic indicators and macro regime analysis
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {(['1Y', '3Y', '5Y', '10Y', 'MAX'] as ChartPeriod[]).map((p) => (
             <button
               key={p}
@@ -489,7 +502,7 @@ export default function MacroPage() {
 
       {/* Macro Regime Banner */}
       <Card className="bg-gradient-to-r from-white/80 to-white/60">
-        <div className="flex items-start justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 sm:gap-0">
           <div>
             <p className="text-xs font-medium text-black/45 uppercase tracking-wider mb-2">
               Current Macro Regime
@@ -502,7 +515,7 @@ export default function MacroPage() {
               {regime.description}
             </p>
           </div>
-          <div className="text-right space-y-2 shrink-0 ml-8">
+          <div className="text-left sm:text-right space-y-2 shrink-0 sm:ml-8">
             <div>
               <p className="text-xxs text-black/35 uppercase">Inflation (YoY)</p>
               <p className="text-lg font-semibold tabular-nums text-black/85">
@@ -599,6 +612,26 @@ export default function MacroPage() {
         const spyStats = perfStats(spyData);
         const qqqStats = perfStats(qqqData);
 
+        // The benchmark fetch caps lookback at ~3 years (see fromDate above), so
+        // the actual data span can be shorter than the selected period. Label the
+        // "period" cards with the true available span so the number agrees with
+        // the label (e.g. "10Y" selected but only ~3Y of data available).
+        const spanLabel = (data: typeof spyData): string => {
+          if (data.length < 2) return period;
+          const spanDays =
+            (new Date(data[data.length - 1].date).getTime() -
+              new Date(data[0].date).getTime()) /
+            (1000 * 60 * 60 * 24);
+          const selectedDays = periodMap[period] * 30;
+          // If the data covers (nearly) the full selected period, keep the label.
+          if (period !== 'MAX' && spanDays >= selectedDays * 0.95) return period;
+          const years = spanDays / 365;
+          const trueLabel = years >= 1 ? `~${Math.round(years)}Y` : `~${Math.round(spanDays / 30)}M`;
+          return period === 'MAX' ? trueLabel : `${trueLabel} (max avail.)`;
+        };
+        const spyPeriodLabel = spanLabel(spyData);
+        const qqqPeriodLabel = spanLabel(qqqData);
+
         // Merge SPY price + SMA into chart data
         const spyChartData = spyData.map((d) => {
           const sma50Point = spySma50?.find((s) => s.date.split('T')[0] === d.date.split('T')[0]);
@@ -645,7 +678,7 @@ export default function MacroPage() {
               <MetricCard
                 label="SPY Period"
                 value={formatPercent(spyStats.changePeriod)}
-                change={period}
+                change={spyPeriodLabel}
                 changeLabel="period"
                 trend={spyStats.changePeriod >= 0 ? 'up' : 'down'}
               />
@@ -659,7 +692,7 @@ export default function MacroPage() {
               <MetricCard
                 label="QQQ Period"
                 value={formatPercent(qqqStats.changePeriod)}
-                change={period}
+                change={qqqPeriodLabel}
                 changeLabel="period"
                 trend={qqqStats.changePeriod >= 0 ? 'up' : 'down'}
               />
@@ -1019,6 +1052,19 @@ export default function MacroPage() {
             const change = getChange(indicator.data);
             const isExpanded = expandedIndicator === indicator.info.key;
             const signal = indicator.info.regimeSignal(latest);
+            const higherIsBetter = HIGHER_IS_BETTER[indicator.info.key] ?? false;
+            // A rising value (change > 0.1) is green when higherIsBetter,
+            // otherwise red. Falling value flips. |change| <= 0.1 stays neutral.
+            const changeColor =
+              change > 0.1
+                ? higherIsBetter
+                  ? 'text-accent-green'
+                  : 'text-accent-red'
+                : change < -0.1
+                  ? higherIsBetter
+                    ? 'text-accent-red'
+                    : 'text-accent-green'
+                  : 'text-black/85';
 
             return (
               <div key={indicator.info.key}>
@@ -1043,13 +1089,7 @@ export default function MacroPage() {
                   <div className="flex items-center gap-3">
                     <Badge variant={signal.badge}>{signal.regime}</Badge>
                     <span
-                      className={`text-sm font-semibold tabular-nums ${
-                        change > 0.1
-                          ? 'text-accent-red'
-                          : change < -0.1
-                            ? 'text-accent-green'
-                            : 'text-black/85'
-                      }`}
+                      className={`text-sm font-semibold tabular-nums ${changeColor}`}
                     >
                       {latest.toFixed(2)}{indicator.suffix}
                     </span>
