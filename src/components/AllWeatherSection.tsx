@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import { Card, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { AllocationPieChart } from '@/components/charts/AllocationPieChart';
@@ -53,10 +53,15 @@ function computeSleeveData(positions: HoldingPosition[]) {
 
 function computeSubSleeveData(positions: HoldingPosition[]) {
   return SUB_SLEEVE_TARGETS.map((sub) => {
-    const subPositions = positions.filter((p) => sub.symbols.includes(p.symbol));
+    const subPositions = positions
+      .filter((p) => sub.symbols.includes(p.symbol))
+      .sort((a, b) => b.marketValue - a.marketValue);
     const weight = subPositions.reduce((sum, p) => sum + p.weight, 0);
     const value = subPositions.reduce((sum, p) => sum + p.marketValue, 0);
-    return { ...sub, weight, value };
+    const dayChange = subPositions.reduce((sum, p) => sum + p.dayChange, 0);
+    const prevValue = value - dayChange;
+    const dayChangePercent = prevValue > 0 ? (dayChange / prevValue) * 100 : 0;
+    return { ...sub, weight, value, dayChange, dayChangePercent, members: subPositions };
   });
 }
 
@@ -229,6 +234,7 @@ export function AllWeatherSection({
 }) {
   const sleeves = computeSleeveData(positions);
   const subSleeves = computeSubSleeveData(positions);
+  const [expandedSubSleeve, setExpandedSubSleeve] = useState<string | null>('Quality Compounders');
 
   return (
     <>
@@ -271,13 +277,14 @@ export function AllWeatherSection({
       <Card padding="none">
         <div className="px-6 pt-6 pb-3">
           <CardTitle>Equity Sub-Sleeve Breakdown</CardTitle>
-          <p className="text-xs text-black/40 mt-1">Internal balance within the 55–60% equities allocation</p>
+          <p className="text-xs text-black/40 mt-1">Internal balance within the 55–60% equities allocation · click a row to see its holdings</p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full min-w-[640px]">
             <thead>
               <tr className="border-b border-black/[0.06]">
-                {['Sub-Sleeve', 'Symbols', 'Current', 'Target', 'Status', 'Priority'].map((h) => (
+                <th className="px-4 py-3 text-left text-xs font-medium text-black/40 uppercase tracking-wider w-8" />
+                {['Sub-Sleeve', 'Holdings', 'Current', 'Target', 'Day', 'Status', 'Priority'].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-medium text-black/40 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
@@ -285,15 +292,80 @@ export function AllWeatherSection({
             <tbody>
               {subSleeves.map((sub) => {
                 const status = getSleeveStatus(sub.weight, sub.targetMin, sub.targetMax);
+                const isOpen = expandedSubSleeve === sub.label;
+                const isExpandable = sub.members.length > 0;
                 return (
-                  <tr key={sub.label} className="border-b border-black/[0.03]">
-                    <td className="px-4 py-3 text-sm font-medium text-black/75">{sub.label}</td>
-                    <td className="px-4 py-3 text-xs text-black/50">{sub.symbols.join(', ')}</td>
-                    <td className="px-4 py-3 text-sm tabular-nums text-black/75">{sub.weight.toFixed(1)}%</td>
-                    <td className="px-4 py-3 text-sm tabular-nums text-black/50">{sub.targetMin}–{sub.targetMax}%</td>
-                    <td className="px-4 py-3">{statusBadge(status)}</td>
-                    <td className="px-4 py-3 text-xs text-black/45">{sub.priority}</td>
-                  </tr>
+                  <Fragment key={sub.label}>
+                    <tr
+                      onClick={() => isExpandable && setExpandedSubSleeve(isOpen ? null : sub.label)}
+                      className={`border-b border-black/[0.03] transition-colors ${
+                        isExpandable ? 'cursor-pointer hover:bg-black/[0.02]' : ''
+                      } ${isOpen ? 'bg-accent-blue/[0.03]' : ''}`}
+                    >
+                      <td className="px-4 py-3">
+                        {isExpandable && (
+                          <svg
+                            className={`w-4 h-4 text-black/30 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}
+                            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                          </svg>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-black/75">{sub.label}</td>
+                      <td className="px-4 py-3 text-xs text-black/50">{sub.members.length || sub.symbols.length} {(sub.members.length || sub.symbols.length) === 1 ? 'name' : 'names'}</td>
+                      <td className="px-4 py-3 text-sm tabular-nums text-black/75">{sub.weight.toFixed(1)}%</td>
+                      <td className="px-4 py-3 text-sm tabular-nums text-black/50">{sub.targetMin}–{sub.targetMax}%</td>
+                      <td className={`px-4 py-3 text-sm tabular-nums ${sub.dayChangePercent >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+                        {sub.dayChangePercent >= 0 ? '+' : ''}{sub.dayChangePercent.toFixed(2)}%
+                      </td>
+                      <td className="px-4 py-3">{statusBadge(status)}</td>
+                      <td className="px-4 py-3 text-xs text-black/45">{sub.priority}</td>
+                    </tr>
+                    {isOpen && isExpandable && (
+                      <tr className="bg-black/[0.015]">
+                        <td colSpan={8} className="px-4 pt-1 pb-4">
+                          <div className="pl-8 pr-2 space-y-1.5">
+                            {sub.members.map((m) => {
+                              const shareOfSleeve = sub.value > 0 ? (m.marketValue / sub.value) * 100 : 0;
+                              return (
+                                <div key={m.symbol} className="flex items-center gap-3 py-1.5">
+                                  <span className="text-sm font-semibold text-black/80 w-14 shrink-0">{m.symbol}</span>
+                                  {/* share-of-sleeve bar */}
+                                  <div className="flex-1 min-w-[80px] max-w-[260px] h-5 bg-black/[0.04] rounded-md overflow-hidden relative">
+                                    <div
+                                      className="absolute inset-y-0 left-0 rounded-md bg-accent-blue/25"
+                                      style={{ width: `${Math.min(shareOfSleeve, 100)}%` }}
+                                    />
+                                    <span className="absolute inset-0 flex items-center pl-2 text-[11px] font-medium text-black/55 tabular-nums">
+                                      {shareOfSleeve.toFixed(0)}% of sleeve
+                                    </span>
+                                  </div>
+                                  <div className="text-right w-24 shrink-0">
+                                    <p className="text-[10px] uppercase tracking-wider text-black/35">Value</p>
+                                    <p className="text-sm tabular-nums text-black/75">{formatCurrency(m.marketValue)}</p>
+                                  </div>
+                                  <div className="text-right w-20 shrink-0">
+                                    <p className="text-[10px] uppercase tracking-wider text-black/35">Port. wt</p>
+                                    <p className="text-sm tabular-nums text-black/75">{m.weight.toFixed(1)}%</p>
+                                  </div>
+                                  <div className="text-right w-20 shrink-0">
+                                    <p className="text-[10px] uppercase tracking-wider text-black/35">Day</p>
+                                    <p className={`text-sm tabular-nums font-medium ${m.dayChangePercent >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+                                      {m.dayChangePercent >= 0 ? '+' : ''}{m.dayChangePercent.toFixed(2)}%
+                                    </p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            <p className="text-[11px] text-black/35 pt-1.5">
+                              {sub.label} target {sub.targetMin}–{sub.targetMax}% · currently {sub.weight.toFixed(1)}% ({formatCurrency(sub.value)}) · {sub.priority}
+                            </p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>
