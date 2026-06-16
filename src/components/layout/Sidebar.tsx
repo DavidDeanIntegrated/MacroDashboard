@@ -119,12 +119,13 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-// Flat list for mobile nav — show the key pages only
+// Flat list for mobile nav — show the key pages only.
+// Holdings Analytics is prioritized over Watchlist for the limited mobile slots.
 const mobileNavItems: NavItem[] = [
   navGroups[0].items[0], // Macro
   navGroups[1].items[0], // Holdings
+  navGroups[1].items[1], // Analytics
   navGroups[2].items[0], // Ticker
-  navGroups[2].items[1], // Watchlist
   navGroups[0].items[2], // Alerts
 ];
 
