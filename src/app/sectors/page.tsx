@@ -32,10 +32,18 @@ const PERIOD_DAYS: Record<HeatmapPeriod, number> = {
   '1Y': 365,
 };
 
-function getReturn(data: Array<{ close: number }>, days: number): number {
+function getReturn(data: Array<{ close: number; date: string }>, days: number): number {
   if (data.length < 2) return 0;
-  const startIdx = Math.max(0, data.length - days - 1);
-  const start = data[startIdx].close;
+  // Slice by calendar date, not bar count: bars are trading days while `days` is
+  // a calendar window. Find the first bar on/after (today - days); fall back to
+  // the first bar if none qualifies. Returns a PERCENT (callers .toFixed(1) + '%').
+  const cutoff = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    return d.toISOString().split('T')[0];
+  })();
+  const startBar = data.find((b) => b.date >= cutoff) ?? data[0];
+  const start = startBar.close;
   const end = data[data.length - 1].close;
   return ((end - start) / start) * 100;
 }
@@ -81,10 +89,11 @@ function computeRegimeScore(
 export default function SectorsPage() {
   const [selectedPeriod, setSelectedPeriod] = useState<HeatmapPeriod>('1M');
 
-  // Fetch 1 year of data for all sectors (we'll slice for shorter periods)
+  // Fetch ~13 months of data for all sectors so a true trailing 365-calendar-day
+  // window always has a bar on/after the cutoff (we slice by date for shorter periods).
   const fromDate = useMemo(() => {
     const d = new Date();
-    d.setDate(d.getDate() - 370);
+    d.setDate(d.getDate() - 400);
     return d.toISOString().split('T')[0];
   }, []);
 
@@ -479,30 +488,49 @@ export default function SectorsPage() {
   const confidenceLabel = clampedConfidence >= 70 ? 'High' : clampedConfidence >= 40 ? 'Moderate' : 'Low';
   const confidenceColor = clampedConfidence >= 70 ? 'text-accent-green' : clampedConfidence >= 40 ? 'text-accent-orange' : 'text-accent-red';
 
-  // Build normalized comparison chart data
+  // Build normalized comparison chart data — joined by calendar DATE so series stay
+  // aligned (index-zipping by bar count misaligns sectors and truncates the window).
   const chartSectors = sorted.slice(0, 5); // Top 5 sectors
-  const normalizedData: Array<{ date: string; [key: string]: string | number }> = [];
+  const normalizedData: Array<{ date: string; [key: string]: string | number | null }> = [];
   if (chartSectors.length > 0 && chartSectors[0].data.length > 0) {
-    const periodDays = PERIOD_DAYS[selectedPeriod];
-    const baseData = chartSectors.map((s) => {
-      const startIdx = Math.max(0, s.data.length - periodDays - 1);
-      return { symbol: s.symbol, sliced: s.data.slice(startIdx), base: s.data[startIdx]?.close || 1 };
-    });
+    const chartCutoff = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - PERIOD_DAYS[selectedPeriod]);
+      return d.toISOString().split('T')[0];
+    })();
 
-    const minLen = Math.min(...baseData.map((b) => b.sliced.length));
-    for (let i = 0; i < minLen; i++) {
-      const point: { date: string; [key: string]: string | number } = { date: baseData[0].sliced[i].date };
-      for (const b of baseData) {
-        point[b.symbol] = +((b.sliced[i].close / b.base) * 100).toFixed(2);
+    // Per-sector date->close map plus a base (first in-window close).
+    const closeByDate: Record<string, Map<string, number>> = {};
+    const bases: Record<string, number> = {};
+    for (const s of chartSectors) {
+      const inWindow = s.data.filter((d) => d.date >= chartCutoff);
+      const m = new Map<string, number>();
+      for (const bar of inWindow) m.set(bar.date, bar.close);
+      closeByDate[s.symbol] = m;
+      bases[s.symbol] = inWindow.length > 0 ? inWindow[0].close : 0;
+    }
+
+    // Master date axis: union of all in-window sector dates, sorted ascending.
+    const dateSet = new Set<string>();
+    for (const s of chartSectors) {
+      Array.from(closeByDate[s.symbol].keys()).forEach((date) => dateSet.add(date));
+    }
+    const masterDates = Array.from(dateSet).sort();
+
+    for (const date of masterDates) {
+      const point: { date: string; [key: string]: string | number | null } = { date };
+      for (const s of chartSectors) {
+        const close = closeByDate[s.symbol].get(date);
+        const base = bases[s.symbol];
+        point[s.symbol] = close != null && base > 0 ? +((close / base) * 100).toFixed(2) : null;
       }
-      point['date'] = baseData[0].sliced[i].date;
       normalizedData.push(point);
     }
   }
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-semibold text-black/85 tracking-tight">Sector Rotation</h2>
           <p className="text-sm text-black/45 mt-1">
@@ -564,10 +592,10 @@ export default function SectorsPage() {
           <p className="text-xs text-black/40 mt-1">Returns across timeframes — sorted by {selectedPeriod}</p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full min-w-[640px]">
             <thead>
               <tr className="border-b border-black/[0.06]">
-                <th className="px-4 py-3 text-left text-xs font-medium text-black/40 uppercase tracking-wider">Sector</th>
+                <th className="sticky left-0 z-10 bg-white px-4 py-3 text-left text-xs font-medium text-black/40 uppercase tracking-wider">Sector</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-black/40 uppercase tracking-wider">ETF</th>
                 {allPeriods.map((p) => (
                   <th
@@ -586,7 +614,7 @@ export default function SectorsPage() {
             <tbody>
               {sorted.map((sector) => (
                 <tr key={sector.symbol} className="border-b border-black/[0.03] hover:bg-black/[0.02] transition-colors">
-                  <td className="px-4 py-3 text-sm text-black/75 font-medium">{sector.name}</td>
+                  <td className="sticky left-0 z-10 bg-white px-4 py-3 text-sm text-black/75 font-medium">{sector.name}</td>
                   <td className="px-4 py-3">
                     <span className="text-sm font-semibold text-black/85">{sector.symbol}</span>
                   </td>
@@ -611,7 +639,7 @@ export default function SectorsPage() {
               ))}
               {/* SPY Benchmark Row */}
               <tr className="border-t border-black/[0.08] bg-black/[0.02]">
-                <td className="px-4 py-3 text-sm text-black/75 font-semibold">S&P 500</td>
+                <td className="sticky left-0 z-10 bg-[#FAFAFA] px-4 py-3 text-sm text-black/75 font-semibold">S&P 500</td>
                 <td className="px-4 py-3">
                   <span className="text-sm font-semibold text-black/85">SPY</span>
                 </td>
@@ -928,10 +956,10 @@ export default function SectorsPage() {
           <div className="border border-black/[0.06] rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs font-bold text-accent-blue bg-accent-blue/10 w-6 h-6 rounded-full flex items-center justify-center">2</span>
-              <p className="text-sm font-semibold text-black/75">Regime Score History (Rolling 30-Day)</p>
+              <p className="text-sm font-semibold text-black/75">Regime Score History (Rolling 30 Trading Days)</p>
             </div>
             <p className="text-xs text-black/50 mb-3">
-              How each regime&apos;s score has evolved over the past ~90 trading days. Rising lines = strengthening signal. Crossovers = regime transition in progress.
+              How each regime&apos;s score has evolved over the past ~90 trading days, using a trailing 30-trading-day excess-return window. Rising lines = strengthening signal. Crossovers = regime transition in progress.
             </p>
 
             {rollingRegimeData.length > 3 ? (

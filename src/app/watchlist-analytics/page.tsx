@@ -195,11 +195,21 @@ export default function WatchlistAnalyticsPage() {
 
   const days = PERIOD_DAYS[period];
 
+  // We always fetch ~1Y of daily bars, then slice by actual calendar date so each
+  // period reflects the true trailing window. Slicing by bar count (e.g. last 90
+  // bars for "3M") is wrong because bars are trading days, not calendar days —
+  // 90 trading days is ~4.3 months, which made the periods inaccurate.
+  const periodCutoff = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    return d.toISOString().split('T')[0];
+  })();
+
   // Get sliced close prices for each symbol
   const symbolData: Record<string, { closes: number[]; dates: string[] }> = {};
   for (const sym of allSymbols) {
     const series = aggData?.find((s) => s.symbol === sym)?.data || [];
-    const sliced = series.slice(-days);
+    const sliced = series.filter((d) => d.date >= periodCutoff);
     symbolData[sym] = {
       closes: sliced.map((d) => d.close),
       dates: sliced.map((d) => d.date),
@@ -207,17 +217,30 @@ export default function WatchlistAnalyticsPage() {
   }
 
   const spyCloses = symbolData['SPY']?.closes || [];
+  const spyDates = symbolData['SPY']?.dates || [];
   const spyReturns = computeReturns(spyCloses);
+
+  // SPY close keyed by date, so each holding can be benchmarked over its OWN window
+  // (a recent IPO's return must be compared to SPY over the same dates, not the full period).
+  const spyByDate = new Map<string, number>();
+  for (let i = 0; i < spyCloses.length; i++) spyByDate.set(spyDates[i], spyCloses[i]);
+
+  // A holding "covers the full period" if it has data for ~all of SPY's trading days.
+  // Short-history names (recent IPOs) are flagged so they can't distort the indexed chart.
+  const fullPeriodThreshold = spyCloses.length * 0.9;
 
   // ─── RELATIVE STRENGTH ───
   const relativeStrength = WATCH_STOCKS.map((h) => {
     const closes = symbolData[h.symbol]?.closes || [];
+    const dates = symbolData[h.symbol]?.dates || [];
     if (closes.length < 2 || spyCloses.length < 2) {
-      return { symbol: h.symbol, category: h.category, currentPrice: 0, holdingReturn: 0, spyReturn: 0, relStrength: 0 };
+      return { symbol: h.symbol, category: h.category, currentPrice: 0, holdingReturn: 0, spyReturn: 0, relStrength: 0, hasFullPeriod: false };
     }
     const currentPrice = closes[closes.length - 1];
     const holdingReturn = ((closes[closes.length - 1] - closes[0]) / closes[0]) * 100;
-    const spyReturn = ((spyCloses[spyCloses.length - 1] - spyCloses[0]) / spyCloses[0]) * 100;
+    // Benchmark SPY over the same window: from the holding's first date to the end.
+    const spyStart = spyByDate.get(dates[0]) ?? spyCloses[0];
+    const spyReturn = ((spyCloses[spyCloses.length - 1] - spyStart) / spyStart) * 100;
     return {
       symbol: h.symbol,
       category: h.category,
@@ -225,6 +248,7 @@ export default function WatchlistAnalyticsPage() {
       holdingReturn,
       spyReturn,
       relStrength: holdingReturn - spyReturn,
+      hasFullPeriod: closes.length >= fullPeriodThreshold,
     };
   }).sort((a, b) => b.relStrength - a.relStrength);
 
@@ -372,21 +396,33 @@ export default function WatchlistAnalyticsPage() {
     };
   };
 
-  // Relative strength chart — normalized to 100
-  const topOutperformers = relativeStrength.slice(0, 3);
-  const rsChartData: Array<{ date: string; [key: string]: string | number }> = [];
-  if (topOutperformers.length > 0) {
+  // Relative strength chart — each series indexed to 100 at its first close.
+  // Only full-period holdings are eligible so a recent IPO can't hijack the y-axis.
+  const topOutperformers = relativeStrength.filter((r) => r.hasFullPeriod).slice(0, 3);
+  const rsChartData: Array<{ date: string; [key: string]: string | number | null }> = [];
+  if (topOutperformers.length > 0 && spyCloses.length > 0) {
     const symsForChart = [...topOutperformers.map((r) => r.symbol), 'SPY'];
+
+    // Build a date->close lookup and a base (first close) for each symbol.
+    const closeByDate: Record<string, Map<string, number>> = {};
     const bases: Record<string, number> = {};
     for (const sym of symsForChart) {
-      const c = symbolData[sym]?.closes || [];
-      bases[sym] = c.length > 0 ? c[0] : 1;
+      const closes = symbolData[sym]?.closes || [];
+      const dates = symbolData[sym]?.dates || [];
+      const m = new Map<string, number>();
+      for (let i = 0; i < dates.length; i++) m.set(dates[i], closes[i]);
+      closeByDate[sym] = m;
+      bases[sym] = closes.length > 0 ? closes[0] : 0;
     }
-    const minLen = Math.min(...symsForChart.map((s) => symbolData[s]?.closes?.length || 0));
-    for (let i = 0; i < minLen; i++) {
-      const point: { date: string; [key: string]: string | number } = { date: symbolData['SPY']?.dates[i] || '' };
+
+    // Walk SPY's date axis (full period) so all series stay aligned by calendar date.
+    // Dates a symbol hasn't traded yet are left null, so its line simply starts later.
+    for (const date of spyDates) {
+      const point: { date: string; [key: string]: string | number | null } = { date };
       for (const sym of symsForChart) {
-        point[sym] = +((((symbolData[sym]?.closes || [])[i] || 0) / bases[sym]) * 100).toFixed(2);
+        const close = closeByDate[sym].get(date);
+        const base = bases[sym];
+        point[sym] = close != null && base > 0 ? +((close / base) * 100).toFixed(2) : null;
       }
       rsChartData.push(point);
     }
@@ -400,7 +436,7 @@ export default function WatchlistAnalyticsPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <div className="flex items-center gap-3 mb-1">
             <Link
@@ -757,7 +793,7 @@ export default function WatchlistAnalyticsPage() {
 
                 const bottomScore = showBottomScore ? (() => {
                   const series = aggData?.find((a) => a.symbol === s.symbol)?.data || [];
-                  const sliced = series.slice(-days);
+                  const sliced = series.filter((d) => d.date >= periodCutoff);
                   const volumes = sliced.map((d) => d.volume);
                   const closes = sliced.map((d) => d.close);
 

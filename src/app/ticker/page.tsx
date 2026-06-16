@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { format, parseISO } from 'date-fns';
 import { Card, CardTitle, MetricCard, StatRow } from '@/components/ui/Card';
 import { LoadingCard, ErrorState, EmptyState } from '@/components/ui/Loading';
 import { Badge, TrendIndicator } from '@/components/ui/Badge';
@@ -179,18 +180,18 @@ function TickerDetail({
     <div className="space-y-6">
       {/* Company Header */}
       <Card className="bg-gradient-to-r from-white/80 to-white/60">
-        <div className="flex items-start justify-between">
-          <div className="flex items-start gap-4">
+        <div className="flex flex-col sm:flex-row items-start sm:justify-between gap-4">
+          <div className="flex items-start gap-4 min-w-0">
             {profile?.logo && (
               <img
                 src={profile.logo}
                 alt={profile.name}
-                className="w-12 h-12 rounded-xl object-contain bg-white p-1 shadow-subtle"
+                className="w-12 h-12 rounded-xl object-contain bg-white p-1 shadow-subtle shrink-0"
               />
             )}
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-3">
-                <h3 className="text-xl font-semibold text-black/85">{symbol}</h3>
+                <h3 className="text-xl font-semibold text-black/85 truncate">{symbol}</h3>
                 {profile && (
                   <Badge variant="neutral">{profile.exchange}</Badge>
                 )}
@@ -198,7 +199,7 @@ function TickerDetail({
               {profileLoading ? (
                 <div className="h-4 w-40 bg-black/[0.06] rounded animate-pulse mt-1" />
               ) : profile ? (
-                <p className="text-sm text-black/55 mt-0.5">{profile.name}</p>
+                <p className="text-sm text-black/55 mt-0.5 truncate">{profile.name}</p>
               ) : null}
               {profile && (
                 <div className="flex items-center gap-4 mt-2">
@@ -234,7 +235,7 @@ function TickerDetail({
 
         {/* Quick stats */}
         {quote && (
-          <div className="grid grid-cols-4 gap-4 mt-6 pt-4 border-t border-black/[0.04]">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-4 border-t border-black/[0.04]">
             <div>
               <p className="text-xxs text-black/35 uppercase">Open</p>
               <p className="text-sm font-medium text-black/75 tabular-nums">{formatCurrency(quote.open)}</p>
@@ -302,6 +303,21 @@ function TickerDetail({
                 height={350}
                 gradientId={`price-${symbol}-${chartTimeframe}`}
                 valueFormatter={(v) => formatCurrency(v)}
+                xAxisFormatter={(d) => {
+                  // Match the x-axis label to the selected timeframe:
+                  // intraday → time of day, short multi-day → month/day, long → month/year.
+                  const fmt =
+                    chartTimeframe === '1min' || chartTimeframe === '5min' || chartTimeframe === '15min' || chartTimeframe === '1hour'
+                      ? 'HH:mm'
+                      : chartTimeframe === '1day'
+                      ? 'MMM yy'
+                      : 'MMM d';
+                  try {
+                    return format(parseISO(d), fmt);
+                  } catch {
+                    return d;
+                  }
+                }}
                 compact={chartTimeframe !== '1day'}
               />
             ) : (
@@ -591,21 +607,22 @@ function FundamentalsTab({
 
   const { fundamentals, metrics } = data;
 
-  // Get last 20 periods for charts
-  const revenueData = fundamentals.revenue.slice(-20).map((d) => ({
-    date: d.endDate,
-    value: d.value,
-  }));
+  // Charts: filter to a single periodicity before plotting. EDGAR mixes 10-K
+  // full-year and 10-Q quarterly points; interleaving them produces a misleading
+  // annual/quarterly sawtooth. The `period` suffix distinguishes them — annual
+  // points end in "-FY" while quarterly points end in "-Q1"/"-Q2"/"-Q3"
+  // (the hook type exposes `period` but not `form`, so we key off `period`).
+  // Prefer quarterly; fall back to annual if no quarterly data exists.
+  const quarterlySeries = (series: typeof fundamentals.revenue) => {
+    const quarterly = series.filter((d) => /-Q[1-4]$/.test(d.period));
+    return (quarterly.length > 0 ? quarterly : series)
+      .slice(-20)
+      .map((d) => ({ date: d.endDate, value: d.value }));
+  };
 
-  const netIncomeData = fundamentals.netIncome.slice(-20).map((d) => ({
-    date: d.endDate,
-    value: d.value,
-  }));
-
-  const epsData = fundamentals.eps.slice(-20).map((d) => ({
-    date: d.endDate,
-    value: d.value,
-  }));
+  const revenueData = quarterlySeries(fundamentals.revenue);
+  const netIncomeData = quarterlySeries(fundamentals.netIncome);
+  const epsData = quarterlySeries(fundamentals.eps);
 
   return (
     <div className="space-y-6">
@@ -640,7 +657,7 @@ function FundamentalsTab({
       {/* Revenue chart */}
       {revenueData.length > 0 && (
         <Card>
-          <CardTitle>Revenue History</CardTitle>
+          <CardTitle>Revenue History (Quarterly)</CardTitle>
           <TimeSeriesChart
             data={revenueData}
             color="#34C759"
@@ -654,7 +671,7 @@ function FundamentalsTab({
       {/* Net income chart */}
       {netIncomeData.length > 0 && (
         <Card>
-          <CardTitle>Net Income History</CardTitle>
+          <CardTitle>Net Income History (Quarterly)</CardTitle>
           <TimeSeriesChart
             data={netIncomeData}
             color="#007AFF"
@@ -668,7 +685,7 @@ function FundamentalsTab({
       {/* EPS chart */}
       {epsData.length > 0 && (
         <Card>
-          <CardTitle>EPS History</CardTitle>
+          <CardTitle>EPS History (Quarterly)</CardTitle>
           <TimeSeriesChart
             data={epsData}
             color="#AF52DE"

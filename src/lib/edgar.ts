@@ -320,6 +320,61 @@ export interface EdgarScoringMetrics {
 }
 
 /**
+ * Trailing-twelve-month sum from XBRL flow data (revenue, net income, EPS, etc.).
+ *
+ * EDGAR XBRL mixes 10-K full-YEAR figures (form '10-K', period suffix "FY") with
+ * 10-Q 3-MONTH figures (form '10-Q', period suffix "Q1"/"Q2"/"Q3"). Naively summing
+ * the last 4 points adds one full year to three quarters and badly overstates TTM.
+ *
+ * Approach: only 3-month quarterly periods (Q1–Q3) arrive as standalone 10-Q facts —
+ * Q4 is never filed separately, it's folded into the 10-K full-year figure. So we
+ * derive Q4 = FY − (Q1 + Q2 + Q3) for each fiscal year, then sum the trailing 4
+ * true 3-month quarters by endDate. Falls back to the latest full-year 10-K when we
+ * can't assemble 4 quarters.
+ */
+function computeTTM(data: FundamentalDataPoint[]): number | null {
+  const fyOf = (d: FundamentalDataPoint) => d.period.split('-')[0];
+  const fpOf = (d: FundamentalDataPoint) => d.period.split('-')[1];
+
+  const latestAnnual = (() => {
+    const annuals = data.filter((d) => d.form === '10-K');
+    return annuals.length > 0 ? annuals[annuals.length - 1].value : null;
+  })();
+
+  // True 3-month quarters: dedupe by fiscal period, keep endDate for ordering.
+  const quarters: Array<{ endDate: string; value: number }> = [];
+
+  // Q1–Q3 come straight from 10-Q (already 3-month figures).
+  for (const d of data) {
+    if (d.form === '10-Q' && /^Q[1-3]$/.test(fpOf(d))) {
+      quarters.push({ endDate: d.endDate, value: d.value });
+    }
+  }
+
+  // Derive Q4 = FY − (Q1 + Q2 + Q3) for each fiscal year where all parts exist.
+  const annualByFy = new Map<string, FundamentalDataPoint>();
+  for (const d of data) {
+    if (d.form === '10-K') annualByFy.set(fyOf(d), d);
+  }
+  Array.from(annualByFy.entries()).forEach(([fy, annual]) => {
+    const q1 = data.find((d) => fyOf(d) === fy && fpOf(d) === 'Q1');
+    const q2 = data.find((d) => fyOf(d) === fy && fpOf(d) === 'Q2');
+    const q3 = data.find((d) => fyOf(d) === fy && fpOf(d) === 'Q3');
+    if (q1 && q2 && q3) {
+      quarters.push({
+        endDate: annual.endDate,
+        value: annual.value - (q1.value + q2.value + q3.value),
+      });
+    }
+  });
+
+  if (quarters.length < 4) return latestAnnual;
+
+  quarters.sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
+  return quarters.slice(-4).reduce((sum, q) => sum + q.value, 0);
+}
+
+/**
  * Extract scoring metrics from EDGAR XBRL data.
  * Used as a third-tier fallback when Polygon and Finnhub lack data.
  */
@@ -337,13 +392,8 @@ export function extractScoringMetrics(f: CompanyFundamentals): EdgarScoringMetri
     return annuals.length >= 2 ? annuals[annuals.length - 2].value : null;
   };
 
-  // TTM from last 4 quarterly/annual filings
-  const getTTM = (data: FundamentalDataPoint[]) => {
-    const quarterly = data.filter((d) => d.form === '10-Q' || d.form === '10-K');
-    if (quarterly.length < 4) return getLatestAnnual(data);
-    const last4 = quarterly.slice(-4);
-    return last4.reduce((sum, d) => sum + d.value, 0);
-  };
+  // TTM = trailing four true 3-month quarters (see computeTTM).
+  const getTTM = (data: FundamentalDataPoint[]) => computeTTM(data);
 
   const ttmRevenue = getTTM(f.revenue);
   const ttmNetIncome = getTTM(f.netIncome);
@@ -413,13 +463,8 @@ export function computeMetrics(fundamentals: CompanyFundamentals): ComputedMetri
     return annuals.length > 0 ? annuals[annuals.length - 1].value : null;
   };
 
-  // Get last 4 quarters for TTM
-  const getTTM = (data: FundamentalDataPoint[]) => {
-    const quarterly = data.filter((d) => d.form === '10-Q' || d.form === '10-K');
-    if (quarterly.length < 4) return getLatestAnnual(data);
-    const last4 = quarterly.slice(-4);
-    return last4.reduce((sum, d) => sum + d.value, 0);
-  };
+  // TTM = trailing four true 3-month quarters (see computeTTM).
+  const getTTM = (data: FundamentalDataPoint[]) => computeTTM(data);
 
   const ttmRevenue = getTTM(fundamentals.revenue);
   const ttmNetIncome = getTTM(fundamentals.netIncome);
