@@ -6,7 +6,16 @@ import { Badge } from '@/components/ui/Badge';
 import { AllocationPieChart } from '@/components/charts/AllocationPieChart';
 import { formatCurrency } from '@/lib/format';
 import type { HoldingPosition } from '@/lib/holdings';
-import { computeSleeveData, getSleeveStatus, type SleeveStatus } from '@/lib/sleeves';
+import { computeSleeveData, getSleeveStatus, regimeAdjustedBand, type SleeveStatus, type RegimeKey } from '@/lib/sleeves';
+import { macroSensitivity } from '@/lib/macro-sensitivity';
+
+export interface FundamentalsScoreLite {
+  symbol: string;
+  total: number;
+  grade: string;
+  gradeColor?: string;
+  unavailable?: boolean;
+}
 
 // ─── Sub-Sleeve Definitions ───
 
@@ -46,6 +55,13 @@ function statusBadge(status: SleeveStatus) {
   if (status === 'in-range') return <Badge variant="green">In Range</Badge>;
   if (status === 'over') return <Badge variant="orange">Over</Badge>;
   return <Badge variant="blue">Under</Badge>;
+}
+
+function gradeBadge(grade: string): 'green' | 'orange' | 'red' | 'neutral' {
+  if (grade === 'Strong Buy' || grade === 'Buy') return 'green';
+  if (grade === 'Hold') return 'neutral';
+  if (grade === 'Weak') return 'orange';
+  return 'red';
 }
 
 // ─── Collapsible Section ───
@@ -92,14 +108,17 @@ function CollapsibleSection({
 
 function SleeveComparisonBars({
   sleeves,
+  regimeKey = 'unknown',
 }: {
   sleeves: ReturnType<typeof computeSleeveData>;
+  regimeKey?: RegimeKey;
 }) {
   return (
     <div className="space-y-4">
       {sleeves.map((sleeve) => {
         const status = getSleeveStatus(sleeve.weight, sleeve.targetMin, sleeve.targetMax);
         const maxBar = 70; // max percentage width
+        const adj = regimeAdjustedBand(sleeve.name, sleeve.targetMin, sleeve.targetMax, regimeKey);
         return (
           <div key={sleeve.name}>
             <div className="flex items-center justify-between mb-1.5">
@@ -162,7 +181,21 @@ function SleeveComparisonBars({
               >
                 {sleeve.targetMax}%
               </span>
+              {/* Regime-adjusted target band — dashed boundary markers */}
+              {adj.delta !== 0 && (
+                <>
+                  <div className="absolute top-0 bottom-0 border-l border-dashed" style={{ left: `${(adj.min / maxBar) * 100}%`, borderColor: sleeve.color, opacity: 0.65 }} />
+                  <div className="absolute top-0 bottom-0 border-l border-dashed" style={{ left: `${(adj.max / maxBar) * 100}%`, borderColor: sleeve.color, opacity: 0.65 }} />
+                </>
+              )}
             </div>
+            {adj.delta !== 0 && (
+              <p className="text-[11px] text-black/40 mt-1">
+                <span className="inline-block w-3 border-t border-dashed align-middle mr-1" style={{ borderColor: sleeve.color }} />
+                Regime-adjusted target {adj.min.toFixed(0)}–{adj.max.toFixed(0)}%
+                <span className={adj.delta > 0 ? 'text-accent-green' : 'text-accent-red'}> ({adj.delta > 0 ? '▲ +' : '▼ '}{adj.delta}pp)</span>
+              </p>
+            )}
           </div>
         );
       })}
@@ -194,16 +227,99 @@ const DRAWDOWN_LADDER = [
 
 // ─── Main Component ───
 
+// ─── Rebalance Simulator ───
+
+function RebalanceSimulator({
+  sleeves,
+  portfolioValue,
+}: {
+  sleeves: ReturnType<typeof computeSleeveData>;
+  portfolioValue: number;
+}) {
+  const [deltas, setDeltas] = useState<Record<string, number>>({});
+  const netCash = Object.values(deltas).reduce((s, v) => s + (v || 0), 0);
+  const projTotal = portfolioValue + netCash;
+  const anyChange = Object.values(deltas).some((v) => v);
+
+  return (
+    <Card>
+      <div className="flex items-start justify-between gap-2 flex-wrap">
+        <div>
+          <CardTitle>Rebalance Simulator</CardTitle>
+          <p className="text-xs text-black/40 mt-1">Model buys (+) and sells (−) per sleeve and preview the resulting weights vs target</p>
+        </div>
+        {anyChange && (
+          <button onClick={() => setDeltas({})} className="text-xs font-medium text-accent-blue hover:text-accent-blue/80">Reset</button>
+        )}
+      </div>
+
+      <div className="mt-4 space-y-2.5">
+        {sleeves.map((s) => {
+          const delta = deltas[s.name] || 0;
+          const projValue = s.value + delta;
+          const curWeight = portfolioValue > 0 ? (s.value / portfolioValue) * 100 : 0;
+          const projWeight = projTotal > 0 ? (projValue / projTotal) * 100 : 0;
+          const status = getSleeveStatus(projWeight, s.targetMin, s.targetMax);
+          return (
+            <div key={s.name} className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2 w-32 shrink-0">
+                <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: s.color }} />
+                <span className="text-sm font-medium text-black/75">{s.name}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-black/40 text-sm">$</span>
+                <input
+                  type="number"
+                  step={50}
+                  value={delta || ''}
+                  placeholder="0"
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    setDeltas((d) => ({ ...d, [s.name]: Number.isFinite(v) ? v : 0 }));
+                  }}
+                  className="w-24 px-2 py-1 text-sm tabular-nums rounded-lg border border-black/[0.08] focus:border-accent-blue focus:outline-none"
+                />
+              </div>
+              <div className="text-sm tabular-nums text-black/60">
+                {curWeight.toFixed(1)}% <span className="text-black/30">→</span>{' '}
+                <span className="font-semibold text-black/85">{projWeight.toFixed(1)}%</span>
+                <span className="text-black/35"> / {s.targetMin}–{s.targetMax}%</span>
+              </div>
+              {statusBadge(status)}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 pt-3 border-t border-black/[0.06] text-xs text-black/50 flex flex-wrap gap-x-4 gap-y-1">
+        <span>
+          Net cash:{' '}
+          <span className={`font-medium ${netCash === 0 ? 'text-black/60' : netCash > 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+            {netCash >= 0 ? '+' : ''}{formatCurrency(netCash)}
+          </span>{' '}
+          ({netCash === 0 ? 'pure rebalance' : netCash > 0 ? 'new contribution' : 'withdrawal'})
+        </span>
+        <span>Projected total: <span className="font-medium text-black/70">{formatCurrency(projTotal)}</span></span>
+      </div>
+    </Card>
+  );
+}
+
 export function AllWeatherSection({
   positions,
   portfolioValue,
+  regimeKey = 'unknown',
+  scores,
 }: {
   positions: HoldingPosition[];
   portfolioValue: number;
+  regimeKey?: RegimeKey;
+  scores?: FundamentalsScoreLite[];
 }) {
   const sleeves = computeSleeveData(positions);
   const subSleeves = computeSubSleeveData(positions);
   const [expandedSubSleeve, setExpandedSubSleeve] = useState<string | null>('Quality Compounders');
+  const scoreBySymbol = new Map((scores ?? []).map((s) => [s.symbol, s]));
 
   return (
     <>
@@ -237,7 +353,7 @@ export function AllWeatherSection({
           </div>
           {/* Horizontal bar comparison */}
           <div className="lg:w-3/5">
-            <SleeveComparisonBars sleeves={sleeves} />
+            <SleeveComparisonBars sleeves={sleeves} regimeKey={regimeKey} />
           </div>
         </div>
       </Card>
@@ -297,33 +413,59 @@ export function AllWeatherSection({
                           <div className="pl-8 pr-2 space-y-1.5">
                             {sub.members.map((m) => {
                               const shareOfSleeve = sub.value > 0 ? (m.marketValue / sub.value) * 100 : 0;
+                              const macro = macroSensitivity(m.symbol, m.category);
+                              const score = scoreBySymbol.get(m.symbol);
+                              const distFromCost = m.costBasis && m.costBasis > 0
+                                ? ((m.currentPrice - m.costBasis) / m.costBasis) * 100
+                                : null;
+                              const dipBuy = distFromCost != null && sub.label === 'High Conviction' && distFromCost <= -20;
                               return (
-                                <div key={m.symbol} className="flex items-center gap-3 py-1.5">
-                                  <span className="text-sm font-semibold text-black/80 w-14 shrink-0">{m.symbol}</span>
+                                <div key={m.symbol} className="py-2 border-b border-black/[0.03] last:border-0">
+                                  <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-semibold text-black/80 w-12">{m.symbol}</span>
+                                      <Badge variant={macro.badge}>{macro.driver}</Badge>
+                                      {score && !score.unavailable && (
+                                        <Badge variant={gradeBadge(score.grade)}>{score.grade} · {score.total}</Badge>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-4 text-right">
+                                      <div className="w-20">
+                                        <p className="text-[10px] uppercase tracking-wider text-black/35">Value</p>
+                                        <p className="text-sm tabular-nums text-black/75">{formatCurrency(m.marketValue)}</p>
+                                      </div>
+                                      <div className="w-14">
+                                        <p className="text-[10px] uppercase tracking-wider text-black/35">Port wt</p>
+                                        <p className="text-sm tabular-nums text-black/75">{m.weight.toFixed(1)}%</p>
+                                      </div>
+                                      <div className="w-14">
+                                        <p className="text-[10px] uppercase tracking-wider text-black/35">Day</p>
+                                        <p className={`text-sm tabular-nums font-medium ${m.dayChangePercent >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+                                          {m.dayChangePercent >= 0 ? '+' : ''}{m.dayChangePercent.toFixed(1)}%
+                                        </p>
+                                      </div>
+                                      <div className="w-16">
+                                        <p className="text-[10px] uppercase tracking-wider text-black/35">vs Cost</p>
+                                        <p className={`text-sm tabular-nums font-medium ${
+                                          distFromCost == null ? 'text-black/30' : distFromCost >= 0 ? 'text-accent-green' : 'text-accent-red'
+                                        }`}>
+                                          {distFromCost == null ? '—' : `${distFromCost >= 0 ? '+' : ''}${distFromCost.toFixed(1)}%`}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
                                   {/* share-of-sleeve bar */}
-                                  <div className="flex-1 min-w-[80px] max-w-[260px] h-5 bg-black/[0.04] rounded-md overflow-hidden relative">
-                                    <div
-                                      className="absolute inset-y-0 left-0 rounded-md bg-accent-blue/25"
-                                      style={{ width: `${Math.min(shareOfSleeve, 100)}%` }}
-                                    />
-                                    <span className="absolute inset-0 flex items-center pl-2 text-[11px] font-medium text-black/55 tabular-nums">
+                                  <div className="h-4 bg-black/[0.04] rounded-md overflow-hidden relative">
+                                    <div className="absolute inset-y-0 left-0 rounded-md bg-accent-blue/25" style={{ width: `${Math.min(shareOfSleeve, 100)}%` }} />
+                                    <span className="absolute inset-0 flex items-center pl-2 text-[10px] font-medium text-black/50 tabular-nums">
                                       {shareOfSleeve.toFixed(0)}% of sleeve
                                     </span>
                                   </div>
-                                  <div className="text-right w-24 shrink-0">
-                                    <p className="text-[10px] uppercase tracking-wider text-black/35">Value</p>
-                                    <p className="text-sm tabular-nums text-black/75">{formatCurrency(m.marketValue)}</p>
-                                  </div>
-                                  <div className="text-right w-20 shrink-0">
-                                    <p className="text-[10px] uppercase tracking-wider text-black/35">Port. wt</p>
-                                    <p className="text-sm tabular-nums text-black/75">{m.weight.toFixed(1)}%</p>
-                                  </div>
-                                  <div className="text-right w-20 shrink-0">
-                                    <p className="text-[10px] uppercase tracking-wider text-black/35">Day</p>
-                                    <p className={`text-sm tabular-nums font-medium ${m.dayChangePercent >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>
-                                      {m.dayChangePercent >= 0 ? '+' : ''}{m.dayChangePercent.toFixed(2)}%
+                                  {dipBuy && (
+                                    <p className="text-[11px] text-accent-green mt-1">
+                                      ▼ {distFromCost!.toFixed(0)}% from cost basis — meets the 20%-dip rule for a high-conviction add (new money only).
                                     </p>
-                                  </div>
+                                  )}
                                 </div>
                               );
                             })}
@@ -341,6 +483,9 @@ export function AllWeatherSection({
           </table>
         </div>
       </Card>
+
+      {/* ─── Rebalance Simulator ─── */}
+      <RebalanceSimulator sleeves={sleeves} portfolioValue={portfolioValue} />
 
       {/* ─── Investment Thesis ─── */}
       <CollapsibleSection

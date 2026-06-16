@@ -9,7 +9,8 @@ import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart';
 import { AllocationPieChart } from '@/components/charts/AllocationPieChart';
 import { FundamentalsScoreSection } from '@/components/FundamentalsScoreCard';
 import { AllWeatherSection } from '@/components/AllWeatherSection';
-import { usePortfolio, usePortfolioChart, usePolygonAggregates, usePolygonRSI, usePortfolioDividends, useWatchlist, useFundamentalsScores } from '@/lib/hooks';
+import { usePortfolio, usePortfolioChart, usePolygonAggregates, usePolygonRSI, usePortfolioDividends, useWatchlist, useFundamentalsScores, useApi } from '@/lib/hooks';
+import type { RegimeKey } from '@/lib/sleeves';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/format';
 import { CATEGORY_CONFIG, HOLDINGS, WATCHLIST, WATCHLIST_CATEGORY_CONFIG } from '@/lib/holdings';
 import type { PolygonTimeframe } from '@/lib/polygon';
@@ -71,6 +72,10 @@ export default function PortfolioPage() {
   // Fundamentals scores for portfolio holdings
   const portfolioSymbols = useMemo(() => HOLDINGS.map((h) => h.symbol), []);
   const { data: portfolioScores, loading: scoresLoading, error: scoresError } = useFundamentalsScores(portfolioSymbols);
+
+  // Macro regime — drives the regime-adjusted target overlay on the sleeve graph
+  const { data: macroDash } = useApi<{ regime?: { regime?: string } }>('/api/fred?action=dashboard');
+  const regimeKey = (macroDash?.regime?.regime as RegimeKey) ?? 'unknown';
 
   // Watchlist
   const { data: watchlist } = useWatchlist();
@@ -348,6 +353,14 @@ export default function PortfolioPage() {
         </div>
       </Card>
 
+      {/* All-Weather Strategy — promoted above the positions table */}
+      <AllWeatherSection
+        positions={portfolio.positions}
+        portfolioValue={portfolio.portfolioValue}
+        regimeKey={regimeKey}
+        scores={portfolioScores ?? undefined}
+      />
+
       {/* Positions Table */}
       <Card padding="none">
         <div className="px-6 pt-6 pb-3">
@@ -520,12 +533,6 @@ export default function PortfolioPage() {
         error={scoresError}
         title="Portfolio Fundamental Scores"
         subtitle="Composite fundamental analysis for your held positions — ranked by score"
-      />
-
-      {/* All-Weather Strategy */}
-      <AllWeatherSection
-        positions={portfolio.positions}
-        portfolioValue={portfolio.portfolioValue}
       />
 
       {/* Dividend Calendar */}

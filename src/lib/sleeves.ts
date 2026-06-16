@@ -85,3 +85,25 @@ export const REGIME_SLEEVE_GUIDANCE: Record<RegimeKey, Record<string, SleeveGuid
     'Crypto':      { lean: 'neutral', note: 'Hold to target bands until the regime read clarifies.' },
   },
 };
+
+// Regime tilt — percentage-point nudge applied to each sleeve's target band for the
+// current economic season. Each regime's tilts sum to ~0 so the book stays fully
+// invested. Used to draw a "regime-adjusted target" overlay on the sleeve graph.
+export const REGIME_SLEEVE_TILT: Record<RegimeKey, Record<string, number>> = {
+  reflation:   { 'Equities': -1, 'Real Assets': +3, 'Dry Powder': -2, 'Crypto': 0 },
+  stagflation: { 'Equities': -5, 'Real Assets': +4, 'Dry Powder': +3, 'Crypto': -2 },
+  goldilocks:  { 'Equities': +4, 'Real Assets': -2, 'Dry Powder': -3, 'Crypto': +1 },
+  deflation:   { 'Equities': -3, 'Real Assets': 0,  'Dry Powder': +5, 'Crypto': -2 },
+  unknown:     { 'Equities': 0,  'Real Assets': 0,  'Dry Powder': 0,  'Crypto': 0 },
+};
+
+// Regime-adjusted target band for a sleeve (base band + regime tilt, clamped to >= 0).
+export function regimeAdjustedBand(
+  sleeveName: string,
+  baseMin: number,
+  baseMax: number,
+  regimeKey: RegimeKey
+): { min: number; max: number; delta: number } {
+  const delta = REGIME_SLEEVE_TILT[regimeKey]?.[sleeveName] ?? 0;
+  return { min: Math.max(0, baseMin + delta), max: Math.max(0, baseMax + delta), delta };
+}

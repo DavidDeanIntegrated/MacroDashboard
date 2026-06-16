@@ -4,23 +4,27 @@ import { useState, useEffect } from 'react';
 import { Card, CardTitle } from '@/components/ui/Card';
 import { LoadingCard, EmptyState } from '@/components/ui/Loading';
 import { Badge, RegimeBadge } from '@/components/ui/Badge';
-import { useMacroRegime, useMarketNews } from '@/lib/hooks';
+import { useMacroRegime, useMarketNews, useApi, usePortfolio } from '@/lib/hooks';
 import { timeAgo } from '@/lib/format';
+import { HOLDINGS, WATCHLIST, type HoldingPosition } from '@/lib/holdings';
+import { computeSleeveData, getSleeveStatus } from '@/lib/sleeves';
 
 interface WatchlistItem {
   symbol: string;
 }
 
+// Default filing watchlist derived from the app's real tickers (HOLDINGS + WATCHLIST),
+// excluding non-equity symbols (BTC) and the cash-equivalent SGOV which adds no filing signal.
+const DEFAULT_WATCHLIST: WatchlistItem[] = Array.from(
+  new Set([...HOLDINGS.map((h) => h.symbol), ...WATCHLIST.map((w) => w.symbol)])
+)
+  .filter((symbol) => symbol !== 'BTC' && symbol !== 'SGOV')
+  .map((symbol) => ({ symbol }));
+
 export default function AlertsPage() {
   const { data: regime, loading: regimeLoading } = useMacroRegime();
   const { data: marketNews, loading: newsLoading } = useMarketNews();
-  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([
-    { symbol: 'AAPL' },
-    { symbol: 'MSFT' },
-    { symbol: 'GOOGL' },
-    { symbol: 'AMZN' },
-    { symbol: 'SPY' },
-  ]);
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>(DEFAULT_WATCHLIST);
   const [newSymbol, setNewSymbol] = useState('');
   const [expandedTilt, setExpandedTilt] = useState<number | null>(null);
   const [watchlistFilings, setWatchlistFilings] = useState<Record<string, FilingAlert[]>>({});
@@ -85,6 +89,11 @@ export default function AlertsPage() {
   const regimeSignals = regime
     ? getRegimeSignals(regime.regime, regime.inflationTrend, regime.growthTrend)
     : [];
+
+  // Regime-aware compound alerts (macro regime × portfolio sleeve drift)
+  const { data: dashboard } = useApi<DashboardData>('/api/fred?action=dashboard');
+  const { data: portfolio } = usePortfolio();
+  const compoundAlerts = getCompoundAlerts(dashboard?.regime, portfolio?.positions);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -188,6 +197,33 @@ export default function AlertsPage() {
             )}
           </div>
         ) : null}
+      </Card>
+
+      {/* Regime-Aware Signals — macro regime combined with portfolio sleeve drift */}
+      <Card>
+        <CardTitle>Regime-Aware Signals</CardTitle>
+        <p className="text-sm text-black/45 mt-1">
+          Compound alerts where the current macro regime meets your sleeve allocation.
+        </p>
+        {compoundAlerts.length === 0 ? (
+          <div className="mt-4 p-3 bg-black/[0.02] rounded-xl">
+            <p className="text-sm text-black/55">
+              No compound macro/portfolio signals — sleeves aligned with the current regime.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-4 space-y-2">
+            {compoundAlerts.map((alert, i) => (
+              <div
+                key={i}
+                className="flex items-start gap-3 p-3 bg-black/[0.02] rounded-xl"
+              >
+                <Badge variant={alert.variant}>{alert.tag}</Badge>
+                <p className="text-sm text-black/65 leading-relaxed">{alert.text}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       {/* Watchlist Management */}
@@ -336,6 +372,84 @@ interface RegimeSignal {
   text: string;
   sentiment: 'positive' | 'negative' | 'neutral';
   explanation: string;
+}
+
+// ─── Regime-Aware Compound Alerts ───
+
+interface DashboardRegime {
+  regime: string;
+  label: string;
+  description: string;
+  inflationTrend: string;
+  growthTrend: string;
+  latestInflation: number;
+  latestUnemployment: number;
+}
+
+interface DashboardData {
+  regime?: DashboardRegime;
+}
+
+interface CompoundAlert {
+  tag: string;
+  variant: 'red' | 'orange' | 'blue';
+  text: string;
+}
+
+function getCompoundAlerts(
+  regime: DashboardRegime | undefined,
+  positions: HoldingPosition[] | undefined
+): CompoundAlert[] {
+  if (!regime || !positions || positions.length === 0) return [];
+
+  const sleeves = computeSleeveData(positions);
+  const statusOf = (name: string) => {
+    const s = sleeves.find((sl) => sl.name === name);
+    return s ? getSleeveStatus(s.weight, s.targetMin, s.targetMax) : 'in-range';
+  };
+
+  const alerts: CompoundAlert[] = [];
+
+  // Inflation hedge underweight while inflation accelerates
+  if (statusOf('Real Assets') === 'under' && regime.inflationTrend === 'rising') {
+    alerts.push({
+      tag: 'High',
+      variant: 'red',
+      text: 'Inflation accelerating while your inflation hedge is underweight — add to GLD/BCI.',
+    });
+  }
+
+  // Equities overweight into a defensive regime
+  if (
+    statusOf('Equities') === 'over' &&
+    (regime.regime === 'stagflation' || regime.regime === 'deflation')
+  ) {
+    alerts.push({
+      tag: 'Caution',
+      variant: 'orange',
+      text: 'Equities overweight into a defensive regime — consider trimming high-beta toward target.',
+    });
+  }
+
+  // Dry powder light while growth slows
+  if (statusOf('Dry Powder') === 'under' && regime.growthTrend === 'decelerating') {
+    alerts.push({
+      tag: 'Caution',
+      variant: 'orange',
+      text: 'Growth slowing and dry powder is light — rebuild SGOV for optionality.',
+    });
+  }
+
+  // Crypto overweight outside a benign backdrop
+  if (statusOf('Crypto') === 'over' && regime.regime !== 'goldilocks') {
+    alerts.push({
+      tag: 'Note',
+      variant: 'blue',
+      text: 'Crypto overweight outside a Goldilocks backdrop — size the satellite carefully given liquidity risk.',
+    });
+  }
+
+  return alerts;
 }
 
 function getRegimeSignals(

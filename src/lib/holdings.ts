@@ -10,6 +10,7 @@ export interface Holding {
   symbol: string;
   qty: number;
   category: string;
+  costBasis?: number; // average cost per share, where known (for distance-from-cost)
 }
 
 export const HOLDINGS: Holding[] = [
@@ -19,14 +20,14 @@ export const HOLDINGS: Holding[] = [
   { symbol: 'GLD',  qty: 1.309365,   category: 'Gold' },
   { symbol: 'VTV',  qty: 1.600283,   category: 'Value' },
   { symbol: 'VXUS', qty: 3.09268,    category: 'International' },
-  { symbol: 'NVDA', qty: 1.068803,   category: 'Quality Compounder' },
-  { symbol: 'TSM',  qty: 0.386095,   category: 'Quality Compounder' },
-  { symbol: 'MSFT', qty: 0.678777,   category: 'Quality Compounder' },
-  { symbol: 'PLTR', qty: 1.481339,   category: 'Quality Compounder' },
+  { symbol: 'NVDA', qty: 1.068803,   category: 'Quality Compounder', costBasis: 189.00 },
+  { symbol: 'TSM',  qty: 0.386095,   category: 'Quality Compounder', costBasis: 299.29 },
+  { symbol: 'MSFT', qty: 0.678777,   category: 'Quality Compounder', costBasis: 397.52 },
+  { symbol: 'PLTR', qty: 1.481339,   category: 'Quality Compounder', costBasis: 137.25 },
   { symbol: 'BCI',  qty: 7.057182,   category: 'Commodity' },
   { symbol: 'RKLB', qty: 1.246552,   category: 'High Conviction' },
   { symbol: 'RVI',  qty: 3.034064,   category: 'High Conviction' },
-  { symbol: 'SPCX', qty: 2,          category: 'High Conviction' },
+  { symbol: 'SPCX', qty: 2,          category: 'High Conviction', costBasis: 135.00 },
 ];
 
 // Category display order and badge variants
@@ -55,6 +56,7 @@ export interface HoldingPosition {
   high: number;
   low: number;
   volume: number;
+  costBasis?: number;
 }
 
 export interface HoldingsPortfolio {
@@ -188,6 +190,7 @@ export async function getHoldingsPortfolio(): Promise<HoldingsPortfolio> {
       high,
       low,
       volume,
+      costBasis: h.costBasis,
     };
   });
 

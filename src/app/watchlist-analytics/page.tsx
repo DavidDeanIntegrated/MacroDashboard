@@ -438,12 +438,18 @@ export default function WatchlistAnalyticsPage() {
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <div className="flex items-center gap-3 mb-1">
+          <div className="inline-flex items-center gap-1 p-0.5 mb-3 rounded-xl bg-black/[0.04]">
             <Link
-              href="/portfolio"
-              className="text-sm font-medium text-black/40 hover:text-accent-blue transition-colors"
+              href="/analytics"
+              className="px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-black/45 hover:bg-black/[0.04]"
             >
-              &larr; Portfolio
+              My Holdings
+            </Link>
+            <Link
+              href="/watchlist-analytics"
+              className="px-3 py-1.5 text-xs font-medium rounded-lg transition-all bg-accent-blue text-white shadow-sm"
+            >
+              Watchlist
             </Link>
           </div>
           <h2 className="text-2xl font-semibold text-black/85 tracking-tight">Watchlist Analytics</h2>

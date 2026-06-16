@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { Card, CardTitle, MetricCard } from '@/components/ui/Card';
 import { LoadingPage } from '@/components/ui/Loading';
 import { Badge } from '@/components/ui/Badge';
@@ -449,6 +450,20 @@ export default function AnalyticsPage() {
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
+          <div className="inline-flex items-center gap-1 p-0.5 mb-3 rounded-xl bg-black/[0.04]">
+            <Link
+              href="/analytics"
+              className="px-3 py-1.5 text-xs font-medium rounded-lg transition-all bg-accent-blue text-white shadow-sm"
+            >
+              My Holdings
+            </Link>
+            <Link
+              href="/watchlist-analytics"
+              className="px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-black/45 hover:bg-black/[0.04]"
+            >
+              Watchlist
+            </Link>
+          </div>
           <h2 className="text-2xl font-semibold text-black/85 tracking-tight">Portfolio Analytics</h2>
           <p className="text-sm text-black/45 mt-1">
             Relative strength, correlations, and volatility via Polygon.io
