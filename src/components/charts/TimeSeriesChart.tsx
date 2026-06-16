@@ -149,7 +149,7 @@ export function TimeSeriesChart({
 // Multi-line chart for overlaying series
 interface MultiSeriesData {
   date: string;
-  [key: string]: string | number;
+  [key: string]: string | number | null;
 }
 
 interface SeriesConfig {
@@ -186,7 +186,7 @@ export function MultiSeriesChart({
         <XAxis
           dataKey="date"
           tickFormatter={(d) => {
-            try { return format(parseISO(d), 'MMM yy'); } catch { return d; }
+            try { return format(parseISO(d), 'MMM d'); } catch { return d; }
           }}
           tick={{ fontSize: 11, fill: 'rgba(0,0,0,0.35)' }}
           axisLine={{ stroke: 'rgba(0,0,0,0.06)' }}
