@@ -6,23 +6,9 @@ import { Badge } from '@/components/ui/Badge';
 import { AllocationPieChart } from '@/components/charts/AllocationPieChart';
 import { formatCurrency } from '@/lib/format';
 import type { HoldingPosition } from '@/lib/holdings';
+import { computeSleeveData, getSleeveStatus, type SleeveStatus } from '@/lib/sleeves';
 
-// ─── Sleeve Definitions ───
-
-interface SleeveConfig {
-  name: string;
-  color: string;
-  targetMin: number;
-  targetMax: number;
-  categories: string[];
-}
-
-const SLEEVE_CONFIG: SleeveConfig[] = [
-  { name: 'Equities', color: '#007AFF', targetMin: 55, targetMax: 60, categories: ['Broad Market', 'Value', 'International', 'Quality Compounder', 'High Conviction'] },
-  { name: 'Real Assets', color: '#E6A700', targetMin: 14, targetMax: 16, categories: ['Gold', 'Commodity'] },
-  { name: 'Dry Powder', color: '#34C759', targetMin: 14, targetMax: 17, categories: ['Dry Powder'] },
-  { name: 'Crypto', color: '#AF52DE', targetMin: 8, targetMax: 12, categories: ['Crypto'] },
-];
+// ─── Sub-Sleeve Definitions ───
 
 interface SubSleeveTarget {
   label: string;
@@ -42,15 +28,6 @@ const SUB_SLEEVE_TARGETS: SubSleeveTarget[] = [
 
 // ─── Helpers ───
 
-function computeSleeveData(positions: HoldingPosition[]) {
-  return SLEEVE_CONFIG.map((sleeve) => {
-    const sleevePositions = positions.filter((p) => sleeve.categories.includes(p.category));
-    const weight = sleevePositions.reduce((sum, p) => sum + p.weight, 0);
-    const value = sleevePositions.reduce((sum, p) => sum + p.marketValue, 0);
-    return { ...sleeve, weight, value, positions: sleevePositions };
-  });
-}
-
 function computeSubSleeveData(positions: HoldingPosition[]) {
   return SUB_SLEEVE_TARGETS.map((sub) => {
     const subPositions = positions
@@ -63,14 +40,6 @@ function computeSubSleeveData(positions: HoldingPosition[]) {
     const dayChangePercent = prevValue > 0 ? (dayChange / prevValue) * 100 : 0;
     return { ...sub, weight, value, dayChange, dayChangePercent, members: subPositions };
   });
-}
-
-type SleeveStatus = 'in-range' | 'over' | 'under';
-
-function getSleeveStatus(weight: number, min: number, max: number): SleeveStatus {
-  if (weight > max + 0.5) return 'over';
-  if (weight < min - 0.5) return 'under';
-  return 'in-range';
 }
 
 function statusBadge(status: SleeveStatus) {

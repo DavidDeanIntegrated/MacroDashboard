@@ -19,6 +19,15 @@ const navGroups: NavGroup[] = [
     section: 'Markets',
     items: [
       {
+        label: 'Briefing',
+        href: '/',
+        icon: (
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+          </svg>
+        ),
+      },
+      {
         label: 'Macro',
         href: '/macro',
         icon: (
@@ -120,13 +129,13 @@ const navGroups: NavGroup[] = [
 ];
 
 // Flat list for mobile nav — show the key pages only.
-// Holdings Analytics is prioritized over Watchlist for the limited mobile slots.
+// Briefing + Holdings Analytics are prioritized for the limited mobile slots.
 const mobileNavItems: NavItem[] = [
-  navGroups[0].items[0], // Macro
+  navGroups[0].items[0], // Briefing
+  navGroups[0].items[1], // Macro
   navGroups[1].items[0], // Holdings
   navGroups[1].items[1], // Analytics
-  navGroups[2].items[0], // Ticker
-  navGroups[0].items[2], // Alerts
+  navGroups[0].items[3], // Alerts
 ];
 
 function isActive(pathname: string | null, href: string): boolean {
