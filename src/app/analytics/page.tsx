@@ -197,11 +197,21 @@ export default function AnalyticsPage() {
 
   const days = PERIOD_DAYS[period];
 
+  // We always fetch ~1Y of daily bars, then slice by actual calendar date so each
+  // period reflects the true trailing window. Slicing by bar count (e.g. last 90
+  // bars for "3M") is wrong because bars are trading days, not calendar days —
+  // 90 trading days is ~4.3 months, which made the periods inaccurate.
+  const periodCutoff = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    return d.toISOString().split('T')[0];
+  })();
+
   // Get sliced close prices for each symbol
   const symbolData: Record<string, { closes: number[]; dates: string[] }> = {};
   for (const sym of allSymbols) {
     const series = aggData?.find((s) => s.symbol === sym)?.data || [];
-    const sliced = series.slice(-days);
+    const sliced = series.filter((d) => d.date >= periodCutoff);
     symbolData[sym] = {
       closes: sliced.map((d) => d.close),
       dates: sliced.map((d) => d.date),
@@ -750,7 +760,7 @@ export default function AnalyticsPage() {
                 // Compute bottom score for eligible stocks
                 const bottomScore = showBottomScore ? (() => {
                   const series = aggData?.find((a) => a.symbol === s.symbol)?.data || [];
-                  const sliced = series.slice(-days);
+                  const sliced = series.filter((d) => d.date >= periodCutoff);
                   const volumes = sliced.map((d) => d.volume);
                   const closes = sliced.map((d) => d.close);
 
