@@ -35,10 +35,15 @@ const SUB_SLEEVE_TARGETS: SubSleeveTarget[] = [
   { label: 'High Conviction', symbols: ['RKLB', 'RVI', 'SPCX'], targetMin: 0, targetMax: 6.5, priority: 'Sell first if over' },
 ];
 
+const REAL_ASSET_SUB_SLEEVE_TARGETS: SubSleeveTarget[] = [
+  { label: 'Gold (GLD)', symbols: ['GLD'], targetMin: 10, targetMax: 12, priority: 'Core hedge — add on real-rate drops' },
+  { label: 'Commodities (BCI)', symbols: ['BCI'], targetMin: 3.5, targetMax: 5, priority: 'Inflation top-up — maintain ~4%' },
+];
+
 // ─── Helpers ───
 
-function computeSubSleeveData(positions: HoldingPosition[]) {
-  return SUB_SLEEVE_TARGETS.map((sub) => {
+function computeSubSleeveData(positions: HoldingPosition[], targets: SubSleeveTarget[] = SUB_SLEEVE_TARGETS) {
+  return targets.map((sub) => {
     const subPositions = positions
       .filter((p) => sub.symbols.includes(p.symbol))
       .sort((a, b) => b.marketValue - a.marketValue);
@@ -305,6 +310,149 @@ function RebalanceSimulator({
   );
 }
 
+function SubSleeveBreakdownCard({
+  title,
+  subtitle,
+  subSleeves,
+  expanded,
+  setExpanded,
+  scoreBySymbol,
+}: {
+  title: string;
+  subtitle: string;
+  subSleeves: ReturnType<typeof computeSubSleeveData>;
+  expanded: string | null;
+  setExpanded: (v: string | null) => void;
+  scoreBySymbol: Map<string, FundamentalsScoreLite>;
+}) {
+  return (
+    <Card padding="none">
+      <div className="px-6 pt-6 pb-3">
+        <CardTitle>{title}</CardTitle>
+        <p className="text-xs text-black/40 mt-1">{subtitle}</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px]">
+          <thead>
+            <tr className="border-b border-black/[0.06]">
+              <th className="px-4 py-3 text-left text-xs font-medium text-black/40 uppercase tracking-wider w-8" />
+              {['Sub-Sleeve', 'Holdings', 'Current', 'Target', 'Day', 'Status', 'Priority'].map((h) => (
+                <th key={h} className="px-4 py-3 text-left text-xs font-medium text-black/40 uppercase tracking-wider">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {subSleeves.map((sub) => {
+              const status = getSleeveStatus(sub.weight, sub.targetMin, sub.targetMax);
+              const isOpen = expanded === sub.label;
+              const isExpandable = sub.members.length > 0;
+              return (
+                <Fragment key={sub.label}>
+                  <tr
+                    onClick={() => isExpandable && setExpanded(isOpen ? null : sub.label)}
+                    className={`border-b border-black/[0.03] transition-colors ${
+                      isExpandable ? 'cursor-pointer hover:bg-black/[0.02]' : ''
+                    } ${isOpen ? 'bg-accent-blue/[0.03]' : ''}`}
+                  >
+                    <td className="px-4 py-3">
+                      {isExpandable && (
+                        <svg
+                          className={`w-4 h-4 text-black/30 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}
+                          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                        </svg>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm font-medium text-black/75">{sub.label}</td>
+                    <td className="px-4 py-3 text-xs text-black/50">{sub.members.length || sub.symbols.length} {(sub.members.length || sub.symbols.length) === 1 ? 'name' : 'names'}</td>
+                    <td className="px-4 py-3 text-sm tabular-nums text-black/75">{sub.weight.toFixed(1)}%</td>
+                    <td className="px-4 py-3 text-sm tabular-nums text-black/50">{sub.targetMin}–{sub.targetMax}%</td>
+                    <td className={`px-4 py-3 text-sm tabular-nums ${sub.dayChangePercent >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+                      {sub.dayChangePercent >= 0 ? '+' : ''}{sub.dayChangePercent.toFixed(2)}%
+                    </td>
+                    <td className="px-4 py-3">{statusBadge(status)}</td>
+                    <td className="px-4 py-3 text-xs text-black/45">{sub.priority}</td>
+                  </tr>
+                  {isOpen && isExpandable && (
+                    <tr className="bg-black/[0.015]">
+                      <td colSpan={8} className="px-4 pt-1 pb-4">
+                        <div className="pl-8 pr-2 space-y-1.5">
+                          {sub.members.map((m) => {
+                            const shareOfSleeve = sub.value > 0 ? (m.marketValue / sub.value) * 100 : 0;
+                            const macro = macroSensitivity(m.symbol, m.category);
+                            const score = scoreBySymbol.get(m.symbol);
+                            const distFromCost = m.costBasis && m.costBasis > 0
+                              ? ((m.currentPrice - m.costBasis) / m.costBasis) * 100
+                              : null;
+                            const dipBuy = distFromCost != null && sub.label === 'High Conviction' && distFromCost <= -20;
+                            return (
+                              <div key={m.symbol} className="py-2 border-b border-black/[0.03] last:border-0">
+                                <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-semibold text-black/80 w-12">{m.symbol}</span>
+                                    <Badge variant={macro.badge}>{macro.driver}</Badge>
+                                    {score && !score.unavailable && (
+                                      <Badge variant={gradeBadge(score.grade)}>{score.grade} · {score.total}</Badge>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-4 text-right">
+                                    <div className="w-20">
+                                      <p className="text-[10px] uppercase tracking-wider text-black/35">Value</p>
+                                      <p className="text-sm tabular-nums text-black/75">{formatCurrency(m.marketValue)}</p>
+                                    </div>
+                                    <div className="w-14">
+                                      <p className="text-[10px] uppercase tracking-wider text-black/35">Port wt</p>
+                                      <p className="text-sm tabular-nums text-black/75">{m.weight.toFixed(1)}%</p>
+                                    </div>
+                                    <div className="w-14">
+                                      <p className="text-[10px] uppercase tracking-wider text-black/35">Day</p>
+                                      <p className={`text-sm tabular-nums font-medium ${m.dayChangePercent >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+                                        {m.dayChangePercent >= 0 ? '+' : ''}{m.dayChangePercent.toFixed(1)}%
+                                      </p>
+                                    </div>
+                                    <div className="w-16">
+                                      <p className="text-[10px] uppercase tracking-wider text-black/35">vs Cost</p>
+                                      <p className={`text-sm tabular-nums font-medium ${
+                                        distFromCost == null ? 'text-black/30' : distFromCost >= 0 ? 'text-accent-green' : 'text-accent-red'
+                                      }`}>
+                                        {distFromCost == null ? '—' : `${distFromCost >= 0 ? '+' : ''}${distFromCost.toFixed(1)}%`}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                                {/* share-of-sleeve bar */}
+                                <div className="h-4 bg-black/[0.04] rounded-md overflow-hidden relative">
+                                  <div className="absolute inset-y-0 left-0 rounded-md bg-accent-blue/25" style={{ width: `${Math.min(shareOfSleeve, 100)}%` }} />
+                                  <span className="absolute inset-0 flex items-center pl-2 text-[10px] font-medium text-black/50 tabular-nums">
+                                    {shareOfSleeve.toFixed(0)}% of sleeve
+                                  </span>
+                                </div>
+                                {dipBuy && (
+                                  <p className="text-[11px] text-accent-green mt-1">
+                                    ▼ {distFromCost!.toFixed(0)}% from cost basis — meets the 20%-dip rule for a high-conviction add (new money only).
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                          <p className="text-[11px] text-black/35 pt-1.5">
+                            {sub.label} target {sub.targetMin}–{sub.targetMax}% · currently {sub.weight.toFixed(1)}% ({formatCurrency(sub.value)}) · {sub.priority}
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
 export function AllWeatherSection({
   positions,
   portfolioValue,
@@ -318,6 +466,7 @@ export function AllWeatherSection({
 }) {
   const sleeves = computeSleeveData(positions);
   const subSleeves = computeSubSleeveData(positions);
+  const realAssetSubSleeves = computeSubSleeveData(positions, REAL_ASSET_SUB_SLEEVE_TARGETS);
   const [expandedSubSleeve, setExpandedSubSleeve] = useState<string | null>('Quality Compounders');
   const scoreBySymbol = new Map((scores ?? []).map((s) => [s.symbol, s]));
 
@@ -359,130 +508,24 @@ export function AllWeatherSection({
       </Card>
 
       {/* ─── Sub-Sleeve Equity Breakdown ─── */}
-      <Card padding="none">
-        <div className="px-6 pt-6 pb-3">
-          <CardTitle>Equity Sub-Sleeve Breakdown</CardTitle>
-          <p className="text-xs text-black/40 mt-1">Internal balance within the 55–60% equities allocation · click a row to see its holdings</p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px]">
-            <thead>
-              <tr className="border-b border-black/[0.06]">
-                <th className="px-4 py-3 text-left text-xs font-medium text-black/40 uppercase tracking-wider w-8" />
-                {['Sub-Sleeve', 'Holdings', 'Current', 'Target', 'Day', 'Status', 'Priority'].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium text-black/40 uppercase tracking-wider">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {subSleeves.map((sub) => {
-                const status = getSleeveStatus(sub.weight, sub.targetMin, sub.targetMax);
-                const isOpen = expandedSubSleeve === sub.label;
-                const isExpandable = sub.members.length > 0;
-                return (
-                  <Fragment key={sub.label}>
-                    <tr
-                      onClick={() => isExpandable && setExpandedSubSleeve(isOpen ? null : sub.label)}
-                      className={`border-b border-black/[0.03] transition-colors ${
-                        isExpandable ? 'cursor-pointer hover:bg-black/[0.02]' : ''
-                      } ${isOpen ? 'bg-accent-blue/[0.03]' : ''}`}
-                    >
-                      <td className="px-4 py-3">
-                        {isExpandable && (
-                          <svg
-                            className={`w-4 h-4 text-black/30 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}
-                            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                          </svg>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-medium text-black/75">{sub.label}</td>
-                      <td className="px-4 py-3 text-xs text-black/50">{sub.members.length || sub.symbols.length} {(sub.members.length || sub.symbols.length) === 1 ? 'name' : 'names'}</td>
-                      <td className="px-4 py-3 text-sm tabular-nums text-black/75">{sub.weight.toFixed(1)}%</td>
-                      <td className="px-4 py-3 text-sm tabular-nums text-black/50">{sub.targetMin}–{sub.targetMax}%</td>
-                      <td className={`px-4 py-3 text-sm tabular-nums ${sub.dayChangePercent >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>
-                        {sub.dayChangePercent >= 0 ? '+' : ''}{sub.dayChangePercent.toFixed(2)}%
-                      </td>
-                      <td className="px-4 py-3">{statusBadge(status)}</td>
-                      <td className="px-4 py-3 text-xs text-black/45">{sub.priority}</td>
-                    </tr>
-                    {isOpen && isExpandable && (
-                      <tr className="bg-black/[0.015]">
-                        <td colSpan={8} className="px-4 pt-1 pb-4">
-                          <div className="pl-8 pr-2 space-y-1.5">
-                            {sub.members.map((m) => {
-                              const shareOfSleeve = sub.value > 0 ? (m.marketValue / sub.value) * 100 : 0;
-                              const macro = macroSensitivity(m.symbol, m.category);
-                              const score = scoreBySymbol.get(m.symbol);
-                              const distFromCost = m.costBasis && m.costBasis > 0
-                                ? ((m.currentPrice - m.costBasis) / m.costBasis) * 100
-                                : null;
-                              const dipBuy = distFromCost != null && sub.label === 'High Conviction' && distFromCost <= -20;
-                              return (
-                                <div key={m.symbol} className="py-2 border-b border-black/[0.03] last:border-0">
-                                  <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-sm font-semibold text-black/80 w-12">{m.symbol}</span>
-                                      <Badge variant={macro.badge}>{macro.driver}</Badge>
-                                      {score && !score.unavailable && (
-                                        <Badge variant={gradeBadge(score.grade)}>{score.grade} · {score.total}</Badge>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center gap-4 text-right">
-                                      <div className="w-20">
-                                        <p className="text-[10px] uppercase tracking-wider text-black/35">Value</p>
-                                        <p className="text-sm tabular-nums text-black/75">{formatCurrency(m.marketValue)}</p>
-                                      </div>
-                                      <div className="w-14">
-                                        <p className="text-[10px] uppercase tracking-wider text-black/35">Port wt</p>
-                                        <p className="text-sm tabular-nums text-black/75">{m.weight.toFixed(1)}%</p>
-                                      </div>
-                                      <div className="w-14">
-                                        <p className="text-[10px] uppercase tracking-wider text-black/35">Day</p>
-                                        <p className={`text-sm tabular-nums font-medium ${m.dayChangePercent >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>
-                                          {m.dayChangePercent >= 0 ? '+' : ''}{m.dayChangePercent.toFixed(1)}%
-                                        </p>
-                                      </div>
-                                      <div className="w-16">
-                                        <p className="text-[10px] uppercase tracking-wider text-black/35">vs Cost</p>
-                                        <p className={`text-sm tabular-nums font-medium ${
-                                          distFromCost == null ? 'text-black/30' : distFromCost >= 0 ? 'text-accent-green' : 'text-accent-red'
-                                        }`}>
-                                          {distFromCost == null ? '—' : `${distFromCost >= 0 ? '+' : ''}${distFromCost.toFixed(1)}%`}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  {/* share-of-sleeve bar */}
-                                  <div className="h-4 bg-black/[0.04] rounded-md overflow-hidden relative">
-                                    <div className="absolute inset-y-0 left-0 rounded-md bg-accent-blue/25" style={{ width: `${Math.min(shareOfSleeve, 100)}%` }} />
-                                    <span className="absolute inset-0 flex items-center pl-2 text-[10px] font-medium text-black/50 tabular-nums">
-                                      {shareOfSleeve.toFixed(0)}% of sleeve
-                                    </span>
-                                  </div>
-                                  {dipBuy && (
-                                    <p className="text-[11px] text-accent-green mt-1">
-                                      ▼ {distFromCost!.toFixed(0)}% from cost basis — meets the 20%-dip rule for a high-conviction add (new money only).
-                                    </p>
-                                  )}
-                                </div>
-                              );
-                            })}
-                            <p className="text-[11px] text-black/35 pt-1.5">
-                              {sub.label} target {sub.targetMin}–{sub.targetMax}% · currently {sub.weight.toFixed(1)}% ({formatCurrency(sub.value)}) · {sub.priority}
-                            </p>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <SubSleeveBreakdownCard
+        title="Equity Sub-Sleeve Breakdown"
+        subtitle="Internal balance within the 55–60% equities allocation · click a row to see its holdings"
+        subSleeves={subSleeves}
+        expanded={expandedSubSleeve}
+        setExpanded={setExpandedSubSleeve}
+        scoreBySymbol={scoreBySymbol}
+      />
+
+      {/* ─── Real Assets Sub-Sleeve Breakdown ─── */}
+      <SubSleeveBreakdownCard
+        title="Real Assets Sub-Sleeve Breakdown"
+        subtitle="Internal balance within the 14–16% real-assets allocation · click a row to see its holdings"
+        subSleeves={realAssetSubSleeves}
+        expanded={expandedSubSleeve}
+        setExpanded={setExpandedSubSleeve}
+        scoreBySymbol={scoreBySymbol}
+      />
 
       {/* ─── Rebalance Simulator ─── */}
       <RebalanceSimulator sleeves={sleeves} portfolioValue={portfolioValue} />
