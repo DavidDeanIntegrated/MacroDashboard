@@ -16,7 +16,7 @@ export interface Holding {
 export const HOLDINGS: Holding[] = [
   { symbol: 'BTC',  qty: 0.00716019, category: 'Crypto', costBasis: 93144.18 },
   { symbol: 'VTI',  qty: 2.211067,   category: 'Broad Market', costBasis: 336.93 },
-  { symbol: 'SGOV', qty: 7.379262,   category: 'Dry Powder', costBasis: 100.46 },
+  { symbol: 'SGOV', qty: 6.882302,   category: 'Dry Powder', costBasis: 100.46 },
   { symbol: 'GLD',  qty: 1.409832,   category: 'Gold', costBasis: 450.70 },
   { symbol: 'VTV',  qty: 1.600283,   category: 'Value', costBasis: 206.24 },
   { symbol: 'VXUS', qty: 3.09268,    category: 'International', costBasis: 82.20 },
@@ -24,7 +24,7 @@ export const HOLDINGS: Holding[] = [
   { symbol: 'TSM',  qty: 0.386095,   category: 'Quality Compounder', costBasis: 303.23 },
   { symbol: 'MSFT', qty: 0.678777,   category: 'Quality Compounder', costBasis: 397.52 },
   { symbol: 'PLTR', qty: 1.481339,   category: 'Quality Compounder', costBasis: 137.25 },
-  { symbol: 'BCI',  qty: 9.871034,   category: 'Commodity', costBasis: 21.96 },
+  { symbol: 'BCI',  qty: 12.094244,  category: 'Commodity', costBasis: 21.96 },
   { symbol: 'RKLB', qty: 1.246552,   category: 'High Conviction', costBasis: 44.79 },
   { symbol: 'RVI',  qty: 3.034064,   category: 'High Conviction', costBasis: 32.30 },
   { symbol: 'SPCX', qty: 2,          category: 'High Conviction', costBasis: 135.00 },
