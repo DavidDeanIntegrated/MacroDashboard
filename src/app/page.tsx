@@ -7,6 +7,7 @@ import { LoadingPage } from '@/components/ui/Loading';
 import { Badge } from '@/components/ui/Badge';
 import { usePortfolio, usePolygonAggregates, useApi } from '@/lib/hooks';
 import { formatCurrency } from '@/lib/format';
+import { Term, Explainer } from '@/components/ui/Term';
 import {
   computeSleeveData,
   getSleeveStatus,
@@ -98,23 +99,33 @@ export default function BriefingPage() {
   const vix = latest(dashboard?.vix);
 
   // Build the action queue: off-target sleeves + drawdown ladder cue.
-  const actions: Array<{ tone: 'sell' | 'buy' | 'info'; text: string }> = [];
+  // Each action carries a `why` so the reasoning is visible, not just the instruction.
+  const actions: Array<{ tone: 'sell' | 'buy' | 'info'; text: string; why: string }> = [];
   for (const s of sleeves) {
     const status = getSleeveStatus(s.weight, s.targetMin, s.targetMax);
     if (status === 'over') {
-      actions.push({ tone: 'sell', text: `${s.name} is ${s.weight.toFixed(1)}% vs ${s.targetMin}–${s.targetMax}% target — trim ~${(s.weight - s.targetMax).toFixed(1)}% toward target.` });
+      actions.push({
+        tone: 'sell',
+        text: `${s.name} is ${s.weight.toFixed(1)}% vs its ${s.targetMin}–${s.targetMax}% target — trim ~${(s.weight - s.targetMax).toFixed(1)} points back toward target.`,
+        why: `${s.name} has grown past the share of the portfolio it's supposed to hold. Trimming now sells a little of what's run up (locking in relative gains) and stops one sleeve's risk from dominating the whole book — the mechanical "sell high" half of rebalancing.`,
+      });
     } else if (status === 'under') {
-      actions.push({ tone: 'buy', text: `${s.name} is ${s.weight.toFixed(1)}% vs ${s.targetMin}–${s.targetMax}% target — add ~${(s.targetMin - s.weight).toFixed(1)}% toward target.` });
+      actions.push({
+        tone: 'buy',
+        text: `${s.name} is ${s.weight.toFixed(1)}% vs its ${s.targetMin}–${s.targetMax}% target — add ~${(s.targetMin - s.weight).toFixed(1)} points to get back in range.`,
+        why: `${s.name} has shrunk below the role it's meant to play (either it lagged, or the rest of the portfolio grew). Topping it up restores the protection/exposure that sleeve exists to provide — the "buy low" half of rebalancing.`,
+      });
     }
   }
   if (drawdown && drawdown.severity !== 'normal') {
     actions.push({
       tone: 'info',
       text: drawdown.severity === 'bear'
-        ? `SPY is ${drawdown.pct.toFixed(1)}% off its 3-mo high (bear territory) — deploy the aggressive dry-powder tranche per the ladder.`
+        ? `SPY is ${drawdown.pct.toFixed(1)}% below its 3-month high (bear territory) — the final, most aggressive rung of the dry-powder ladder is active.`
         : drawdown.severity === 'correction'
-        ? `SPY is ${drawdown.pct.toFixed(1)}% off its 3-mo high (correction) — the –15% rung favors quality compounders.`
-        : `SPY is ${drawdown.pct.toFixed(1)}% off its 3-mo high (pullback) — first dry-powder rung (buy VTI) is in range.`,
+        ? `SPY is ${drawdown.pct.toFixed(1)}% below its 3-month high (a correction) — the –15% rung of the dry-powder ladder favors adding to quality compounders.`
+        : `SPY is ${drawdown.pct.toFixed(1)}% below its 3-month high (a pullback) — the first dry-powder rung (buy VTI) is in range.`,
+      why: 'The dry-powder ladder is a pre-committed buying plan: specific chunks of the cash reserve get deployed at –10%, –15%, and –25% declines from recent highs. Setting the levels in advance takes the emotion out of buying when markets are falling — historically the moments with the best forward returns. Spread any buy over 1–3 days rather than all at once.',
     });
   }
 
@@ -148,6 +159,14 @@ export default function BriefingPage() {
               <Badge variant={style.badge}>{regime?.label ?? 'Loading…'}</Badge>
             </div>
             <p className="text-sm text-black/55 leading-relaxed">{regime?.description ?? 'Fetching the latest macro read…'}</p>
+            <Explainer title="What is a regime, and how is this one determined?">
+              <p>
+                A <Term k="regime">macro regime</Term> is the economy&apos;s current &quot;season,&quot; and it decides which of your sleeves the environment favors. The classification here uses two questions: <span className="font-medium text-black/70">is inflation above 3%?</span> (from <Term k="cpi">CPI</Term>) and <span className="font-medium text-black/70">is unemployment rising?</span> (trend over the past ~3 months).
+              </p>
+              <p>
+                The four possible answers map to the four seasons: <Term k="goldilocks">Goldilocks</Term> (low inflation, solid jobs — best for stocks), <Term k="reflation">Reflation</Term> (hot inflation, solid jobs — best for commodities/gold), <Term k="stagflation">Stagflation</Term> (hot inflation, weakening jobs — hardest season, cash and gold), and <Term k="deflation">Disinflation/Slowdown</Term> (cooling inflation, weakening jobs — cash and quality). The four tiles below are the vital signs behind the call.
+              </p>
+            </Explainer>
           </div>
           <Link href="/macro" className="text-sm font-medium text-accent-blue hover:text-accent-blue/80 shrink-0">
             Full macro view →
@@ -157,32 +176,34 @@ export default function BriefingPage() {
         {/* Driver chips */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5">
           <div className="rounded-xl bg-white/60 border border-black/[0.05] p-3">
-            <p className="text-[10px] uppercase tracking-wider text-black/35">Inflation (CPI YoY)</p>
+            <p className="text-[10px] uppercase tracking-wider text-black/35"><Term k="cpi">Inflation (CPI YoY)</Term></p>
             <p className="text-lg font-semibold tabular-nums text-black/80">
               {regime ? `${regime.latestInflation.toFixed(1)}%` : '—'} <span className="text-sm text-black/40">{trendArrow(regime?.inflationTrend)}</span>
             </p>
-            <p className="text-[11px] text-black/40 capitalize">{regime?.inflationTrend ?? ''}</p>
+            <p className="text-[11px] text-black/40">
+              <span className="capitalize">{regime?.inflationTrend ?? ''}</span>{regime ? ' · Fed target ~2%' : ''}
+            </p>
           </div>
           <div className="rounded-xl bg-white/60 border border-black/[0.05] p-3">
-            <p className="text-[10px] uppercase tracking-wider text-black/35">Unemployment</p>
+            <p className="text-[10px] uppercase tracking-wider text-black/35"><Term k="lagging-indicator">Unemployment</Term></p>
             <p className="text-lg font-semibold tabular-nums text-black/80">
               {regime ? `${regime.latestUnemployment.toFixed(1)}%` : '—'} <span className="text-sm text-black/40">{trendArrow(regime?.growthTrend)}</span>
             </p>
             <p className="text-[11px] text-black/40 capitalize">{regime?.growthTrend ? `growth ${regime.growthTrend}` : ''}</p>
           </div>
           <div className="rounded-xl bg-white/60 border border-black/[0.05] p-3">
-            <p className="text-[10px] uppercase tracking-wider text-black/35">Yield Curve (10Y–2Y)</p>
+            <p className="text-[10px] uppercase tracking-wider text-black/35"><Term k="inversion">Yield Curve (10Y–2Y)</Term></p>
             <p className={`text-lg font-semibold tabular-nums ${t10y2y != null && t10y2y < 0 ? 'text-accent-red' : 'text-black/80'}`}>
               {t10y2y != null ? `${t10y2y > 0 ? '+' : ''}${t10y2y.toFixed(2)}%` : '—'}
             </p>
-            <p className="text-[11px] text-black/40">{t10y2y != null && t10y2y < 0 ? 'Inverted' : 'Positive'}</p>
+            <p className="text-[11px] text-black/40">{t10y2y != null && t10y2y < 0 ? 'Inverted — recession watch' : 'Positive — normal slope'}</p>
           </div>
           <div className="rounded-xl bg-white/60 border border-black/[0.05] p-3">
-            <p className="text-[10px] uppercase tracking-wider text-black/35">VIX</p>
+            <p className="text-[10px] uppercase tracking-wider text-black/35"><Term k="vix">VIX</Term></p>
             <p className={`text-lg font-semibold tabular-nums ${vix != null && vix > 25 ? 'text-accent-red' : vix != null && vix > 20 ? 'text-accent-orange' : 'text-black/80'}`}>
               {vix != null ? vix.toFixed(1) : '—'}
             </p>
-            <p className="text-[11px] text-black/40">{vix != null ? (vix > 25 ? 'Elevated fear' : vix > 20 ? 'Watchful' : 'Calm') : ''}</p>
+            <p className="text-[11px] text-black/40">{vix != null ? (vix > 30 ? 'High fear (>30)' : vix > 20 ? 'Watchful (20–30)' : 'Calm (<20)') : ''}</p>
           </div>
         </div>
       </Card>
@@ -190,20 +211,25 @@ export default function BriefingPage() {
       {/* Action queue */}
       <Card>
         <CardTitle>Action Queue</CardTitle>
-        <p className="text-xs text-black/40 mt-1 mb-4">What the regime + your drift suggest doing now</p>
+        <p className="text-xs text-black/40 mt-1 mb-4">
+          Concrete to-dos generated from two mechanical checks: is any <Term k="sleeve">sleeve</Term> outside its target band (<Term k="rebalancing">rebalancing</Term>), and has the market fallen far enough to trigger the <Term k="drawdown-ladder">dry-powder ladder</Term>. No prediction involved — just your own pre-set rules, checked against today&apos;s numbers.
+        </p>
         {actions.length === 0 ? (
           <div className="flex items-center gap-2 text-sm text-black/55">
             <span className="inline-block w-2 h-2 rounded-full bg-accent-green" />
-            All sleeves in range and no drawdown trigger active — no rebalancing required. Stay the course.
+            All sleeves are inside their target bands and no drawdown trigger is active — no trades needed. Doing nothing is the correct move today.
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {actions.map((a, i) => (
               <div key={i} className="flex items-start gap-3">
                 <Badge variant={a.tone === 'sell' ? 'red' : a.tone === 'buy' ? 'green' : 'blue'}>
                   {a.tone === 'sell' ? 'Trim' : a.tone === 'buy' ? 'Add' : 'Deploy'}
                 </Badge>
-                <p className="text-sm text-black/65 leading-relaxed">{a.text}</p>
+                <div>
+                  <p className="text-sm text-black/65 leading-relaxed">{a.text}</p>
+                  <p className="text-xs text-black/40 leading-relaxed mt-0.5">{a.why}</p>
+                </div>
               </div>
             ))}
           </div>
@@ -215,7 +241,9 @@ export default function BriefingPage() {
         <div className="px-6 pt-6 pb-3 flex items-end justify-between flex-wrap gap-2">
           <div>
             <CardTitle>Sleeve Scorecard — Current vs Target</CardTitle>
-            <p className="text-xs text-black/40 mt-1">How your book maps to the four economic seasons, tilted for the {regime?.label ?? 'current'} regime</p>
+            <p className="text-xs text-black/40 mt-1">
+              Each <Term k="sleeve">sleeve</Term> is a bucket of holdings with one job — growth, inflation protection, ready cash, or asymmetric upside. The shaded band on each bar is its target range; the solid bar is where it sits today. Chips show how the {regime?.label ?? 'current'} regime tilts each sleeve.
+            </p>
           </div>
           <Link href="/portfolio" className="text-sm font-medium text-accent-blue hover:text-accent-blue/80">
             Holdings & sub-sleeves →

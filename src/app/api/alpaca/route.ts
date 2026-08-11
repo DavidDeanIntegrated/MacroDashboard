@@ -2,11 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   getAccount,
   getPositions,
-  getOrders,
   getHistoricalBars,
   getSnapshot,
-  submitOrder,
-  cancelOrder,
 } from '@/lib/alpaca';
 import { getHoldingsPortfolio, getPortfolioChart, getWatchlistData } from '@/lib/holdings';
 import type { PortfolioChartPeriod } from '@/lib/holdings';
@@ -25,13 +22,6 @@ export async function GET(request: NextRequest) {
       case 'positions': {
         const positions = await getPositions();
         return NextResponse.json(positions);
-      }
-
-      case 'orders': {
-        const status = (searchParams.get('status') as 'open' | 'closed' | 'all') || 'all';
-        const limit = parseInt(searchParams.get('limit') || '50');
-        const orders = await getOrders(status, limit);
-        return NextResponse.json(orders);
       }
 
       case 'portfolio': {
@@ -74,40 +64,7 @@ export async function GET(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Invalid action. Use: account, positions, orders, portfolio, portfolio-chart, bars, snapshot' },
-          { status: 400 }
-        );
-    }
-  } catch (error) {
-    console.error('Alpaca API error:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Alpaca API error' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const action = searchParams.get('action');
-
-  try {
-    switch (action) {
-      case 'order': {
-        const body = await request.json();
-        const order = await submitOrder(body);
-        return NextResponse.json(order);
-      }
-
-      case 'cancel': {
-        const body = await request.json();
-        await cancelOrder(body.orderId);
-        return NextResponse.json({ success: true });
-      }
-
-      default:
-        return NextResponse.json(
-          { error: 'Invalid action. Use: order, cancel' },
+          { error: 'Invalid action. Use: account, positions, portfolio, portfolio-chart, bars, snapshot' },
           { status: 400 }
         );
     }

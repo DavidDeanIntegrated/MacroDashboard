@@ -154,21 +154,6 @@ export function useWatchlist() {
   }>>('/api/alpaca?action=watchlist', { refreshInterval: 60000 });
 }
 
-export function useOrders(status: 'open' | 'closed' | 'all' = 'all') {
-  return useApi<Array<{
-    id: string;
-    symbol: string;
-    qty: string;
-    side: string;
-    type: string;
-    status: string;
-    created_at: string;
-    filled_at: string | null;
-    filled_avg_price: string | null;
-    limit_price: string | null;
-  }>>(`/api/alpaca?action=orders&status=${status}`);
-}
-
 export function useStockBars(symbol: string | null, timeframe = '1Day') {
   return useApi<Array<{ date: string; close: number; open: number; high: number; low: number; volume: number }>>(
     symbol ? `/api/alpaca?action=bars&symbol=${symbol}&timeframe=${timeframe}` : null

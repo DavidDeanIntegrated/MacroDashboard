@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/Badge';
 import { TimeSeriesChart, MultiSeriesChart } from '@/components/charts/TimeSeriesChart';
 import { useMultiAggregates, useApi } from '@/lib/hooks';
 import { HOLDINGS } from '@/lib/holdings';
+import { Term } from '@/components/ui/Term';
 
 type AnalyticsPeriod = '1M' | '3M' | '6M' | '1Y';
 
@@ -489,7 +490,9 @@ export default function AnalyticsPage() {
       {/* ─── RELATIVE STRENGTH vs BENCHMARK ─── */}
       <div>
         <h3 className="text-lg font-semibold text-black/75 tracking-tight mb-1">Relative Strength vs SPY</h3>
-        <p className="text-xs text-black/40 mb-4">Holdings ranked by excess return over the S&P 500</p>
+        <p className="text-xs text-black/40 mb-4 max-w-3xl leading-relaxed">
+          <Term k="relative-strength">Relative strength</Term> = each holding&apos;s return minus SPY&apos;s return over the same window. It separates &quot;this stock is doing well&quot; from &quot;everything is doing well&quot; — a +8% gain when the market is up 12% is actually lagging. Positive (green) = beating the market; negative (red) = trailing it. Returns here are price-only (dividends excluded), which slightly understates total return for dividend payers like VTV.
+        </p>
       </div>
 
       <Card padding="none">
@@ -545,7 +548,9 @@ export default function AnalyticsPage() {
       {rsChartData.length > 0 && (
         <Card>
           <CardTitle>Top Outperformers vs SPY — Indexed ({period})</CardTitle>
-          <p className="text-xs text-black/40 mt-1 mb-4">Normalized to 100 at start of period</p>
+          <p className="text-xs text-black/40 mt-1 mb-4">
+            Every line is <Term k="indexed-100">indexed to 100</Term> at the start of the window, so you&apos;re comparing percentage growth on one scale — a line at 120 is up 20% since the period began, whatever its dollar price.
+          </p>
           <MultiSeriesChart
             data={rsChartData}
             series={[
@@ -564,8 +569,8 @@ export default function AnalyticsPage() {
       {/* ─── CORRELATION MATRIX ─── */}
       <div className="mt-8">
         <h3 className="text-lg font-semibold text-black/75 tracking-tight mb-1">Correlation Matrix</h3>
-        <p className="text-xs text-black/40 mb-4">
-          Pairwise correlations of daily returns over {period}. High correlation means positions move together (less diversification).
+        <p className="text-xs text-black/40 mb-4 max-w-3xl leading-relaxed">
+          <Term k="correlation">Correlation</Term> measures how much two holdings move together, from +1.00 (perfect lockstep) through 0 (unrelated) to −1.00 (mirror opposites), based on daily returns over the selected {period} window. This is the math behind <Term k="diversification">diversification</Term>: ten positions that all sit above 0.8 with each other behave like one big position — the red cells show you exactly where that&apos;s happening. Blue (negative) cells are the valuable ones: pairs that cushion each other.
         </p>
       </div>
 
@@ -640,10 +645,10 @@ export default function AnalyticsPage() {
         const avgCorr = count > 0 ? totalCorr / count : 0;
         const badge = avgCorr > 0.6 ? 'red' : avgCorr > 0.35 ? 'orange' : avgCorr > 0.1 ? 'green' : 'blue';
         const text = avgCorr > 0.6
-          ? 'High average correlation suggests concentrated risk. Consider adding uncorrelated assets.'
+          ? `Your holdings' daily moves are, on average, strongly linked (${avgCorr.toFixed(2)} on a 0-to-1 scale). In practice that means a bad day for one is usually a bad day for all — the portfolio has more concentrated risk than its position count suggests. Assets that march to different drummers (gold, T-bills, international, commodities) are what bring this down.`
           : avgCorr > 0.35
-            ? 'Moderate correlation — decent diversification but room to improve with uncorrelated assets.'
-            : 'Low average correlation indicates strong diversification across holdings.';
+            ? `Your holdings move together moderately (average ${avgCorr.toFixed(2)}, where 0 = fully independent and 1 = lockstep) — typical for an equity-heavy book. Diversification is real but partial: in a sharp sell-off, correlations tend to rise toward 1, so the uncorrelated sleeves (gold, T-bills) are carrying the true protection.`
+            : `Your holdings are largely independent of each other (average ${avgCorr.toFixed(2)}) — strong diversification. Losses in one position are genuinely likely to be offset elsewhere, which smooths the portfolio's overall ride.`;
 
         return (
           <Card>
@@ -659,8 +664,8 @@ export default function AnalyticsPage() {
       {/* ─── VOLATILITY CONTEXT ─── */}
       <div className="mt-8">
         <h3 className="text-lg font-semibold text-black/75 tracking-tight mb-1">Volatility Context</h3>
-        <p className="text-xs text-black/40 mb-4">
-          Annualized volatility from daily returns. Higher = wider price swings = more risk (and opportunity).
+        <p className="text-xs text-black/40 mb-4 max-w-3xl leading-relaxed">
+          <Term k="annualized-vol">Annualized volatility</Term> turns each holding&apos;s day-to-day price swings into a single yearly-scale number (daily standard deviation × √252 trading days) so everything is comparable: SPY typically runs ~15-20%, while a 60% name swings three times as hard. Higher volatility = more risk <em>and</em> more opportunity — the practical rule is to size positions inversely to it, so the wild names get the small allocations.
         </p>
       </div>
 
@@ -781,8 +786,8 @@ export default function AnalyticsPage() {
         <>
           <div className="mt-4">
             <h3 className="text-lg font-semibold text-black/75 tracking-tight mb-1">Volatility Signals — Buy vs Sell Context</h3>
-            <p className="text-xs text-black/40 mb-4">
-              Combines each holding&apos;s current volatility regime (vs its own history) with price position to flag potential opportunities and risks.
+            <p className="text-xs text-black/40 mb-4 max-w-3xl leading-relaxed">
+              Each holding is scored against <em>its own</em> history — the <Term k="vol-percentile">volatility percentile</Term> asks &quot;is this stock unusually stormy or calm right now, for this stock?&quot; — and that&apos;s combined with where the price sits in its recent range. The pattern matters more than either piece alone: high fear near the lows can mark <Term k="capitulation">capitulation</Term> (opportunity), while rising turbulence at the highs can mark <Term k="distribution">distribution</Term> (risk).
             </p>
           </div>
 

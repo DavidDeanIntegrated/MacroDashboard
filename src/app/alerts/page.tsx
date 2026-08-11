@@ -8,6 +8,7 @@ import { useMacroRegime, useMarketNews, useApi, usePortfolio } from '@/lib/hooks
 import { timeAgo } from '@/lib/format';
 import { HOLDINGS, WATCHLIST, type HoldingPosition } from '@/lib/holdings';
 import { computeSleeveData, getSleeveStatus } from '@/lib/sleeves';
+import { Term } from '@/components/ui/Term';
 
 interface WatchlistItem {
   symbol: string;
@@ -203,7 +204,7 @@ export default function AlertsPage() {
       <Card>
         <CardTitle>Regime-Aware Signals</CardTitle>
         <p className="text-sm text-black/45 mt-1">
-          Compound alerts where the current macro regime meets your sleeve allocation.
+          Compound alerts that only fire when two things line up: the macro <Term k="regime">regime</Term> creates a risk, <em>and</em> your <Term k="sleeve">sleeve</Term> allocation is exposed to it. Either condition alone is unremarkable — the combination is what deserves attention.
         </p>
         {compoundAlerts.length === 0 ? (
           <div className="mt-4 p-3 bg-black/[0.02] rounded-xl">
@@ -219,7 +220,10 @@ export default function AlertsPage() {
                 className="flex items-start gap-3 p-3 bg-black/[0.02] rounded-xl"
               >
                 <Badge variant={alert.variant}>{alert.tag}</Badge>
-                <p className="text-sm text-black/65 leading-relaxed">{alert.text}</p>
+                <div>
+                  <p className="text-sm text-black/65 leading-relaxed">{alert.text}</p>
+                  <p className="text-xs text-black/40 leading-relaxed mt-1">{alert.why}</p>
+                </div>
               </div>
             ))}
           </div>
@@ -268,6 +272,9 @@ export default function AlertsPage() {
       <Card padding="none">
         <div className="px-6 pt-6 pb-3">
           <CardTitle>Recent Filings (Watchlist)</CardTitle>
+          <p className="text-xs text-black/40 mt-1">
+            Official SEC paperwork from companies you hold or watch, straight from EDGAR. <Term k="10-K">10-K</Term> = the audited annual report (deepest read on the business). <Term k="10-Q">10-Q</Term> = the quarterly update. <Term k="8-K">8-K</Term> = a &quot;material event&quot; alert — earnings, deals, executive changes — and the one most likely to contain surprises. Click any row to open the actual filing.
+          </p>
         </div>
         {loadingFilings ? (
           <div className="px-6 pb-6">
@@ -311,6 +318,7 @@ export default function AlertsPage() {
       <Card padding="none">
         <div className="px-6 pt-6 pb-3">
           <CardTitle>Market News</CardTitle>
+          <p className="text-xs text-black/40 mt-1">General market headlines via Finnhub — context, not signals. The regime data above moves slowly and deliberately; news moves fast and is mostly noise. When they disagree, trust the data.</p>
         </div>
         {newsLoading ? (
           <div className="px-6 pb-6">
@@ -394,6 +402,7 @@ interface CompoundAlert {
   tag: string;
   variant: 'red' | 'orange' | 'blue';
   text: string;
+  why: string;
 }
 
 function getCompoundAlerts(
@@ -415,7 +424,8 @@ function getCompoundAlerts(
     alerts.push({
       tag: 'High',
       variant: 'red',
-      text: 'Inflation accelerating while your inflation hedge is underweight — add to GLD/BCI.',
+      text: 'Inflation is accelerating while your inflation hedge is underweight — add to GLD/BCI.',
+      why: 'Two conditions fired at once: CPI is trending up, AND your Real Assets sleeve (gold + commodities) sits below its target band. Real assets are the sleeve specifically designed to protect purchasing power when prices rise — being underweight exactly when that protection is needed is the highest-priority mismatch this dashboard checks for.',
     });
   }
 
@@ -427,7 +437,8 @@ function getCompoundAlerts(
     alerts.push({
       tag: 'Caution',
       variant: 'orange',
-      text: 'Equities overweight into a defensive regime — consider trimming high-beta toward target.',
+      text: 'Equities are overweight heading into a defensive regime — consider trimming high-beta toward target.',
+      why: 'Your stock sleeve is above its target band at the same time the macro regime has turned to one of the two seasons that historically punish stocks. Trimming the most aggressive (high-beta) names first reduces the exposure that would fall hardest, while keeping the core positions intact.',
     });
   }
 
@@ -436,7 +447,8 @@ function getCompoundAlerts(
     alerts.push({
       tag: 'Caution',
       variant: 'orange',
-      text: 'Growth slowing and dry powder is light — rebuild SGOV for optionality.',
+      text: 'Growth is slowing and dry powder is light — rebuild SGOV for optionality.',
+      why: 'Slowing growth raises the odds of the market declines your drawdown ladder is designed to buy. But the ladder only works if the cash reserve (SGOV) is stocked — being under target here means you might face a great buying opportunity without ammunition. Rebuilding cash while markets are still calm is the cheap time to do it.',
     });
   }
 
@@ -445,7 +457,8 @@ function getCompoundAlerts(
     alerts.push({
       tag: 'Note',
       variant: 'blue',
-      text: 'Crypto overweight outside a Goldilocks backdrop — size the satellite carefully given liquidity risk.',
+      text: 'Crypto is overweight outside a Goldilocks backdrop — size the satellite carefully given liquidity risk.',
+      why: 'Crypto is the portfolio\'s most liquidity-sensitive asset — it thrives when money is cheap and risk appetite is high, and falls hardest when conditions tighten. Holding more than target is fine in a benign (Goldilocks) season; in any other regime, the same overweight carries meaningfully more downside risk.',
     });
   }
 

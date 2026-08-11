@@ -8,6 +8,7 @@ import { formatCurrency } from '@/lib/format';
 import type { HoldingPosition } from '@/lib/holdings';
 import { computeSleeveData, getSleeveStatus, regimeAdjustedBand, type SleeveStatus, type RegimeKey } from '@/lib/sleeves';
 import { macroSensitivity } from '@/lib/macro-sensitivity';
+import { Term } from '@/components/ui/Term';
 
 export interface FundamentalsScoreLite {
   symbol: string;
@@ -197,7 +198,9 @@ function SleeveComparisonBars({
             {adj.delta !== 0 && (
               <p className="text-[11px] text-black/40 mt-1">
                 <span className="inline-block w-3 border-t border-dashed align-middle mr-1" style={{ borderColor: sleeve.color }} />
-                Regime-adjusted target {adj.min.toFixed(0)}–{adj.max.toFixed(0)}%
+                <Term def="The dashed markers nudge this sleeve's target band up or down for the current macro regime — e.g., stagflation shifts weight from equities toward real assets and cash. The tilts across all sleeves sum to roughly zero, so the portfolio stays fully invested; only the mix shifts.">
+                  Regime-adjusted target
+                </Term>{' '}{adj.min.toFixed(0)}–{adj.max.toFixed(0)}%
                 <span className={adj.delta > 0 ? 'text-accent-green' : 'text-accent-red'}> ({adj.delta > 0 ? '▲ +' : '▼ '}{adj.delta}pp)</span>
               </p>
             )}
@@ -391,9 +394,13 @@ function SubSleeveBreakdownCard({
                                 <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
                                   <div className="flex items-center gap-2">
                                     <span className="text-sm font-semibold text-black/80 w-12">{m.symbol}</span>
-                                    <Badge variant={macro.badge}>{macro.driver}</Badge>
+                                    <Term def={`Macro driver — what primarily moves this holding. ${macro.note}`}>
+                                      <Badge variant={macro.badge}>{macro.driver}</Badge>
+                                    </Term>
                                     {score && !score.unavailable && (
-                                      <Badge variant={gradeBadge(score.grade)}>{score.grade} · {score.total}</Badge>
+                                      <Term def={`Composite fundamentals score (0-100) built from five pillars: profitability, growth, valuation, financial health, and earnings quality. ${score.total}/100 grades as "${score.grade}". Full breakdown lives on the ticker page.`}>
+                                        <Badge variant={gradeBadge(score.grade)}>{score.grade} · {score.total}</Badge>
+                                      </Term>
                                     )}
                                   </div>
                                   <div className="flex items-center gap-4 text-right">
@@ -475,8 +482,8 @@ export function AllWeatherSection({
       {/* Section Header */}
       <div className="pt-4 border-t border-black/[0.06]">
         <h2 className="text-2xl font-semibold text-black/85 tracking-tight">All-Weather Strategy</h2>
-        <p className="text-sm text-black/45 mt-1">
-          Modified Dalio framework — how your portfolio maps to the four economic sleeves
+        <p className="text-sm text-black/45 mt-1 max-w-3xl leading-relaxed">
+          A modified version of Ray Dalio&apos;s <Term k="all-weather">All-Weather</Term> idea: rather than betting on one economic outcome, the portfolio holds four <Term k="sleeve">sleeves</Term> that each thrive in a different season — Equities (growth), Real Assets (inflation), <Term k="dry-powder">Dry Powder</Term> (slowdowns and buying opportunities), and Crypto (<Term k="liquidity">liquidity</Term>-driven upside). The goal isn&apos;t to predict the season; it&apos;s to be positioned to survive any of them, and to <Term k="rebalancing">rebalance</Term> back to target when one sleeve drifts.
         </p>
       </div>
 
