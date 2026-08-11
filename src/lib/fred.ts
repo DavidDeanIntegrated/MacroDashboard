@@ -392,19 +392,19 @@ export function classifyMacroRegime(
   if (highInflation && risingUnemployment) {
     regime = 'stagflation';
     label = 'Stagflation';
-    description = 'Elevated inflation with deteriorating labor market. Historically challenging for equities.';
+    description = `Inflation is elevated (${latestCPI.toFixed(1)}% vs the Fed's ~2% goal) while the job market deteriorates — the one season where stocks and bonds can fall together, because the Fed can't cut rates to help growth without feeding inflation. Gold, commodities, and cash have historically held up best.`;
   } else if (highInflation && !risingUnemployment) {
     regime = 'reflation';
     label = 'Reflation';
-    description = 'Rising inflation with solid growth. Favors commodities, value stocks, and TIPS.';
+    description = `Inflation is running hot (${latestCPI.toFixed(1)}%) but the job market is holding firm — an economy running warmer than the Fed wants. Prices of real things (commodities, gold) and value stocks tend to lead; bonds and expensive growth stocks face rate pressure.`;
   } else if (!highInflation && !risingUnemployment) {
     regime = 'goldilocks';
     label = 'Goldilocks';
-    description = 'Moderate inflation with steady growth. Favorable for risk assets and equities.';
+    description = `Inflation is contained (${latestCPI.toFixed(1)}%) and the job market is solid (${latestUnemp.toFixed(1)}% unemployment) — "not too hot, not too cold." Historically the friendliest season for stocks: profits grow while the Fed has no reason to tighten.`;
   } else {
     regime = 'deflation';
     label = 'Disinflation / Slowdown';
-    description = 'Cooling inflation with softening labor market. Favors duration (bonds) and defensive equities.';
+    description = `Inflation is cooling while the job market softens — the economy is decelerating. This season favors safety: cash earning yield, high-quality bonds, and defensive stocks, since the Fed's usual response (rate cuts) rewards exactly those assets.`;
   }
 
   return {

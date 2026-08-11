@@ -12,6 +12,7 @@ import { AllWeatherSection } from '@/components/AllWeatherSection';
 import { usePortfolio, usePortfolioChart, usePolygonAggregates, usePolygonRSI, usePortfolioDividends, useWatchlist, useFundamentalsScores, useApi } from '@/lib/hooks';
 import type { RegimeKey } from '@/lib/sleeves';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/format';
+import { Term } from '@/components/ui/Term';
 import { CATEGORY_CONFIG, HOLDINGS, WATCHLIST, WATCHLIST_CATEGORY_CONFIG } from '@/lib/holdings';
 import type { PolygonTimeframe } from '@/lib/polygon';
 
@@ -189,7 +190,9 @@ export default function PortfolioPage() {
       {spyDrawdown && (
         <Card>
           <div className="flex items-center justify-between mb-3">
-            <CardTitle>SPY Drawdown from 3-Month Peak</CardTitle>
+            <CardTitle>
+              <Term def="How far the S&P 500 has fallen from its highest point of the last 3 months. This number drives the dry-powder ladder: pre-planned buying kicks in at -10%, -15%, and -25%.">SPY Drawdown from 3-Month Peak</Term>
+            </CardTitle>
             <Badge variant={
               spyDrawdown.severity === 'bear' ? 'red'
                 : spyDrawdown.severity === 'correction' ? 'red'
@@ -365,6 +368,9 @@ export default function PortfolioPage() {
       <Card padding="none">
         <div className="px-6 pt-6 pb-3">
           <CardTitle>Positions</CardTitle>
+          <p className="text-xs text-black/40 mt-1">
+            <span className="font-medium">Weight</span> = the share of your total portfolio each position represents (weights drive all sleeve math). <span className="font-medium">Day Chg</span> = today&apos;s price move vs yesterday&apos;s close. Click a row for its price chart and <Term k="rsi">RSI</Term>; click the ticker for full details.
+          </p>
         </div>
         {portfolio.positions.length === 0 ? (
           <div className="px-6 pb-6">
@@ -540,7 +546,9 @@ export default function PortfolioPage() {
         <Card padding="none">
           <div className="px-6 pt-6 pb-3">
             <CardTitle>Dividend Calendar</CardTitle>
-            <p className="text-xs text-black/40 mt-1">Recent and upcoming dividends for your holdings</p>
+            <p className="text-xs text-black/40 mt-1">
+              Recent and upcoming cash payouts from your holdings. <Term k="ex-date">Ex</Term> is the ownership cutoff — you must hold the shares before that date to receive the payment; <span className="font-medium">Pay</span> is when the cash actually lands.
+            </p>
           </div>
           <div className="divide-y divide-black/[0.04]">
             {dividends.slice(0, 20).map((div, i) => {

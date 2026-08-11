@@ -9,6 +9,7 @@ import { YieldCurveChart } from '@/components/charts/YieldCurveChart';
 import { useApi, useYieldCurve, useReleaseCalendar, useMultiAggregates, usePolygonSMA } from '@/lib/hooks';
 import { formatPercent, formatNumber, formatCurrency } from '@/lib/format';
 import { FRED_SERIES_NAMES } from '@/lib/fred';
+import { Term, Explainer } from '@/components/ui/Term';
 
 interface MacroDashboard {
   fedFunds: Array<{ date: string; value: number }>;
@@ -27,6 +28,8 @@ interface MacroDashboard {
   ismManufacturing: Array<{ date: string; value: number }>;
   initialClaims: Array<{ date: string; value: number }>;
   m2: Array<{ date: string; value: number }>;
+  corePceYoY?: Array<{ date: string; value: number }>;
+  breakeven10y?: Array<{ date: string; value: number }>;
   moveIndex: Array<{ date: string; value: number }>;
   regime: {
     regime: string;
@@ -58,9 +61,21 @@ const HIGHER_IS_BETTER: Record<string, boolean> = {
   USALOLITONOSTSAM: true, // LEI
   UMCSENT: true, // consumer sentiment
   PERMIT: true, // building permits
-  MANEMP: true, // ISM manufacturing / employment
-  M2SL: true, // M2 money supply
+  MANEMP: true, // manufacturing employment (YoY growth)
+  M2SL: true, // M2 money supply (YoY growth)
+  COREPCE: false, // rising core inflation pressures the Fed to stay tight
+  T10YIE: false, // rising inflation expectations
 };
+
+// Convert a monthly level series into year-over-year % change (index offset of 12
+// works because these FRED series are strictly monthly with no gaps).
+function toYoY(series: Array<{ date: string; value: number }>): Array<{ date: string; value: number }> {
+  if (!series || series.length <= 12) return [];
+  return series.slice(12).map((d, i) => ({
+    date: d.date,
+    value: series[i].value !== 0 ? +(((d.value - series[i].value) / series[i].value) * 100).toFixed(2) : 0,
+  }));
+}
 
 function filterByPeriod(
   data: Array<{ date: string; value: number }>,
@@ -262,17 +277,17 @@ const INDICATOR_INFO: Record<string, IndicatorInfo> = {
   },
   MANEMP: {
     key: 'MANEMP',
-    label: 'ISM Manufacturing Employment',
+    label: 'Manufacturing Jobs (YoY Growth)',
     description:
-      'The ISM Manufacturing Employment Index measures hiring in the manufacturing sector. Part of the broader ISM PMI suite. Above 50 signals expansion in manufacturing employment; below 50 signals contraction. Manufacturing leads the business cycle.',
+      'Total U.S. manufacturing employment from the BLS payroll survey (about 12-13 million jobs), shown here as year-over-year percent change. Factories feel demand shifts before the rest of the economy — orders slow, shifts get cut, then layoffs spread to services. Sustained job losses in manufacturing have accompanied every modern recession. (Note: this is the official jobs count, not the ISM survey.)',
     regimeSignal: (v) => {
-      if (v < 45)
-        return { regime: 'Deep contraction', badge: 'red', explanation: 'Manufacturing employment contracting sharply. Factories cutting workers — strong recession signal for the industrial economy.' };
-      if (v < 50)
-        return { regime: 'Contraction', badge: 'orange', explanation: 'Manufacturing employment shrinking. Below the critical 50 threshold. Watch for spillover into services sector.' };
-      if (v < 55)
-        return { regime: 'Moderate expansion', badge: 'green', explanation: 'Manufacturing employment growing modestly. Consistent with a healthy industrial sector and steady GDP growth.' };
-      return { regime: 'Strong expansion', badge: 'blue', explanation: 'Robust manufacturing hiring signals strong industrial demand. Typically seen during early-to-mid cycle recoveries.' };
+      if (v < -1.5)
+        return { regime: 'Deep contraction', badge: 'red', explanation: 'Manufacturing payrolls shrinking more than 1.5% per year — factories are cutting workers at a pace historically seen only in recessions. Watch for the weakness to spread into services hiring.' };
+      if (v < 0)
+        return { regime: 'Contraction', badge: 'orange', explanation: 'Manufacturing is losing jobs versus a year ago. Mild declines can happen mid-cycle, but a deepening trend is an early recession warning for the industrial economy.' };
+      if (v < 2)
+        return { regime: 'Moderate expansion', badge: 'green', explanation: 'Manufacturing payrolls growing modestly year-over-year — consistent with a healthy industrial sector and steady GDP growth.' };
+      return { regime: 'Strong expansion', badge: 'blue', explanation: 'Factories adding workers at an unusually fast clip — strong industrial demand, typically seen in early-to-mid cycle recoveries.' };
     },
   },
   ICSA: {
@@ -293,17 +308,47 @@ const INDICATOR_INFO: Record<string, IndicatorInfo> = {
   },
   M2SL: {
     key: 'M2SL',
-    label: FRED_SERIES_NAMES['M2SL'],
+    label: 'M2 Money Supply (YoY Growth)',
     description:
-      'M2 money supply includes cash, checking deposits, savings, and money market funds. Rapid M2 growth (2020-21) preceded the inflation surge. M2 contraction in 2022-23 (first since 1930s) preceded disinflation. Money supply leads inflation by 12-18 months.',
+      'M2 is roughly all readily spendable money in the economy — cash, checking, savings, and money-market funds. What matters is its growth rate, not the raw level: the 2020-21 surge (+25%/yr) preceded the inflation spike, and the 2022-23 contraction (first since the 1930s) preceded disinflation. Money supply tends to lead inflation by 12-18 months.',
     regimeSignal: (v) => {
-      // M2 is in billions — we show it as-is but the trend matters more than the level
-      // Use rough thresholds based on recent historical ranges
-      if (v < 18000)
-        return { regime: 'Tight liquidity', badge: 'orange', explanation: 'M2 contracting or at low levels relative to GDP. Reduced liquidity headwind for asset prices. Deflationary pressure building.' };
-      if (v < 21000)
-        return { regime: 'Normal', badge: 'green', explanation: 'M2 at moderate levels. Money supply growth consistent with stable prices and healthy credit conditions.' };
-      return { regime: 'Excess liquidity', badge: 'blue', explanation: 'Very high M2 levels. Excess liquidity supports asset prices in the near term but may feed inflation with a 12-18 month lag.' };
+      if (v < 0)
+        return { regime: 'Contracting liquidity', badge: 'red', explanation: 'The money supply is shrinking outright — historically rare and strongly disinflationary. A headwind for asset prices, especially speculative ones, until growth resumes.' };
+      if (v < 3)
+        return { regime: 'Tight', badge: 'orange', explanation: 'Money growing slower than the economy typically needs (~3-6%/yr). Gradually restrictive — consistent with cooling inflation but also less fuel for asset prices.' };
+      if (v < 8)
+        return { regime: 'Normal', badge: 'green', explanation: 'Money supply growth in its healthy historical range — enough liquidity to support growth without stoking inflation.' };
+      return { regime: 'Rapid expansion', badge: 'blue', explanation: 'Money supply growing much faster than the real economy. Supportive for asset prices near-term, but historically feeds consumer inflation with a 12-18 month lag (see 2020-21).' };
+    },
+  },
+  COREPCE: {
+    key: 'COREPCE',
+    label: 'Core PCE Inflation (YoY)',
+    description:
+      'The Fed\'s preferred inflation gauge — the price index for personal consumption excluding volatile food and energy. When officials say the "2% target," this is the exact number they mean, so the gap between Core PCE and 2% is the cleanest read on how much pressure the Fed is under. It typically runs ~0.3-0.5 points cooler than CPI.',
+    regimeSignal: (v) => {
+      if (v < 1)
+        return { regime: 'Below target / Deflation risk', badge: 'blue', explanation: 'Core inflation well under 2% gives the Fed room to cut aggressively — and raises worry about demand weakness rather than price stability.' };
+      if (v < 2.5)
+        return { regime: 'At target', badge: 'green', explanation: 'Core PCE at or near 2% is mission accomplished for the Fed — no inflation pressure forcing tight policy. The friendliest inflation backdrop for both stocks and bonds.' };
+      if (v < 3.5)
+        return { regime: 'Above target', badge: 'orange', explanation: 'Core inflation meaningfully above 2% keeps the Fed biased toward tight policy. Rate cuts get delayed; each hot monthly print pushes them further out.' };
+      return { regime: 'Far above target', badge: 'red', explanation: 'Core PCE this far above target forces aggressive Fed tightening regardless of what it does to growth — the setup where policy itself becomes the market risk.' };
+    },
+  },
+  T10YIE: {
+    key: 'T10YIE',
+    label: '10Y Breakeven Inflation',
+    description:
+      'The bond market\'s own 10-year inflation forecast, derived from the price gap between regular Treasuries and inflation-protected ones (TIPS). Unlike CPI (which reports the past), breakevens are forward-looking and update every trading day. The Fed watches them closely: stable breakevens near 2-2.5% mean the market trusts the Fed; rising breakevens mean inflation expectations are becoming "unanchored."',
+    regimeSignal: (v) => {
+      if (v < 1.5)
+        return { regime: 'Deflation worry', badge: 'blue', explanation: 'The market is pricing very low inflation for a decade — usually a demand-weakness signal that comes with falling yields and defensive positioning.' };
+      if (v < 2.5)
+        return { regime: 'Anchored', badge: 'green', explanation: 'Expectations sit right around the Fed\'s target. The market believes inflation is under control — the backdrop where the Fed has the most flexibility.' };
+      if (v < 3)
+        return { regime: 'Drifting higher', badge: 'orange', explanation: 'The market is starting to price persistently above-target inflation. If this trend continues, it pressures the Fed to stay tighter for longer and favors real assets over long bonds.' };
+      return { regime: 'Unanchored risk', badge: 'red', explanation: 'Breakevens near 3%+ signal the market is losing confidence in the 2% target — historically the trigger for forceful Fed action and a strong environment for gold and commodities.' };
     },
   },
   MOVE: {
@@ -378,16 +423,18 @@ export default function MacroPage() {
 
   const regime = data.regime;
 
-  // Sahm Rule computation: 3-month average vs 12-month low
+  // Sahm Rule — official definition: the current 3-month moving average of the
+  // unemployment rate minus the MINIMUM of the 3-month moving averages over the
+  // preceding 12 months. (Comparing against raw monthly lows overstates the value.)
   const unempData = data.unemployment || [];
   const sahmInfo = (() => {
-    if (unempData.length < 12) return null;
-    // Unemployment is monthly — last 12 entries = 12-month window
-    const recent12 = unempData.slice(-12);
-    const low12 = Math.min(...recent12.map((d: { value: number }) => d.value));
-    // 3-month average = last 3 entries
-    const recent3 = unempData.slice(-3);
-    const avg3 = recent3.reduce((sum: number, d: { value: number }) => sum + d.value, 0) / recent3.length;
+    if (unempData.length < 15) return null;
+    const vals = unempData.map((d: { value: number }) => d.value);
+    const avg3At = (i: number) => (vals[i] + vals[i - 1] + vals[i - 2]) / 3;
+    const n = vals.length - 1;
+    const avg3 = avg3At(n);
+    let low12 = Infinity;
+    for (let i = n - 12; i < n; i++) low12 = Math.min(low12, avg3At(i));
     const sahmValue = avg3 - low12;
     const triggered = sahmValue >= 0.5;
     return { low12, avg3, sahmValue, triggered };
@@ -405,9 +452,11 @@ export default function MacroPage() {
     { info: INDICATOR_INFO['USALOLITONOSTSAM'], data: data.lei, suffix: '' },
     { info: INDICATOR_INFO['UMCSENT'], data: data.consumerSentiment, suffix: '' },
     { info: INDICATOR_INFO['PERMIT'], data: data.buildingPermits, suffix: 'K' },
-    { info: INDICATOR_INFO['MANEMP'], data: data.ismManufacturing, suffix: '' },
+    { info: INDICATOR_INFO['MANEMP'], data: toYoY(data.ismManufacturing), suffix: '%' },
     { info: INDICATOR_INFO['ICSA'], data: data.initialClaims.map((d) => ({ ...d, value: d.value / 1000 })), suffix: 'K' },
-    { info: INDICATOR_INFO['M2SL'], data: data.m2, suffix: 'B' },
+    { info: INDICATOR_INFO['M2SL'], data: toYoY(data.m2), suffix: '%' },
+    { info: INDICATOR_INFO['COREPCE'], data: data.corePceYoY || [], suffix: '%' },
+    { info: INDICATOR_INFO['T10YIE'], data: data.breakeven10y || [], suffix: '%' },
     { info: INDICATOR_INFO['MOVE'], data: data.moveIndex || [], suffix: '' },
   ];
 
@@ -514,6 +563,22 @@ export default function MacroPage() {
             <p className="text-sm text-black/55 max-w-xl leading-relaxed">
               {regime.description}
             </p>
+            <div className="max-w-xl">
+              <Explainer title="How is this regime determined?">
+                <p>
+                  The dashboard sorts the economy into one of four <Term k="regime">seasons</Term> using two questions, answered with the latest government data:
+                </p>
+                <p>
+                  <span className="font-medium text-black/70">1. Is inflation high?</span> — Is <Term k="cpi">CPI</Term> running above 3% year-over-year? (Currently {formatPercent(regime.latestInflation)}.)
+                </p>
+                <p>
+                  <span className="font-medium text-black/70">2. Is the job market weakening?</span> — Has the unemployment rate risen over the past ~3 months? (Currently {regime.latestUnemployment.toFixed(1)}%.)
+                </p>
+                <p>
+                  High inflation + weakening jobs = <Term k="stagflation">Stagflation</Term>. High inflation + solid jobs = <Term k="reflation">Reflation</Term>. Low inflation + solid jobs = <Term k="goldilocks">Goldilocks</Term>. Low inflation + weakening jobs = <Term k="deflation">Disinflation/Slowdown</Term>. It&apos;s deliberately simple — two of the most reliable macro inputs rather than a black box — so you always know <em>why</em> the label is what it is.
+                </p>
+              </Explainer>
+            </div>
           </div>
           <div className="text-left sm:text-right space-y-2 shrink-0 sm:ml-8">
             <div>
@@ -573,7 +638,7 @@ export default function MacroPage() {
           <CardTitle>Yield Curve (Live)</CardTitle>
           {yieldCurve && <YieldCurveChart data={yieldCurve} height={280} />}
           <p className="text-xs text-black/40 mt-3 leading-relaxed">
-            Shows yields across Treasury maturities. A normal upward slope means markets expect growth; a flat or inverted curve (short rates above long rates) has preceded every U.S. recession since 1955.
+            The <Term k="yield-curve">yield curve</Term> plots what the U.S. government pays to borrow for 3 months out to 30 years. A normal upward slope means lenders demand extra return for longer commitments — a healthy-economy shape. When short rates sit <em>above</em> long rates (an <Term k="inversion">inversion</Term>), the bond market is betting the Fed will be forced to cut rates because a slowdown is coming — a pattern that has preceded every U.S. recession since 1955.
           </p>
         </Card>
 
@@ -587,7 +652,7 @@ export default function MacroPage() {
             valueFormatter={(v) => `${v.toFixed(2)}%`}
           />
           <p className="text-xs text-black/40 mt-3 leading-relaxed">
-            The most-watched recession signal. Negative values (inversion) warn of recession 6-24 months ahead. The un-inversion — when this turns positive again — is often when recession actually begins, as the Fed starts cutting.
+            The most-watched single recession signal: the 10-year <Term k="treasury">Treasury yield</Term> minus the 2-year. Negative values (<Term k="inversion">inversion</Term>) have warned of recession 6-24 months ahead every time since 1955. Counterintuitively, the <em>un-inversion</em> — this line turning positive again as the Fed starts cutting short rates — is often when the recession actually arrives, so a fresh flip back above zero is a caution flag, not an all-clear.
           </p>
         </Card>
       </div>
@@ -714,7 +779,7 @@ export default function MacroPage() {
                   />
                 )}
                 <p className="text-xs text-black/40 mt-3 leading-relaxed">
-                  Price above both SMAs = bullish trend. Price below 200-day SMA = bear market territory. 50-day crossing below 200-day = &quot;death cross&quot; (bearish). Crossing above = &quot;golden cross&quot; (bullish).
+                  The colored lines are <Term k="sma">moving averages</Term> — the average price over the last 50 and 200 trading days, smoothing daily noise into trend. Price above both = healthy uptrend. Price below the 200-day = bear-market territory. The 50-day crossing below the 200-day (&quot;death cross&quot;) is a widely-watched deterioration signal; crossing above (&quot;golden cross&quot;) marks recovering momentum.
                 </p>
               </Card>
 
@@ -732,7 +797,7 @@ export default function MacroPage() {
                   />
                 )}
                 <p className="text-xs text-black/40 mt-3 leading-relaxed">
-                  Normalized to 100 at start of period. When QQQ leads, growth/tech is in favor (risk-on). When SPY leads, broad market / value is outperforming (risk-off rotation).
+                  Both lines are <Term k="indexed-100">indexed to 100</Term> at the start of the window so you&apos;re comparing percentage growth, not prices. QQQ (the tech-heavy Nasdaq 100) pulling ahead = investors reaching for <Term k="growth-stocks">growth</Term> — a <Term k="risk-on">risk-on</Term> mood. SPY (the broad S&amp;P 500) leading = money rotating toward <Term k="value-stocks">value</Term> and safety.
                 </p>
               </Card>
             </div>
@@ -751,9 +816,40 @@ export default function MacroPage() {
           valueFormatter={(v) => `${v.toFixed(2)}%`}
         />
         <p className="text-xs text-black/40 mt-3 leading-relaxed">
-          Measures how fast consumer prices are rising. The Fed targets 2%. Below 2% allows easy policy (bullish for growth stocks); above 3-4% forces tightening (bearish for multiples, favors commodities and value). Deflation (below 0%) signals crisis.
+          <Term k="cpi">CPI</Term> measures how fast everyday prices are rising versus a year ago; the Fed targets about 2%. Near 2%, the Fed can keep policy easy — bullish for <Term k="growth-stocks">growth stocks</Term>. Above 3-4%, the Fed is forced to raise rates, which compresses <Term k="multiple">valuation multiples</Term> and shifts the advantage to commodities and <Term k="value-stocks">value stocks</Term>. Below 0% (outright deflation) signals collapsing demand — a crisis, not a victory.
         </p>
       </Card>
+
+      {/* Core PCE + Breakeven Inflation */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardTitle>Core PCE — The Fed&apos;s Preferred Gauge</CardTitle>
+          <TimeSeriesChart
+            data={filterByPeriod(data.corePceYoY || [], period)}
+            color="#FF6B35"
+            height={250}
+            gradientId="corePce"
+            valueFormatter={(v) => `${v.toFixed(2)}%`}
+          />
+          <p className="text-xs text-black/40 mt-3 leading-relaxed">
+            <Term k="core-pce">Core PCE</Term> is the inflation number the Fed actually targets — consumer prices excluding volatile food and energy. The gap between this line and 2% is the cleanest read on how much pressure the Fed is under: at 2%, rate cuts are on the table; each half-point above it pushes them further away. It usually runs a few tenths cooler than the CPI headline above.
+          </p>
+        </Card>
+
+        <Card>
+          <CardTitle>10Y Breakeven — Market Inflation Expectations</CardTitle>
+          <TimeSeriesChart
+            data={filterByPeriod(data.breakeven10y || [], period)}
+            color="#AF52DE"
+            height={250}
+            gradientId="breakeven10y"
+            valueFormatter={(v) => `${v.toFixed(2)}%`}
+          />
+          <p className="text-xs text-black/40 mt-3 leading-relaxed">
+            The <Term k="breakeven">breakeven rate</Term> is the bond market&apos;s own forecast of average inflation over the next 10 years, extracted from <Term k="tips">TIPS</Term> prices. CPI reports the past; this prices the future, every trading day. Steady readings near 2-2.5% mean expectations are &quot;anchored&quot; (the market trusts the Fed). A sustained climb toward 3% is the early-warning sign that would favor <Term k="reflation">reflation</Term> assets — gold, commodities, value — over long bonds.
+          </p>
+        </Card>
+      </div>
 
       {/* Rates + Labor */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -767,7 +863,7 @@ export default function MacroPage() {
             valueFormatter={(v) => `${v.toFixed(2)}%`}
           />
           <p className="text-xs text-black/40 mt-3 leading-relaxed">
-            The Fed&apos;s primary policy lever. Rising rates cool the economy and compress asset valuations; falling rates stimulate growth and boost risk assets. The direction matters more than the level — &quot;don&apos;t fight the Fed.&quot;
+            The <Term k="fed-funds">fed funds rate</Term> is the base cost of money that every other rate — mortgages, corporate debt, margin loans — builds on. Rising rates cool the economy and compress asset valuations; falling rates stimulate growth and lift risk assets. The <em>direction</em> matters more than the level: markets move on where the Fed is headed, hence the old rule &quot;don&apos;t fight the Fed.&quot;
           </p>
         </Card>
 
@@ -781,7 +877,7 @@ export default function MacroPage() {
             valueFormatter={(v) => `${v.toFixed(1)}%`}
           />
           <p className="text-xs text-black/40 mt-3 leading-relaxed">
-            A lagging indicator — by the time it rises, recession has usually started. Below 4.5% signals a strong economy. Watch for the Sahm Rule: a 0.5% rise from the 12-month low has a perfect track record of identifying recessions.
+            A <Term k="lagging-indicator">lagging indicator</Term> — by the time unemployment rises clearly, the recession has usually already begun, which is exactly what makes it useful as a confirmation signal. Below ~4.5% signals a strong labor market. The panel below tracks the <Term k="sahm-rule">Sahm Rule</Term>: when the 3-month average unemployment rate climbs 0.50 points above its lowest 3-month average of the past year, a recession has started — every time since 1970, with no false alarms.
           </p>
           {sahmInfo && (
             <div className={`mt-2 rounded-lg p-2.5 border ${sahmInfo.triggered ? 'bg-accent-red/[0.04] border-accent-red/10' : 'bg-black/[0.02] border-black/[0.06]'}`}>
@@ -791,14 +887,19 @@ export default function MacroPage() {
                   {sahmInfo.triggered ? 'Triggered' : 'Not Triggered'}
                 </Badge>
               </div>
+              <p className="text-[11px] text-black/45 mt-1.5 leading-relaxed">
+                {sahmInfo.triggered
+                  ? 'Unemployment has risen enough from its recent low that, historically, a recession has always already been underway. Treat defensive positioning and the dry-powder ladder as active considerations.'
+                  : `In plain terms: unemployment would need to rise ${(0.5 - sahmInfo.sahmValue).toFixed(2)} more points (3-month average) to trip this recession signal. Small wiggles are normal; the trigger is deliberately set where no false alarm has ever occurred.`}
+              </p>
               <div className="grid grid-cols-3 gap-3 mt-2">
                 <div>
-                  <p className="text-[10px] text-black/35 uppercase tracking-wider">12-Mo Low</p>
-                  <p className="text-sm font-bold tabular-nums text-black/70">{sahmInfo.low12.toFixed(1)}%</p>
+                  <p className="text-[10px] text-black/35 uppercase tracking-wider">12-Mo Low (3-Mo Avg)</p>
+                  <p className="text-sm font-bold tabular-nums text-black/70">{sahmInfo.low12.toFixed(2)}%</p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-black/35 uppercase tracking-wider">3-Mo Avg</p>
-                  <p className="text-sm font-bold tabular-nums text-black/70">{sahmInfo.avg3.toFixed(1)}%</p>
+                  <p className="text-[10px] text-black/35 uppercase tracking-wider">Current 3-Mo Avg</p>
+                  <p className="text-sm font-bold tabular-nums text-black/70">{sahmInfo.avg3.toFixed(2)}%</p>
                 </div>
                 <div>
                   <p className="text-[10px] text-black/35 uppercase tracking-wider">Sahm Value</p>
@@ -825,7 +926,7 @@ export default function MacroPage() {
             valueFormatter={(v) => v.toFixed(1)}
           />
           <p className="text-xs text-black/40 mt-3 leading-relaxed">
-            The CBOE Volatility Index — 30-day expected S&P 500 volatility from options prices. Below 15 = calm/complacent. 20-30 = elevated caution. Above 30 = high fear. Above 40 = extreme panic (historically marks major bottoms).
+            The <Term k="vix">VIX</Term> measures how much movement option traders are paying to protect against in the S&P 500 over the next 30 days — a real-money fear gauge. Below 15 = calm (sometimes complacent). 20-30 = elevated caution. Above 30 = high fear. Above 40 = panic — which, counterintuitively, has historically marked major buying opportunities, because peak fear and peak selling tend to arrive together.
           </p>
         </Card>
 
@@ -839,7 +940,7 @@ export default function MacroPage() {
             valueFormatter={(v) => v.toFixed(1)}
           />
           <p className="text-xs text-black/40 mt-3 leading-relaxed">
-            The Merrill Lynch Option Volatility Estimate — the bond market&apos;s VIX. Measures expected Treasury volatility from options prices. Below 80 = calm. 80-120 = normal. Above 120 = stress. Above 150 = crisis-level dislocation (2008, SVB crisis). Bond vol often leads equity vol.
+            The <Term k="move">MOVE index</Term> is the bond market&apos;s version of the VIX — expected turbulence in U.S. Treasury prices. Below 80 = calm. 80-120 = normal. Above 120 = stress. Above 150 = crisis-level dislocation (2008, the 2023 bank failures). Worth watching because Treasuries are the foundation every other market is priced off — when the <em>safe</em> asset gets volatile, equity trouble often follows.
           </p>
         </Card>
       </div>
@@ -855,7 +956,7 @@ export default function MacroPage() {
           valueFormatter={(v) => `${v.toFixed(2)}%`}
         />
         <p className="text-xs text-black/40 mt-3 leading-relaxed">
-          The premium investors demand for risky corporate bonds over Treasuries. Below 3.5% signals easy credit (risk-on). Above 5-6% signals stress. Above 8% means panic — credit markets are freezing and the Fed typically intervenes.
+          The <Term k="hy-spread">high-yield spread</Term> is the extra interest risky (&quot;junk-rated&quot;) companies must pay to borrow versus the U.S. government — a real-time vote on how worried lenders are about defaults. Below 3.5% = relaxed, easy credit (<Term k="risk-on">risk-on</Term>). Above 5-6% = stress building. Above 8% = panic; credit is freezing and the Fed typically steps in. Credit markets often sniff out trouble before stock markets do, which makes widening spreads an early warning.
         </p>
       </Card>
 
@@ -870,7 +971,7 @@ export default function MacroPage() {
           valueFormatter={(v) => formatNumber(v, { decimals: 1 })}
         />
         <p className="text-xs text-black/40 mt-3 leading-relaxed">
-          Measures real output from manufacturing, mining, and utilities. A rising trend confirms expansion; sustained declines signal contraction. Tends to peak before recessions and trough before recoveries.
+          Physical output from America&apos;s factories, mines, and power plants (2017 = 100). Unlike <Term k="gdp">GDP</Term>, it&apos;s monthly and measures <em>things made</em>, not prices — so it can&apos;t be inflated by rising prices. A rising trend confirms real expansion; sustained declines signal contraction. It tends to peak a few months before recessions and bottom before recoveries begin.
         </p>
       </Card>
 
@@ -892,7 +993,7 @@ export default function MacroPage() {
             valueFormatter={(v) => formatNumber(v, { decimals: 1 })}
           />
           <p className="text-xs text-black/40 mt-3 leading-relaxed">
-            OECD Composite Leading Indicator — designed to anticipate turning points relative to trend (100 = trend). Above 100 signals expansion; below 100 signals contraction. Components include yield curve, building permits, stock prices, and manufacturing orders.
+            The OECD&apos;s composite <Term k="lei">leading indicator</Term> blends several early-warning statistics — the <Term k="yield-curve">yield curve</Term>, building permits, stock prices, manufacturing orders — into one number designed to turn 6-9 months <em>before</em> the economy does. It&apos;s indexed so 100 = normal trend growth: readings above 100 signal above-trend expansion; sustained slides below ~99 have historically preceded recessions.
           </p>
         </Card>
 
@@ -906,7 +1007,7 @@ export default function MacroPage() {
             valueFormatter={(v) => formatNumber(v, { decimals: 1 })}
           />
           <p className="text-xs text-black/40 mt-3 leading-relaxed">
-            University of Michigan survey measuring household confidence. Consumer spending is 70% of GDP — when sentiment collapses, spending follows. Readings below 60 have historically coincided with recessions.
+            A monthly University of Michigan survey asking households how they feel about their finances and the economy. It matters because consumer spending is ~70% of U.S. <Term k="gdp">GDP</Term> — when confidence collapses, spending cuts follow within months. Readings below 60 have historically coincided with recessions; readings above 90 accompany strong job markets with contained inflation.
           </p>
         </Card>
       </div>
@@ -914,16 +1015,16 @@ export default function MacroPage() {
       {/* ISM Manufacturing + Initial Claims */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
-          <CardTitle>ISM Manufacturing Employment</CardTitle>
+          <CardTitle>Manufacturing Employment (BLS)</CardTitle>
           <TimeSeriesChart
             data={filterByPeriod(data.ismManufacturing, period)}
             color="#007AFF"
             height={250}
             gradientId="ismMfg"
-            valueFormatter={(v) => formatNumber(v, { decimals: 1 })}
+            valueFormatter={(v) => `${(v / 1000).toFixed(2)}M jobs`}
           />
           <p className="text-xs text-black/40 mt-3 leading-relaxed">
-            Above 50 = manufacturing employment expanding; below 50 = contracting. Manufacturing leads the business cycle — when factories cut workers, broader layoffs often follow. Sustained readings below 50 are a recession warning.
+            Total U.S. factory jobs from the official BLS payroll count (~12-13 million). Manufacturing feels demand shifts first — orders slow, overtime disappears, then layoffs start — so factory payrolls rolling over is an early warning that often spreads to the broader job market. The Key Indicators table below scores this as year-over-year growth, where sustained declines have accompanied every modern recession.
           </p>
         </Card>
 
@@ -937,7 +1038,7 @@ export default function MacroPage() {
             valueFormatter={(v) => `${formatNumber(v, { decimals: 0 })}K`}
           />
           <p className="text-xs text-black/40 mt-3 leading-relaxed">
-            The most timely labor market indicator — released weekly. Rising claims above 300K sustained have preceded every modern recession. The 4-week moving average smooths weekly volatility for clearer trend signals.
+            The number of people filing for unemployment benefits for the first time each week — the freshest read on layoffs anywhere in the data (published every Thursday, days old). 200-260K is a normal, healthy churn. A sustained climb above ~300K has preceded every modern recession. Because single weeks are noisy (holidays, storms), trust the trend over any one print.
           </p>
         </Card>
       </div>
@@ -954,7 +1055,7 @@ export default function MacroPage() {
             valueFormatter={(v) => `${formatNumber(v, { decimals: 0 })}K`}
           />
           <p className="text-xs text-black/40 mt-3 leading-relaxed">
-            Housing is the most rate-sensitive sector. Permits drop 12-18 months before recession as higher borrowing costs choke off demand. Below 1M signals severe housing weakness; above 1.5M signals healthy construction activity.
+            New home-building permits authorized each month (annualized). Housing is the economy&apos;s most interest-rate-sensitive sector — when mortgage rates jump, builders pull back here first, typically 12-18 months before a broader recession. Below 1M/yr signals severe housing weakness (2008-09, 2020 levels); 1.3-1.6M is healthy; well above that risks overbuilding.
           </p>
         </Card>
 
@@ -968,7 +1069,7 @@ export default function MacroPage() {
             valueFormatter={(v) => `$${formatNumber(v / 1000, { decimals: 1 })}T`}
           />
           <p className="text-xs text-black/40 mt-3 leading-relaxed">
-            M2 includes cash, checking, savings, and money market funds. Rapid M2 growth (2020-21) preceded the inflation surge; contraction in 2022-23 (first since 1930s) preceded disinflation. Money supply leads inflation by 12-18 months.
+            <Term k="m2">M2</Term> is roughly all readily spendable money in the economy — cash, checking, savings, and money-market funds. The chart shows the level, but the <em>growth rate</em> is the signal (and is what the Key Indicators table scores): the +25%/yr surge of 2020-21 preceded the inflation spike, and the 2022-23 contraction — the first since the 1930s — preceded disinflation. More money chasing the same goods lifts prices with a 12-18 month lag.
           </p>
         </Card>
       </div>
@@ -1027,10 +1128,10 @@ export default function MacroPage() {
 
           <div className="border border-accent-blue/20 rounded-xl p-4 bg-accent-blue/[0.03]">
             <div className="flex items-center gap-2 mb-2">
-              <Badge variant="blue">Deflation / Contraction</Badge>
+              <Badge variant="blue">Disinflation / Contraction</Badge>
             </div>
             <p className="text-xs text-black/55 mb-2">
-              Demand collapsing, prices falling. Fed cuts to zero + QE.
+              Inflation cooling while demand weakens. Fed cuts — in a severe version, to zero plus QE.
             </p>
             <div className="text-xs text-black/40 space-y-0.5">
               <p>CPI &lt;1% | Unemp rising sharply | HY Spread 8%+</p>
@@ -1045,7 +1146,9 @@ export default function MacroPage() {
       {/* Interactive Key Indicators Summary */}
       <Card>
         <CardTitle>Key Indicators Summary</CardTitle>
-        <p className="text-xs text-black/40 mt-1 mb-2">Click any indicator to see its significance and regime signal</p>
+        <p className="text-xs text-black/40 mt-1 mb-2">
+          Click any indicator for a plain-English explanation of what it measures and what its current reading historically implies. Green/red on the value shows whether the latest move is helping or hurting. (Manufacturing Jobs and M2 are scored as year-over-year growth rates, since their trends carry the signal, not their levels.)
+        </p>
         <div>
           {indicators.map((indicator) => {
             const latest = getLatest(indicator.data);

@@ -89,6 +89,8 @@ export async function GET(request: NextRequest) {
           ismManufacturing: FRED_SERIES.ISM_MANUFACTURING,
           initialClaims: FRED_SERIES.INITIAL_CLAIMS,
           m2: FRED_SERIES.M2,
+          corePce: FRED_SERIES.CORE_PCE,
+          breakeven10y: FRED_SERIES.BREAKEVEN_10Y,
         };
 
         const entries = Object.entries(seriesMap);
@@ -111,6 +113,10 @@ export async function GET(request: NextRequest) {
         // Add CPI YoY
         const cpiData = results.find(([k]) => k === 'cpi')?.[1] || [];
         dashboard.cpiYoY = computeYoYChange(cpiData);
+
+        // Core PCE YoY — the Fed's preferred inflation gauge
+        const corePceData = results.find(([k]) => k === 'corePce')?.[1] || [];
+        dashboard.corePceYoY = computeYoYChange(corePceData);
 
         // Add regime
         const unrateData = results.find(([k]) => k === 'unemployment')?.[1] || [];
