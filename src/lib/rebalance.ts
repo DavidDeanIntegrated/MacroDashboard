@@ -14,12 +14,22 @@ import {
 } from './sleeves';
 
 // Rules encoded here (kept in one place so tuning is a one-line change):
-const HC_TRIM_TO = 6;        // trim High Conviction to ~6% when it breaches its 6.5% cap
+const HC_TRIM_TO = 3;        // trim High Conviction (RKLB/RVI) to ~3% when it breaches its 4% cap
 const QC_CAP = 17;           // trim Quality Compounders when the group exceeds 17%
 const QC_TRIM_TO = 15.5;     // ...back to mid-band
 const BTC_FORCED_DRIFT = 5;  // BTC is only force-rebalanced when >5pp beyond its band
 const SGOV_FLOOR = 150;      // never let SGOV fall below this (emergency cash), in dollars
 const URGENT_DRIFT = 5;      // >5pp outside a band = act now, else quarterly window
+
+// Conviction Core (SPCX) — sized from the loss side: a total loss at the 8–10%
+// target costs ~10% of the portfolio (recoverable), while a 5x adds ~+40pp.
+// Managed by its own asymmetric rules, NOT the standard band logic:
+// build with new money only (never forced buys, never funded by selling core),
+// let it run between target and ceiling, trim only above the hard ceiling.
+const CC_CEILING = 15;       // hard ceiling — above this, a single-name drawdown threatens the portfolio
+const CC_TRIM_TO = 12;       // ...trim back to here, proceeds to SGOV
+const CC_DIP_PCT = -20;      // accelerate planned adds when price is ≥20% below cost
+const CC_HOUSE_MONEY_X = 2;  // at 2× cost, flag selling cost-basis-worth to play with house money
 
 export interface RebalanceRec {
   kind: 'sell' | 'buy' | 'note';
@@ -198,6 +208,53 @@ export function buildRebalancePlan(positions: HoldingPosition[], portfolioValue:
         }
       }
       if (need >= 1) buyOne('GLD', need, `Real Assets are ${ra.weight.toFixed(1)}% vs ${ra.targetMin}–${ra.targetMax}% — remainder goes to GLD, the core hedge.`, urg);
+    }
+  }
+
+  // Conviction Core (SPCX) — asymmetric rules: ceiling-only trims, new-money-only builds
+  const cc = sleeve('Conviction Core');
+  if (cc && cc.positions.length > 0) {
+    if (cc.weight > CC_CEILING) {
+      sellAcross(cc.positions, pctToUsd(cc.weight - CC_TRIM_TO),
+        `Conviction Core is ${cc.weight.toFixed(1)}% — above the ${CC_CEILING}% hard ceiling. This is the one line the thesis doesn't override: beyond ${CC_CEILING}%, a routine 50% drawdown in one name takes ~7%+ off the whole portfolio. Trim back to ~${CC_TRIM_TO}%; proceeds to SGOV.`,
+        'now');
+    } else if (cc.weight > cc.targetMax) {
+      notes.push({
+        kind: 'note', symbol: 'SPCX',
+        action: `SPCX at ${cc.weight.toFixed(1)}% — above target, under the ${CC_CEILING}% ceiling: let it run`,
+        reason: `The band is asymmetric by design: winners are allowed to outgrow the ${cc.targetMin}–${cc.targetMax}% target and are only trimmed at the ${CC_CEILING}% hard ceiling. No action — and no new adds while above target.`,
+        urgency: 'info',
+      });
+    } else if (cc.weight < cc.targetMin) {
+      notes.push({
+        kind: 'note', symbol: 'SPCX',
+        action: `SPCX at ${cc.weight.toFixed(1)}% vs its ${cc.targetMin}–${cc.targetMax}% build target — fund with new money only (${usd(pctToUsd(cc.targetMin - cc.weight))} to reach ${cc.targetMin}%)`,
+        reason: `The build is deliberately funded by contributions, never by selling core holdings — the boring sleeves (VTI/GLD/SGOV) are what make a position this aggressive survivable. If the price is falling, do NOT accelerate beyond the planned schedule; forced averaging-down is how conviction positions become portfolio-killers.`,
+        urgency: 'info',
+      });
+    }
+
+    // Dip-accelerated add + house-money flags, driven by cost basis
+    const spcx = cc.positions.find((p) => p.symbol === 'SPCX');
+    if (spcx?.costBasis && spcx.costBasis > 0 && spcx.currentPrice > 0) {
+      const dist = ((spcx.currentPrice - spcx.costBasis) / spcx.costBasis) * 100;
+      if (dist <= CC_DIP_PCT && cc.weight < cc.targetMax) {
+        notes.push({
+          kind: 'note', symbol: 'SPCX',
+          action: `SPCX is ${dist.toFixed(0)}% below cost — dip-accelerated add window open`,
+          reason: `Planned contributions to the build can be accelerated while price is ≥20% below your ${usd(spcx.costBasis)} average cost — but only with new money, only while the 5-year thesis is intact, and never past the ${cc.targetMax}% target.`,
+          urgency: 'info',
+        });
+      }
+      if (spcx.currentPrice >= CC_HOUSE_MONEY_X * spcx.costBasis) {
+        const principal = spcx.qty * spcx.costBasis;
+        notes.push({
+          kind: 'note', symbol: 'SPCX',
+          action: `SPCX has ${(spcx.currentPrice / spcx.costBasis).toFixed(1)}×'d from cost — house-money rule available: sell ~${usd(principal)} to recover principal`,
+          reason: `Selling your original investment back out leaves the entire remaining position as pure profit riding the 5-year thesis — a wipeout from here would cost you nothing net. Optional, but it's the cleanest way to hold an aggressive position with a calm stomach.`,
+          urgency: 'info',
+        });
+      }
     }
   }
 

@@ -68,7 +68,7 @@ export function RecommendedUpdates({
         )}
       </div>
       <p className="text-xs text-black/40 mt-1 leading-relaxed max-w-3xl">
-        Specific trades generated from today&apos;s live prices by mechanically applying your own rules — the <Term k="sleeve">sleeve</Term> target bands, the sell priority (high-conviction → compounders → core last), the buy priority (VTI first), the BTC no-forced-<Term k="rebalancing">rebalance</Term> buffer, and the {formatCurrency(150, { decimals: 0 })} SGOV floor. Amounts shift daily as prices move. Suggestions, not orders — nothing here executes anything.
+        Specific trades generated from today&apos;s live prices by mechanically applying your own rules — the <Term k="sleeve">sleeve</Term> target bands, the sell priority (high-conviction → compounders → core last), the buy priority (VTI first), the BTC no-forced-<Term k="rebalancing">rebalance</Term> buffer, the SPCX Conviction Core rules (new-money-only builds, trims only above the 15% ceiling), and the {formatCurrency(150, { decimals: 0 })} SGOV floor. Amounts shift daily as prices move. Suggestions, not orders — nothing here executes anything.
       </p>
 
       {plan.allInRange ? (

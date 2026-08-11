@@ -27,20 +27,21 @@ export const HOLDINGS: Holding[] = [
   { symbol: 'BCI',  qty: 12.094244,  category: 'Commodity', costBasis: 22.06 },
   { symbol: 'RKLB', qty: 1.246552,   category: 'High Conviction', costBasis: 44.79 },
   { symbol: 'RVI',  qty: 3.034064,   category: 'High Conviction', costBasis: 32.30 },
-  { symbol: 'SPCX', qty: 2.205146,   category: 'High Conviction', costBasis: 132.87 },
+  { symbol: 'SPCX', qty: 2.205146,   category: 'Conviction Core', costBasis: 132.87 },
 ];
 
 // Category display order and badge variants
 export const CATEGORY_CONFIG: Record<string, { order: number; badge: 'blue' | 'purple' | 'orange' | 'green' | 'yellow' | 'red' | 'neutral' }> = {
   'Broad Market':       { order: 0, badge: 'blue' },
   'Quality Compounder': { order: 1, badge: 'purple' },
-  'High Conviction':    { order: 2, badge: 'orange' },
-  'Value':              { order: 3, badge: 'green' },
-  'International':      { order: 4, badge: 'blue' },
-  'Gold':               { order: 5, badge: 'yellow' },
-  'Commodity':          { order: 6, badge: 'orange' },
-  'Crypto':             { order: 7, badge: 'red' },
-  'Dry Powder':         { order: 8, badge: 'neutral' },
+  'Conviction Core':    { order: 2, badge: 'red' },
+  'High Conviction':    { order: 3, badge: 'orange' },
+  'Value':              { order: 4, badge: 'green' },
+  'International':      { order: 5, badge: 'blue' },
+  'Gold':               { order: 6, badge: 'yellow' },
+  'Commodity':          { order: 7, badge: 'orange' },
+  'Crypto':             { order: 8, badge: 'red' },
+  'Dry Powder':         { order: 9, badge: 'neutral' },
 };
 
 export interface HoldingPosition {
