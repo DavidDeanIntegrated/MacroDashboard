@@ -210,7 +210,12 @@ export default function BriefingPage() {
 
       {/* Action queue */}
       <Card>
-        <CardTitle>Action Queue</CardTitle>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <CardTitle>Action Queue</CardTitle>
+          <Link href="/portfolio" className="text-sm font-medium text-accent-blue hover:text-accent-blue/80">
+            Trade-level recommendations →
+          </Link>
+        </div>
         <p className="text-xs text-black/40 mt-1 mb-4">
           Concrete to-dos generated from two mechanical checks: is any <Term k="sleeve">sleeve</Term> outside its target band (<Term k="rebalancing">rebalancing</Term>), and has the market fallen far enough to trigger the <Term k="drawdown-ladder">dry-powder ladder</Term>. No prediction involved — just your own pre-set rules, checked against today&apos;s numbers.
         </p>

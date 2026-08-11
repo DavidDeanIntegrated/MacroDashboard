@@ -33,6 +33,47 @@ export function computeSleeveData(positions: HoldingPosition[]): SleeveData[] {
   });
 }
 
+// ─── Sub-sleeves ───
+// Internal targets within the Equities and Real Assets sleeves. Shared by the
+// Holdings page breakdown and the rebalance recommendation engine.
+
+export interface SubSleeveTarget {
+  label: string;
+  symbols: string[];
+  targetMin: number;
+  targetMax: number;
+  priority: string;
+}
+
+export const SUB_SLEEVE_TARGETS: SubSleeveTarget[] = [
+  { label: 'VTI (Broad US Core)', symbols: ['VTI'], targetMin: 20, targetMax: 22, priority: 'Buy first' },
+  { label: 'VTV (Value)', symbols: ['VTV'], targetMin: 7, targetMax: 9, priority: 'Buy if under' },
+  { label: 'VXUS (International)', symbols: ['VXUS'], targetMin: 5.5, targetMax: 6.5, priority: 'Hold / Buy if under' },
+  { label: 'Quality Compounders', symbols: ['NVDA', 'TSM', 'MSFT', 'PLTR'], targetMin: 14, targetMax: 16, priority: 'Sell if >17%, Buy if <13%' },
+  { label: 'High Conviction', symbols: ['RKLB', 'RVI', 'SPCX'], targetMin: 0, targetMax: 6.5, priority: 'Sell first if over' },
+];
+
+export const REAL_ASSET_SUB_SLEEVE_TARGETS: SubSleeveTarget[] = [
+  { label: 'Gold (GLD)', symbols: ['GLD'], targetMin: 10, targetMax: 12, priority: 'Core hedge — add on real-rate drops' },
+  { label: 'Commodities (BCI)', symbols: ['BCI'], targetMin: 3.5, targetMax: 5, priority: 'Inflation top-up — maintain ~4%' },
+];
+
+export function computeSubSleeveData(positions: HoldingPosition[], targets: SubSleeveTarget[] = SUB_SLEEVE_TARGETS) {
+  return targets.map((sub) => {
+    const subPositions = positions
+      .filter((p) => sub.symbols.includes(p.symbol))
+      .sort((a, b) => b.marketValue - a.marketValue);
+    const weight = subPositions.reduce((sum, p) => sum + p.weight, 0);
+    const value = subPositions.reduce((sum, p) => sum + p.marketValue, 0);
+    const dayChange = subPositions.reduce((sum, p) => sum + p.dayChange, 0);
+    const prevValue = value - dayChange;
+    const dayChangePercent = prevValue > 0 ? (dayChange / prevValue) * 100 : 0;
+    return { ...sub, weight, value, dayChange, dayChangePercent, members: subPositions };
+  });
+}
+
+export type SubSleeveData = ReturnType<typeof computeSubSleeveData>[number];
+
 export type SleeveStatus = 'in-range' | 'over' | 'under';
 
 export function getSleeveStatus(weight: number, min: number, max: number): SleeveStatus {
