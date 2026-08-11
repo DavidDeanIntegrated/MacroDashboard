@@ -103,6 +103,24 @@ export default function BriefingPage() {
   const actions: Array<{ tone: 'sell' | 'buy' | 'info'; text: string; why: string }> = [];
   for (const s of sleeves) {
     const status = getSleeveStatus(s.weight, s.targetMin, s.targetMax);
+    // Conviction Core (SPCX) runs on its own asymmetric rules: new-money-only
+    // builds, trims only above the 15% hard ceiling — never standard band nagging.
+    if (s.name === 'Conviction Core') {
+      if (s.weight > 15) {
+        actions.push({
+          tone: 'sell',
+          text: `Conviction Core (SPCX) is ${s.weight.toFixed(1)}% — above the 15% hard ceiling. Trim back toward 12%.`,
+          why: 'The ceiling is the one rule the thesis doesn\'t override: beyond 15%, a routine 50% single-name drawdown takes 7%+ off the whole portfolio. Full rules on the Holdings page.',
+        });
+      } else if (status === 'under') {
+        actions.push({
+          tone: 'info',
+          text: `SPCX is ${s.weight.toFixed(1)}% vs its ${s.targetMin}–${s.targetMax}% build target — fund the gap with new contributions, not by selling.`,
+          why: 'The Conviction Core build is contribution-funded by design; the dashboard will never suggest selling core holdings (VTI/GLD/SGOV) to buy SPCX. See the Conviction Core rules on the Holdings page.',
+        });
+      }
+      continue;
+    }
     if (status === 'over') {
       actions.push({
         tone: 'sell',

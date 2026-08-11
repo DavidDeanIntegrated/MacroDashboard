@@ -11,8 +11,13 @@ export interface SleeveConfig {
   categories: string[];
 }
 
+// Restructured 2026-08-11: SPCX promoted out of the shared High Conviction bucket
+// into its own Conviction Core sleeve (8–10% target, 15% hard ceiling, built with
+// new money only — see CONVICTION_CORE rules in lib/rebalance.ts). Core equities
+// narrowed 55–60 → 48–53 so sleeve midpoints still sum to ~100.
 export const SLEEVE_CONFIG: SleeveConfig[] = [
-  { name: 'Equities', color: '#007AFF', targetMin: 55, targetMax: 60, categories: ['Broad Market', 'Value', 'International', 'Quality Compounder', 'High Conviction'] },
+  { name: 'Equities', color: '#007AFF', targetMin: 48, targetMax: 53, categories: ['Broad Market', 'Value', 'International', 'Quality Compounder', 'High Conviction'] },
+  { name: 'Conviction Core', color: '#FF2D55', targetMin: 8, targetMax: 10, categories: ['Conviction Core'] },
   { name: 'Real Assets', color: '#E6A700', targetMin: 14, targetMax: 16, categories: ['Gold', 'Commodity'] },
   { name: 'Dry Powder', color: '#34C759', targetMin: 14, targetMax: 17, categories: ['Dry Powder'] },
   { name: 'Crypto', color: '#AF52DE', targetMin: 8, targetMax: 12, categories: ['Crypto'] },
@@ -50,7 +55,7 @@ export const SUB_SLEEVE_TARGETS: SubSleeveTarget[] = [
   { label: 'VTV (Value)', symbols: ['VTV'], targetMin: 7, targetMax: 9, priority: 'Buy if under' },
   { label: 'VXUS (International)', symbols: ['VXUS'], targetMin: 5.5, targetMax: 6.5, priority: 'Hold / Buy if under' },
   { label: 'Quality Compounders', symbols: ['NVDA', 'TSM', 'MSFT', 'PLTR'], targetMin: 14, targetMax: 16, priority: 'Sell if >17%, Buy if <13%' },
-  { label: 'High Conviction', symbols: ['RKLB', 'RVI', 'SPCX'], targetMin: 0, targetMax: 6.5, priority: 'Sell first if over' },
+  { label: 'High Conviction', symbols: ['RKLB', 'RVI'], targetMin: 0, targetMax: 4, priority: 'Sell first if over' },
 ];
 
 export const REAL_ASSET_SUB_SLEEVE_TARGETS: SubSleeveTarget[] = [
@@ -96,46 +101,53 @@ interface SleeveGuidance {
 
 export const REGIME_SLEEVE_GUIDANCE: Record<RegimeKey, Record<string, SleeveGuidance>> = {
   reflation: {
-    'Equities':    { lean: 'neutral', note: 'Tilt toward value/cyclicals; growth multiples pressured by rates.' },
-    'Real Assets': { lean: 'favored', note: 'Commodities & gold are the regime’s sweet spot — keep at/above target.' },
-    'Dry Powder':  { lean: 'caution', note: 'Cash drags in rising-price regimes; deploy on dips rather than hoard.' },
-    'Crypto':      { lean: 'neutral', note: 'Risk-on tailwind, but size it as the volatile satellite it is.' },
+    'Equities':        { lean: 'neutral', note: 'Tilt toward value/cyclicals; growth multiples pressured by rates.' },
+    'Conviction Core': { lean: 'neutral', note: 'A 5-year thesis bet, not a macro trade — rising rates mean volatility; hold the build plan, no schedule changes.' },
+    'Real Assets':     { lean: 'favored', note: 'Commodities & gold are the regime’s sweet spot — keep at/above target.' },
+    'Dry Powder':      { lean: 'caution', note: 'Cash drags in rising-price regimes; deploy on dips rather than hoard.' },
+    'Crypto':          { lean: 'neutral', note: 'Risk-on tailwind, but size it as the volatile satellite it is.' },
   },
   stagflation: {
-    'Equities':    { lean: 'caution', note: 'Historically the hardest regime for stocks — favor quality, trim high-beta.' },
-    'Real Assets': { lean: 'favored', note: 'Your primary hedge here — gold + commodities. Do not let this run under target.' },
-    'Dry Powder':  { lean: 'favored', note: 'Optionality is valuable; keep T-bills ready for forced-seller bargains.' },
-    'Crypto':      { lean: 'caution', note: 'Liquidity-sensitive; expect deeper drawdowns if conditions tighten.' },
+    'Equities':        { lean: 'caution', note: 'Historically the hardest regime for stocks — favor quality, trim high-beta.' },
+    'Conviction Core': { lean: 'caution', note: 'Hardest season for a single growth name — expect deep drawdowns. Planned adds only; never average down beyond the schedule.' },
+    'Real Assets':     { lean: 'favored', note: 'Your primary hedge here — gold + commodities. Do not let this run under target.' },
+    'Dry Powder':      { lean: 'favored', note: 'Optionality is valuable; keep T-bills ready for forced-seller bargains.' },
+    'Crypto':          { lean: 'caution', note: 'Liquidity-sensitive; expect deeper drawdowns if conditions tighten.' },
   },
   goldilocks: {
-    'Equities':    { lean: 'favored', note: 'Steady growth + contained inflation favors risk assets — stay fully weighted.' },
-    'Real Assets': { lean: 'neutral', note: 'Insurance, not the driver here — maintain target, no urgency to add.' },
-    'Dry Powder':  { lean: 'caution', note: 'Cash underperforms in calm uptrends; keep only your tactical reserve.' },
-    'Crypto':      { lean: 'favored', note: 'Benign backdrop for the high-octane sleeve — let winners run toward target.' },
+    'Equities':        { lean: 'favored', note: 'Steady growth + contained inflation favors risk assets — stay fully weighted.' },
+    'Conviction Core': { lean: 'favored', note: 'Benign backdrop for the conviction bet — continue the contribution build toward the 8–10% target.' },
+    'Real Assets':     { lean: 'neutral', note: 'Insurance, not the driver here — maintain target, no urgency to add.' },
+    'Dry Powder':      { lean: 'caution', note: 'Cash underperforms in calm uptrends; keep only your tactical reserve.' },
+    'Crypto':          { lean: 'favored', note: 'Benign backdrop for the high-octane sleeve — let winners run toward target.' },
   },
   deflation: {
-    'Equities':    { lean: 'caution', note: 'Softening growth — favor defensives and quality over cyclicals/high-conviction.' },
-    'Real Assets': { lean: 'neutral', note: 'Gold can still work on real-rate declines; commodities lag in a slowdown.' },
-    'Dry Powder':  { lean: 'favored', note: 'Cash is king into a slowdown — this is when your ladder gets deployed.' },
-    'Crypto':      { lean: 'caution', note: 'Risk-off pressure; expect correlation-to-1 if markets de-risk.' },
+    'Equities':        { lean: 'caution', note: 'Softening growth — favor defensives and quality over cyclicals/high-conviction.' },
+    'Conviction Core': { lean: 'caution', note: 'Risk-off pressure hits single growth names hardest. The thesis is 5-year; the drawdown is now — hold, planned adds only.' },
+    'Real Assets':     { lean: 'neutral', note: 'Gold can still work on real-rate declines; commodities lag in a slowdown.' },
+    'Dry Powder':      { lean: 'favored', note: 'Cash is king into a slowdown — this is when your ladder gets deployed.' },
+    'Crypto':          { lean: 'caution', note: 'Risk-off pressure; expect correlation-to-1 if markets de-risk.' },
   },
   unknown: {
-    'Equities':    { lean: 'neutral', note: 'Hold to target bands until the regime read clarifies.' },
-    'Real Assets': { lean: 'neutral', note: 'Hold to target bands until the regime read clarifies.' },
-    'Dry Powder':  { lean: 'neutral', note: 'Hold to target bands until the regime read clarifies.' },
-    'Crypto':      { lean: 'neutral', note: 'Hold to target bands until the regime read clarifies.' },
+    'Equities':        { lean: 'neutral', note: 'Hold to target bands until the regime read clarifies.' },
+    'Conviction Core': { lean: 'neutral', note: 'Hold to the build plan until the regime read clarifies.' },
+    'Real Assets':     { lean: 'neutral', note: 'Hold to target bands until the regime read clarifies.' },
+    'Dry Powder':      { lean: 'neutral', note: 'Hold to target bands until the regime read clarifies.' },
+    'Crypto':          { lean: 'neutral', note: 'Hold to target bands until the regime read clarifies.' },
   },
 };
 
 // Regime tilt — percentage-point nudge applied to each sleeve's target band for the
 // current economic season. Each regime's tilts sum to ~0 so the book stays fully
 // invested. Used to draw a "regime-adjusted target" overlay on the sleeve graph.
+// Conviction Core is deliberately tilted 0 in every regime: it's a 5-year thesis
+// position managed by its own build/ceiling rules, not a macro trading vehicle.
 export const REGIME_SLEEVE_TILT: Record<RegimeKey, Record<string, number>> = {
-  reflation:   { 'Equities': -1, 'Real Assets': +3, 'Dry Powder': -2, 'Crypto': 0 },
-  stagflation: { 'Equities': -5, 'Real Assets': +4, 'Dry Powder': +3, 'Crypto': -2 },
-  goldilocks:  { 'Equities': +4, 'Real Assets': -2, 'Dry Powder': -3, 'Crypto': +1 },
-  deflation:   { 'Equities': -3, 'Real Assets': 0,  'Dry Powder': +5, 'Crypto': -2 },
-  unknown:     { 'Equities': 0,  'Real Assets': 0,  'Dry Powder': 0,  'Crypto': 0 },
+  reflation:   { 'Equities': -1, 'Conviction Core': 0, 'Real Assets': +3, 'Dry Powder': -2, 'Crypto': 0 },
+  stagflation: { 'Equities': -5, 'Conviction Core': 0, 'Real Assets': +4, 'Dry Powder': +3, 'Crypto': -2 },
+  goldilocks:  { 'Equities': +4, 'Conviction Core': 0, 'Real Assets': -2, 'Dry Powder': -3, 'Crypto': +1 },
+  deflation:   { 'Equities': -3, 'Conviction Core': 0, 'Real Assets': 0,  'Dry Powder': +5, 'Crypto': -2 },
+  unknown:     { 'Equities': 0,  'Conviction Core': 0, 'Real Assets': 0,  'Dry Powder': 0,  'Crypto': 0 },
 };
 
 // Regime-adjusted target band for a sleeve (base band + regime tilt, clamped to >= 0).

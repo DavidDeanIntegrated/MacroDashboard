@@ -193,7 +193,8 @@ const HOLDING_RATIONALES: { symbol: string; title: string; rationale: string }[]
   { symbol: 'VXUS', title: 'International — Against US Survivorship Bias', rationale: 'International diversification hedges against US exceptionalism fading. Vanguard projects 4.9–6.9% annual returns for non-US equities next decade.' },
   { symbol: 'SGOV', title: 'Dry Powder — Tactical Cash Earning Yield', rationale: '0–3 month T-bill ETF earning ~4.5–5% yield. Tactical, not permanent — deploy on dips per the drawdown ladder. Never let this fall below ~$150 (emergency floor).' },
   { symbol: 'NVDA+TSM+MSFT+PLTR', title: 'Quality Compounders — Secular Growth at Scale', rationale: 'NVDA (AI compute monopoly), TSM (foundry monopoly), MSFT (enterprise cloud + AI), and PLTR (AI/data analytics platform with government + commercial adoption). Quality compounders with durable moats. Combined 14–16% target — sell above 17%, buy below 13%.' },
-  { symbol: 'RKLB+RVI+SPCX', title: 'High Conviction — Asymmetric Bets', rationale: 'RKLB (space launch + satellite bus) alongside RVI and SPCX — asymmetric, high-volatility bets held as hold-and-dilute positions. Never bought during rebalancing; only add with new money on 20%+ dips from cost basis, capped at ~6.5% combined.' },
+  { symbol: 'SPCX', title: 'Conviction Core — The 5-Year Thesis Bet', rationale: 'The one position sized to matter: an 8–10% dedicated sleeve built on the thesis that SPCX is a much more valuable company in 5 years. Sized from the loss side (a wipeout costs ~10% of portfolio — painful, survivable), built with new money only, trimmed only above a 15% hard ceiling. Full rules in the Conviction Core section below.' },
+  { symbol: 'RKLB+RVI', title: 'High Conviction — Asymmetric Bets', rationale: 'RKLB (space launch + satellite bus) and RVI — asymmetric, high-volatility bets held as hold-and-dilute positions. Never bought during rebalancing; only add with new money on 20%+ dips from cost basis, capped at ~4% combined. Note: RKLB and SPCX are both space — their combined weight is one correlated risk.' },
   { symbol: 'BTC', title: 'Bitcoin — Digital Hard-Money Complement', rationale: 'Modern hard-asset hedge complementing gold. Combined with GLD forms the "real money" allocation. Will dilute naturally toward 8–12% target as the portfolio grows — no forced rebalance needed.' },
 ];
 
@@ -495,8 +496,8 @@ export function AllWeatherSection({
     ...splitByValue(qcSub?.members ?? [], Math.max(0, ex1SellTotal - ex1FromHc)),
   ];
 
-  // Scenario 2 — equities in range but high conviction at 8% (cap 6.5%): trim to ~6%, recycle into VTI.
-  const ex2SellTotal = ((8 - 6) / 100) * V;
+  // Scenario 2 — equities in range but high conviction (RKLB/RVI) at 6% (cap 4%): trim to ~3%, recycle into VTI.
+  const ex2SellTotal = ((6 - 3) / 100) * V;
   const ex2Parts = splitByValue(hcSub?.members ?? [], ex2SellTotal);
 
   // Scenario 3 — equities at 52% after a dry-powder deployment: buy back to the midpoint
@@ -548,7 +549,7 @@ export function AllWeatherSection({
       {/* ─── Sub-Sleeve Equity Breakdown ─── */}
       <SubSleeveBreakdownCard
         title="Equity Sub-Sleeve Breakdown"
-        subtitle="Internal balance within the 55–60% equities allocation · click a row to see its holdings"
+        subtitle="Internal balance within the 48–53% core-equities allocation (SPCX lives in its own Conviction Core sleeve) · click a row to see its holdings"
         subSleeves={subSleeves}
         expanded={expandedSubSleeve}
         setExpanded={setExpandedSubSleeve}
@@ -564,6 +565,69 @@ export function AllWeatherSection({
         setExpanded={setExpandedSubSleeve}
         scoreBySymbol={scoreBySymbol}
       />
+
+      {/* ─── Conviction Core — SPCX goals, sizing rationale & rules ─── */}
+      <CollapsibleSection
+        title="Conviction Core — SPCX: Goals, Sizing & Rules"
+        subtitle="Why this position has its own sleeve, how the 8–10% target was chosen, and the asymmetric rules that manage it"
+        defaultOpen
+      >
+        <div className="space-y-5">
+          <div className="p-4 bg-black/[0.02] rounded-xl">
+            <p className="text-xs font-semibold text-black/50 uppercase tracking-wider mb-2">The Goal</p>
+            <p className="text-xs text-black/55 leading-relaxed">
+              Hold a position large enough that if the 5-year thesis is right — SPCX becoming a much more valuable company — it meaningfully changes the portfolio&apos;s outcome, while capping the damage if the thesis is wrong. This is deliberately a <span className="font-medium text-black/70">thesis bet, not a macro trade</span>: it gets no regime tilts, ignores volatility signals, and is reviewed against fundamentals, not price.
+            </p>
+          </div>
+
+          <div className="p-4 bg-black/[0.02] rounded-xl">
+            <p className="text-xs font-semibold text-black/50 uppercase tracking-wider mb-2">Why 8–10% (Sizing From the Loss Side)</p>
+            <p className="text-xs text-black/55 leading-relaxed mb-2">
+              The size wasn&apos;t chosen by asking &quot;how much do I need for a win to matter&quot; — at almost any meaningful weight, a win matters. It was chosen by asking &quot;how much can this lose before it wrecks the rest of the plan.&quot; For a volatile single name, the honest worst case is −70% to −100%.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-black/55">
+              <div className="p-2.5 bg-white/60 rounded-lg border border-black/[0.05]">
+                <p className="font-medium text-accent-green mb-0.5">At 8–10% (target)</p>
+                <p>Total loss costs ~10% of portfolio — painful, recoverable. A 5x adds roughly +40 points to the whole portfolio. That asymmetry is the point.</p>
+              </div>
+              <div className="p-2.5 bg-white/60 rounded-lg border border-black/[0.05]">
+                <p className="font-medium text-accent-orange mb-0.5">At 15% (hard ceiling)</p>
+                <p>A routine 50% drawdown — which volatile names do on the way to being winners — takes 7.5% off the portfolio in one name. The edge of plan-abandonment territory.</p>
+              </div>
+              <div className="p-2.5 bg-white/60 rounded-lg border border-black/[0.05]">
+                <p className="font-medium text-accent-red mb-0.5">Beyond 15%</p>
+                <p>One position becomes the portfolio&apos;s risk profile and overwhelms everything the All-Weather structure exists to do. The ceiling is the one rule the thesis doesn&apos;t override.</p>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold text-black/50 uppercase tracking-wider mb-2">The Rules (Asymmetric By Design)</p>
+            <div className="space-y-1.5">
+              {[
+                { rule: 'Build with new money only', detail: 'Contributions fund the climb from today\'s weight to 8–10% — never selling VTI/GLD/SGOV. The boring sleeves are what earn the right to hold a position this aggressive.' },
+                { rule: 'Trim the top, never force-buy the bottom', detail: 'Above 15%: trim to ~12%, proceeds to SGOV. Below 8%: no forced buying — if the weight is shrinking because the price is collapsing, automatic averaging-down is how conviction positions kill portfolios. Adds happen on the planned schedule only.' },
+                { rule: 'Dip-accelerated adds at 20% below cost', detail: 'Planned contributions can be accelerated when SPCX trades ≥20% under average cost — new money only, thesis intact, never past the 10% target.' },
+                { rule: 'House-money rule at 2× cost', detail: 'If SPCX doubles from average cost, sell enough to recover the original investment and let the rest ride — full remaining upside, zero net principal at risk.' },
+                { rule: 'Quarterly thesis review — sell on thesis break, not volatility', detail: 'Drawdowns are expected and are not a sell signal. The sell signal is the written 5-year thesis no longer being true. Deciding this in advance is what stops a −50% month from making the decision for you.' },
+                { rule: 'Count SPCX + RKLB as one space risk', detail: 'They will fall together. Combined space exposure at target (~9–13%) is the number to watch — another reason the 15% SPCX ceiling is firm.' },
+              ].map((r, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <Badge variant="neutral">{i + 1}</Badge>
+                  <div>
+                    <p className="text-xs font-medium text-black/70">{r.rule}</p>
+                    <p className="text-xs text-black/45 leading-relaxed">{r.detail}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-xs text-black/35 italic leading-relaxed">
+            Gut-check that set the number: at 10% weight, a normal-for-this-name 50% drawdown shows up as the entire portfolio dropping ~5% while everything else sits flat. The Recommended Updates card above enforces these rules automatically — it will never suggest selling core holdings to fund SPCX, and only ever suggests trimming it above the 15% ceiling.
+          </p>
+        </div>
+      </CollapsibleSection>
 
       {/* ─── Rebalance Simulator ─── */}
       <RebalanceSimulator sleeves={sleeves} portfolioValue={portfolioValue} />
@@ -597,9 +661,9 @@ export function AllWeatherSection({
             <p className="text-xs font-semibold text-black/50 uppercase tracking-wider">Key Modifications</p>
             {[
               { num: '1', title: 'No long-term bonds', desc: 'In a high-debt, rising-rate world, long-term Treasuries are the most vulnerable asset. Replaced with SGOV (0–3 month T-bills) as tactical dry powder earning ~4.5–5% yield.' },
-              { num: '2', title: 'Higher equity allocation (55–60% vs 30%)', desc: 'Appropriate for a longer time horizon that can weather volatility in exchange for higher long-run compounding.' },
+              { num: '2', title: 'Higher equity allocation (48–53% core + 8–10% conviction vs 30%)', desc: 'Appropriate for a longer time horizon that can weather volatility in exchange for higher long-run compounding.' },
               { num: '3', title: 'Bitcoin as hard-money complement (8–12%)', desc: 'Modern digital store of value alongside traditional gold; held at cost and allowed to dilute naturally as the portfolio grows.' },
-              { num: '4', title: 'Quality compounders + high-conviction names', desc: 'Instead of a pure index approach — includes NVDA/TSM/MSFT/PLTR (quality compounders with durable moats) and RKLB/RVI/SPCX (asymmetric high-conviction bets).' },
+              { num: '4', title: 'Quality compounders + conviction positions', desc: 'Instead of a pure index approach — NVDA/TSM/MSFT/PLTR (quality compounders with durable moats), RKLB/RVI (small asymmetric bets, ≤4%), and a dedicated SPCX Conviction Core sleeve (8–10%, its own rules — see the Conviction Core section).' },
               { num: '5', title: 'Real assets at 14–16%', desc: 'GLD + BCI as the core inflation/devaluation hedge. Dalio\'s "buy stuff" principle applied with modern instruments.' },
             ].map((mod) => (
               <div key={mod.num} className="flex gap-3">
@@ -783,7 +847,7 @@ export function AllWeatherSection({
                   Internal Rebalance (equities in range){hcSub ? ` · HC now ${hcSub.weight.toFixed(1)}%` : ''}
                 </p>
                 <div className="space-y-1.5 text-xs text-black/55">
-                  <p>High-conviction drifts to 8% vs its 6.5% cap — sell ~{fmtUsd(ex2SellTotal)}</p>
+                  <p>High-conviction (RKLB/RVI) drifts to 6% vs its 4% cap — sell ~{fmtUsd(ex2SellTotal)}</p>
                   <p className="text-accent-red">
                     Sell: {ex2Parts.length > 0 ? fmtParts(ex2Parts) : 'across high-conviction names'}
                   </p>
@@ -805,15 +869,16 @@ export function AllWeatherSection({
 
           {/* High-conviction buy rules */}
           <div className="p-4 bg-accent-purple/[0.04] rounded-xl border border-accent-purple/10">
-            <p className="text-xs font-semibold text-black/60 mb-2">When to Buy High-Conviction (RKLB / RVI / SPCX)</p>
+            <p className="text-xs font-semibold text-black/60 mb-2">When to Buy High-Conviction (RKLB / RVI)</p>
             <div className="space-y-1 text-xs text-black/50">
               <p>Only with new contributions (paycheck money) if:</p>
               <ul className="list-disc list-inside space-y-0.5 ml-2">
                 <li>They drop 20%+ from your average cost basis</li>
                 <li>Your original thesis is still fully intact</li>
-                <li>Combined weight is well below 6.5%</li>
+                <li>Combined weight is well below 4%</li>
                 <li>Cap any single add at 0.5–1% of portfolio</li>
               </ul>
+              <p className="mt-1.5 text-black/40">SPCX is no longer part of this bucket — it follows its own build plan in the Conviction Core section.</p>
             </div>
           </div>
         </div>
@@ -827,11 +892,12 @@ export function AllWeatherSection({
         <div className="space-y-4">
           <div className="space-y-0">
             {[
-              { num: 1, target: 'SGOV', desc: 'Until back at 15.7% target', color: '#34C759' },
-              { num: 2, target: 'VTI / VXUS', desc: 'Maintain core equity balance', color: '#007AFF' },
-              { num: 3, target: 'GLD', desc: 'Continue building toward 12–15% over time', color: '#E6A700' },
-              { num: 4, target: 'BCI', desc: 'Maintain at ~4% with occasional top-ups', color: '#FF9500' },
-              { num: 5, target: 'NVDA/TSM/MSFT/PLTR', desc: 'Opportunistic adds on dips only', color: '#AF52DE' },
+              { num: 1, target: 'SGOV', desc: 'Until back at 15.7% target — the ladder only works if the reserve is stocked', color: '#34C759' },
+              { num: 2, target: 'SPCX (build phase)', desc: 'Fixed slice of each contribution until the 8–10% Conviction Core target is reached; accelerate on 20%+ dips below cost', color: '#FF2D55' },
+              { num: 3, target: 'VTI / VXUS', desc: 'Maintain core equity balance', color: '#007AFF' },
+              { num: 4, target: 'GLD', desc: 'Continue building toward 12–15% over time', color: '#E6A700' },
+              { num: 5, target: 'BCI', desc: 'Maintain at ~4% with occasional top-ups', color: '#FF9500' },
+              { num: 6, target: 'NVDA/TSM/MSFT/PLTR', desc: 'Opportunistic adds on dips only', color: '#AF52DE' },
             ].map((item, i) => (
               <div key={item.num} className="flex gap-4">
                 <div className="flex flex-col items-center">
@@ -841,7 +907,7 @@ export function AllWeatherSection({
                   >
                     {item.num}
                   </div>
-                  {i < 4 && <div className="w-px h-8 bg-black/[0.06]" />}
+                  {i < 5 && <div className="w-px h-8 bg-black/[0.06]" />}
                 </div>
                 <div className="pb-4">
                   <p className="text-sm font-medium text-black/70">{item.target}</p>
@@ -854,7 +920,8 @@ export function AllWeatherSection({
           <div className="p-4 bg-black/[0.02] rounded-xl space-y-2">
             <p className="text-xs font-semibold text-black/50 uppercase tracking-wider mb-2">Special Rules</p>
             <div className="space-y-2 text-xs text-black/50 leading-relaxed">
-              <p><span className="font-medium text-black/60">SGOV replenishment:</span> 100% of new contributions go to SGOV until it reaches 15.7% — cleanest, most tax-efficient method.</p>
+              <p><span className="font-medium text-black/60">SGOV replenishment:</span> new contributions go to SGOV first until it reaches 15.7% — cleanest, most tax-efficient method. During the SPCX build phase, split contributions between SGOV and SPCX rather than pausing either; the emergency floor always wins a conflict.</p>
+              <p><span className="font-medium text-black/60">SPCX build phase:</span> the climb to 8–10% is funded exclusively by these contribution slices — never by selling core holdings, and never accelerated beyond the schedule just because the price is falling.</p>
               <p><span className="font-medium text-black/60">Opportunistic refill:</span> If SGOV falls below 12% after deployment AND SPY has recovered +10% from deployment price, sell 40% of deployed tranche back to SGOV.</p>
               <p><span className="font-medium text-black/60">BTC:</span> Hold at current weight; let dilution happen naturally. No forced rebalance unless &gt;5% drift trigger fires.</p>
             </div>
