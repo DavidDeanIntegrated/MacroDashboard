@@ -52,25 +52,6 @@ export interface AlpacaPosition {
   change_today: string;
 }
 
-export interface AlpacaOrder {
-  id: string;
-  client_order_id: string;
-  created_at: string;
-  updated_at: string;
-  submitted_at: string;
-  filled_at: string | null;
-  symbol: string;
-  qty: string;
-  filled_qty: string;
-  type: string;
-  side: string;
-  time_in_force: string;
-  status: string;
-  limit_price: string | null;
-  stop_price: string | null;
-  filled_avg_price: string | null;
-}
-
 export async function getAccount(): Promise<AlpacaAccount> {
   return withCache('alpaca:account', TTL.PORTFOLIO, () =>
     fetchJson<AlpacaAccount>(`${config.alpaca.baseUrl}/v2/account`, {
@@ -89,46 +70,9 @@ export async function getPositions(): Promise<AlpacaPosition[]> {
   );
 }
 
-export async function getOrders(
-  status: 'open' | 'closed' | 'all' = 'all',
-  limit = 50
-): Promise<AlpacaOrder[]> {
-  return withCache(`alpaca:orders:${status}:${limit}`, TTL.PORTFOLIO, () =>
-    fetchJson<AlpacaOrder[]>(
-      `${config.alpaca.baseUrl}/v2/orders?status=${status}&limit=${limit}&direction=desc`,
-      { headers: alpacaHeaders(), provider: 'Alpaca' }
-    )
-  );
-}
-
-// ─── Order Submission ───
-
-export interface OrderRequest {
-  symbol: string;
-  qty: number;
-  side: 'buy' | 'sell';
-  type: 'market' | 'limit' | 'stop' | 'stop_limit';
-  time_in_force: 'day' | 'gtc' | 'ioc' | 'fok';
-  limit_price?: number;
-  stop_price?: number;
-}
-
-export async function submitOrder(order: OrderRequest): Promise<AlpacaOrder> {
-  return fetchJson<AlpacaOrder>(`${config.alpaca.baseUrl}/v2/orders`, {
-    method: 'POST',
-    headers: alpacaHeaders(),
-    body: JSON.stringify(order),
-    provider: 'Alpaca',
-  });
-}
-
-export async function cancelOrder(orderId: string): Promise<void> {
-  await fetchJson(`${config.alpaca.baseUrl}/v2/orders/${orderId}`, {
-    method: 'DELETE',
-    headers: alpacaHeaders(),
-    provider: 'Alpaca',
-  });
-}
+// NOTE: order submission/cancel/list endpoints were removed 2026-08-11 — the app
+// is a read-only dashboard (holdings tracked in lib/holdings.ts), and exposing
+// live trading through a public API route was unused risk surface.
 
 // ─── Market Data (Alpaca Data API) ───
 

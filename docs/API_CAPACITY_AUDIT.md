@@ -44,9 +44,13 @@ Options:
 1. **Lean in**: if the real account is at Alpaca, replace the static `HOLDINGS` list with
    `getPositions()` and quantities/cost basis stop going stale (the last three commits were
    manual holdings-quantity bumps — this would eliminate that chore entirely).
-2. **Lean out**: if holdings live elsewhere (e.g., Robinhood/Fidelity), delete the unused
-   order/account endpoints — `submitOrder` behind a public `/api/alpaca?action=order` POST
-   route is live-trading capability nobody uses; removing it shrinks risk surface.
+2. **Lean out**: delete the unused order endpoints, since exposing live trading through a
+   public API route is unused risk surface.
+
+✅ **Resolved 2026-08-11 (lean out, per David):** `submitOrder`, `cancelOrder`, `getOrders`,
+the `/api/alpaca` POST handler, the `orders` GET action, and the `useOrders` hook were all
+removed. Alpaca is now a read-only price feed (snapshot + bars) plus dormant read-only
+account/positions endpoints kept for a possible future "lean in."
 
 Also unused: **Alpaca's news API** (`getNews`) — redundant with Finnhub news; pick one.
 
