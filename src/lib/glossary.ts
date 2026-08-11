@@ -222,6 +222,10 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     term: 'Moving average (SMA)',
     def: 'The average closing price over the last N days, drawn as a smooth trend line. Price above its 200-day average = long-term uptrend intact; the 50-day crossing the 200-day marks widely-watched trend changes ("golden/death cross").',
   },
+  '200-wma': {
+    term: '200-week moving average',
+    def: 'The average closing price over the last 200 weeks (~4 years) — a slow anchor for what an asset has "normally" cost across a full market cycle. Major bear-market bottoms in quality assets (SPY, BTC) have historically landed near it, so price near or below it flags a rare accumulation zone, while price far above it (say, +80%+) signals a stretched run. Caveat for single stocks: trading below it can also mean genuine business decline, and recent IPOs simply don\'t have enough history — treat it as context, not an automatic signal.',
+  },
   'indexed-100': {
     term: 'Indexed to 100',
     def: 'Every line on the chart is rescaled to start at 100, so you compare percentage growth, not dollar prices. A line at 115 = up 15% since the start of the window.',

@@ -9,7 +9,7 @@ import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart';
 import { AllocationPieChart } from '@/components/charts/AllocationPieChart';
 import { FundamentalsScoreSection } from '@/components/FundamentalsScoreCard';
 import { AllWeatherSection } from '@/components/AllWeatherSection';
-import { usePortfolio, usePortfolioChart, usePolygonAggregates, usePolygonRSI, usePortfolioDividends, useWatchlist, useFundamentalsScores, useApi } from '@/lib/hooks';
+import { usePortfolio, usePortfolioChart, usePolygonAggregates, usePolygonRSI, usePortfolioDividends, useWatchlist, useFundamentalsScores, useWma200, useApi } from '@/lib/hooks';
 import type { RegimeKey } from '@/lib/sleeves';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/format';
 import { Term } from '@/components/ui/Term';
@@ -73,6 +73,13 @@ export default function PortfolioPage() {
   // Fundamentals scores for portfolio holdings
   const portfolioSymbols = useMemo(() => HOLDINGS.map((h) => h.symbol), []);
   const { data: portfolioScores, loading: scoresLoading, error: scoresError } = useFundamentalsScores(portfolioSymbols);
+
+  // 200-week moving average per holding (full-cycle valuation anchor)
+  const { data: wma200Data } = useWma200(portfolioSymbols);
+  const wma200BySymbol = useMemo(
+    () => new Map((wma200Data ?? []).map((w) => [w.symbol, w.wma200])),
+    [wma200Data]
+  );
 
   // Macro regime — drives the regime-adjusted target overlay on the sleeve graph
   const { data: macroDash } = useApi<{ regime?: { regime?: string } }>('/api/fred?action=dashboard');
@@ -369,7 +376,7 @@ export default function PortfolioPage() {
         <div className="px-6 pt-6 pb-3">
           <CardTitle>Positions</CardTitle>
           <p className="text-xs text-black/40 mt-1">
-            <span className="font-medium">Weight</span> = the share of your total portfolio each position represents (weights drive all sleeve math). <span className="font-medium">Day Chg</span> = today&apos;s price move vs yesterday&apos;s close. Click a row for its price chart and <Term k="rsi">RSI</Term>; click the ticker for full details.
+            <span className="font-medium">Weight</span> = the share of your total portfolio each position represents (weights drive all sleeve math). <span className="font-medium">Day Chg</span> = today&apos;s price move vs yesterday&apos;s close. <span className="font-medium">vs 200w MA</span> = how far the price sits above (+) or below (−) its <Term k="200-wma">200-week moving average</Term> — near or below the average has historically been the accumulation zone for quality assets; far above it means you&apos;re paying well over the full-cycle norm. Click a row for its price chart and <Term k="rsi">RSI</Term>; click the ticker for full details.
           </p>
         </div>
         {portfolio.positions.length === 0 ? (
@@ -384,7 +391,7 @@ export default function PortfolioPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-black/[0.06]">
-                  {['Symbol', 'Category', 'Qty', 'Price', 'Mkt Value', 'Weight', 'Volume', 'Day Chg'].map(
+                  {['Symbol', 'Category', 'Qty', 'Price', 'vs 200w MA', 'Mkt Value', 'Weight', 'Volume', 'Day Chg'].map(
                     (h) => (
                       <th
                         key={h}
@@ -426,6 +433,35 @@ export default function PortfolioPage() {
                     <td className="px-4 py-3 text-sm text-black/85 font-medium tabular-nums">
                       {formatCurrency(pos.currentPrice)}
                     </td>
+                    <td className="px-4 py-3">
+                      {(() => {
+                        const wma = wma200BySymbol.get(pos.symbol);
+                        if (wma == null || wma <= 0 || pos.currentPrice <= 0) {
+                          return (
+                            <span
+                              className="text-xs text-black/25"
+                              title="No 200-week average available — usually means the symbol has less than ~4 years of trading history."
+                            >
+                              —
+                            </span>
+                          );
+                        }
+                        const pct = ((pos.currentPrice - wma) / wma) * 100;
+                        const color =
+                          pct < 0 ? 'text-accent-green'
+                            : pct < 50 ? 'text-black/65'
+                            : pct < 100 ? 'text-accent-orange'
+                            : 'text-accent-red';
+                        return (
+                          <div title={`200-week MA: ${formatCurrency(wma)}`}>
+                            <span className={`text-sm font-semibold tabular-nums ${color}`}>
+                              {pct >= 0 ? '+' : ''}{pct.toFixed(0)}%
+                            </span>
+                            <p className="text-[10px] text-black/30 tabular-nums">MA {formatCurrency(wma, { decimals: 0 })}</p>
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="px-4 py-3 text-sm text-black/75 tabular-nums">
                       {formatCurrency(pos.marketValue)}
                     </td>
@@ -444,6 +480,7 @@ export default function PortfolioPage() {
               <tfoot>
                 <tr className="border-t border-black/[0.08] bg-black/[0.02]">
                   <td className="px-4 py-3 text-sm font-semibold text-black/85">Total</td>
+                  <td className="px-4 py-3" />
                   <td className="px-4 py-3" />
                   <td className="px-4 py-3" />
                   <td className="px-4 py-3" />

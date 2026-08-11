@@ -8,6 +8,7 @@ import {
   getMACD,
   getDividends,
   getTickerDetails,
+  getWeeklySMA200,
 } from '@/lib/polygon';
 import type { PolygonTimeframe } from '@/lib/polygon';
 
@@ -48,6 +49,22 @@ export async function GET(request: NextRequest) {
         const timespan = (searchParams.get('timespan') || 'day') as 'day' | 'hour' | 'minute';
         const data = await getSMA(symbol, window, timespan);
         return NextResponse.json(data);
+      }
+
+      case 'wma200': {
+        // Batch: latest 200-week SMA per symbol. BTC maps to Polygon's crypto ticker.
+        const symbolsParam = searchParams.get('symbols');
+        if (!symbolsParam) {
+          return NextResponse.json({ error: 'Missing symbols' }, { status: 400 });
+        }
+        const symbols = symbolsParam.split(',').map((s) => s.trim()).filter(Boolean);
+        const results = await Promise.all(
+          symbols.map(async (symbol) => ({
+            symbol,
+            wma200: await getWeeklySMA200(symbol === 'BTC' ? 'X:BTCUSD' : symbol),
+          }))
+        );
+        return NextResponse.json(results);
       }
 
       case 'ema': {
@@ -147,7 +164,7 @@ export async function GET(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Invalid action. Use: aggregates, snapshot, sma, ema, rsi, macd, dividends, details, multi-aggregates, portfolio-dividends' },
+          { error: 'Invalid action. Use: aggregates, snapshot, sma, wma200, ema, rsi, macd, dividends, details, multi-aggregates, portfolio-dividends' },
           { status: 400 }
         );
     }
