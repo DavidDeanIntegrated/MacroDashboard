@@ -15,15 +15,15 @@ export interface Holding {
 
 export const HOLDINGS: Holding[] = [
   { symbol: 'BTC',  qty: 0.00716019, category: 'Crypto', costBasis: 93144.18 },
-  { symbol: 'VTI',  qty: 2.564816,   category: 'Broad Market', costBasis: 343.09 },
+  { symbol: 'VTI',  qty: 3.044105,   category: 'Broad Market', costBasis: 349.11 },
   { symbol: 'SGOV', qty: 8.067879,   category: 'Dry Powder', costBasis: 100.47 },
   { symbol: 'GLD',  qty: 1.409832,   category: 'Gold', costBasis: 450.70 },
   { symbol: 'VTV',  qty: 1.790589,   category: 'Value', costBasis: 207.74 },
   { symbol: 'VXUS', qty: 3.106781,   category: 'International', costBasis: 82.21 },
-  { symbol: 'NVDA', qty: 1.068803,   category: 'Quality Compounder', costBasis: 189.48 },
-  { symbol: 'TSM',  qty: 0.387065,   category: 'Quality Compounder', costBasis: 307.55 },
-  { symbol: 'MSFT', qty: 0.642658,   category: 'Quality Compounder', costBasis: 391.81 },
-  { symbol: 'PLTR', qty: 1.509316,   category: 'Quality Compounder', costBasis: 135.43 },
+  { symbol: 'NVDA', qty: 0.859053,   category: 'Quality Compounder', costBasis: 190.44 },
+  { symbol: 'TSM',  qty: 0.339705,   category: 'Quality Compounder', costBasis: 311.06 },
+  { symbol: 'MSFT', qty: 0.516974,   category: 'Quality Compounder', costBasis: 388.76 },
+  { symbol: 'PLTR', qty: 1.212096,   category: 'Quality Compounder', costBasis: 135.02 },
   { symbol: 'BCI',  qty: 10.460264,  category: 'Commodity', costBasis: 22.15 },
   // RKLB sold in full 2026-08-11 @ $77.61 (realized +$40.91)
   { symbol: 'RVI',  qty: 3.034064,   category: 'High Conviction', costBasis: 32.30 },
