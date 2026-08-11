@@ -194,7 +194,7 @@ const HOLDING_RATIONALES: { symbol: string; title: string; rationale: string }[]
   { symbol: 'SGOV', title: 'Dry Powder — Tactical Cash Earning Yield', rationale: '0–3 month T-bill ETF earning ~4.5–5% yield. Tactical, not permanent — deploy on dips per the drawdown ladder. Never let this fall below ~$150 (emergency floor).' },
   { symbol: 'NVDA+TSM+MSFT+PLTR', title: 'Quality Compounders — Secular Growth at Scale', rationale: 'NVDA (AI compute monopoly), TSM (foundry monopoly), MSFT (enterprise cloud + AI), and PLTR (AI/data analytics platform with government + commercial adoption). Quality compounders with durable moats. Combined 14–16% target — sell above 17%, buy below 13%.' },
   { symbol: 'SPCX', title: 'Conviction Core — The 5-Year Thesis Bet', rationale: 'The one position sized to matter: an 8–10% dedicated sleeve built on the thesis that SPCX is a much more valuable company in 5 years. Sized from the loss side (a wipeout costs ~10% of portfolio — painful, survivable), built with new money only, trimmed only above a 15% hard ceiling. Full rules in the Conviction Core section below.' },
-  { symbol: 'RKLB+RVI', title: 'High Conviction — Asymmetric Bets', rationale: 'RKLB (space launch + satellite bus) and RVI — asymmetric, high-volatility bets held as hold-and-dilute positions. Never bought during rebalancing; only add with new money on 20%+ dips from cost basis, capped at ~4% combined. Note: RKLB and SPCX are both space — their combined weight is one correlated risk.' },
+  { symbol: 'RVI', title: 'High Conviction — Asymmetric Bets', rationale: 'RVI — an asymmetric, high-volatility bet held as a hold-and-dilute position. Never bought during rebalancing; only add with new money on 20%+ dips from cost basis, capped at ~4% combined across the bucket. (RKLB was sold 2026-08-11 at $77.61, realized +$40.91; any re-entry follows the same bucket rules.)' },
   { symbol: 'BTC', title: 'Bitcoin — Digital Hard-Money Complement', rationale: 'Modern hard-asset hedge complementing gold. Combined with GLD forms the "real money" allocation. Will dilute naturally toward 8–12% target as the portfolio grows — no forced rebalance needed.' },
 ];
 
@@ -610,7 +610,7 @@ export function AllWeatherSection({
                 { rule: 'Dip-accelerated adds at 20% below cost', detail: 'Planned contributions can be accelerated when SPCX trades ≥20% under average cost — new money only, thesis intact, never past the 10% target.' },
                 { rule: 'House-money rule at 2× cost', detail: 'If SPCX doubles from average cost, sell enough to recover the original investment and let the rest ride — full remaining upside, zero net principal at risk.' },
                 { rule: 'Quarterly thesis review — sell on thesis break, not volatility', detail: 'Drawdowns are expected and are not a sell signal. The sell signal is the written 5-year thesis no longer being true. Deciding this in advance is what stops a −50% month from making the decision for you.' },
-                { rule: 'Count SPCX + RKLB as one space risk', detail: 'They will fall together. Combined space exposure at target (~9–13%) is the number to watch — another reason the 15% SPCX ceiling is firm.' },
+                { rule: 'Count all space exposure as one risk', detail: 'If any other space name enters the portfolio (e.g., re-entering RKLB), count it together with SPCX as a single correlated risk — they will fall together. That combined number, not SPCX alone, is what the 15% ceiling protects against.' },
               ].map((r, i) => (
                 <div key={i} className="flex items-start gap-2">
                   <Badge variant="neutral">{i + 1}</Badge>
@@ -663,7 +663,7 @@ export function AllWeatherSection({
               { num: '1', title: 'No long-term bonds', desc: 'In a high-debt, rising-rate world, long-term Treasuries are the most vulnerable asset. Replaced with SGOV (0–3 month T-bills) as tactical dry powder earning ~4.5–5% yield.' },
               { num: '2', title: 'Higher equity allocation (48–53% core + 8–10% conviction vs 30%)', desc: 'Appropriate for a longer time horizon that can weather volatility in exchange for higher long-run compounding.' },
               { num: '3', title: 'Bitcoin as hard-money complement (8–12%)', desc: 'Modern digital store of value alongside traditional gold; held at cost and allowed to dilute naturally as the portfolio grows.' },
-              { num: '4', title: 'Quality compounders + conviction positions', desc: 'Instead of a pure index approach — NVDA/TSM/MSFT/PLTR (quality compounders with durable moats), RKLB/RVI (small asymmetric bets, ≤4%), and a dedicated SPCX Conviction Core sleeve (8–10%, its own rules — see the Conviction Core section).' },
+              { num: '4', title: 'Quality compounders + conviction positions', desc: 'Instead of a pure index approach — NVDA/TSM/MSFT/PLTR (quality compounders with durable moats), a small asymmetric-bet bucket (currently RVI, ≤4%), and a dedicated SPCX Conviction Core sleeve (8–10%, its own rules — see the Conviction Core section).' },
               { num: '5', title: 'Real assets at 14–16%', desc: 'GLD + BCI as the core inflation/devaluation hedge. Dalio\'s "buy stuff" principle applied with modern instruments.' },
             ].map((mod) => (
               <div key={mod.num} className="flex gap-3">
@@ -786,7 +786,7 @@ export function AllWeatherSection({
             <p className="text-xs font-semibold text-black/50 uppercase tracking-wider mb-2">Sell Priority Order (Equities Overweight)</p>
             <div className="space-y-1.5">
               {[
-                { num: '1st', action: 'Trim high-conviction (RKLB / RVI / SPCX)', reason: 'Most volatile, highest valuation risk' },
+                { num: '1st', action: 'Trim high-conviction (currently RVI)', reason: 'Most volatile, highest valuation risk. SPCX is exempt — it only trims at its own 15% ceiling' },
                 { num: '2nd', action: 'Trim quality compounders equally (NVDA/TSM/MSFT/PLTR)', reason: 'If group >17%' },
                 { num: '3rd', action: 'Trim VTI or VTV', reason: 'Only as last resort — most diversified' },
               ].map((item) => (
@@ -847,7 +847,7 @@ export function AllWeatherSection({
                   Internal Rebalance (equities in range){hcSub ? ` · HC now ${hcSub.weight.toFixed(1)}%` : ''}
                 </p>
                 <div className="space-y-1.5 text-xs text-black/55">
-                  <p>High-conviction (RKLB/RVI) drifts to 6% vs its 4% cap — sell ~{fmtUsd(ex2SellTotal)}</p>
+                  <p>High-conviction drifts to 6% vs its 4% cap — sell ~{fmtUsd(ex2SellTotal)}</p>
                   <p className="text-accent-red">
                     Sell: {ex2Parts.length > 0 ? fmtParts(ex2Parts) : 'across high-conviction names'}
                   </p>
@@ -869,7 +869,7 @@ export function AllWeatherSection({
 
           {/* High-conviction buy rules */}
           <div className="p-4 bg-accent-purple/[0.04] rounded-xl border border-accent-purple/10">
-            <p className="text-xs font-semibold text-black/60 mb-2">When to Buy High-Conviction (RKLB / RVI)</p>
+            <p className="text-xs font-semibold text-black/60 mb-2">When to Buy High-Conviction (currently RVI)</p>
             <div className="space-y-1 text-xs text-black/50">
               <p>Only with new contributions (paycheck money) if:</p>
               <ul className="list-disc list-inside space-y-0.5 ml-2">

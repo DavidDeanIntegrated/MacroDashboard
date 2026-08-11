@@ -15,8 +15,8 @@ export interface Holding {
 
 export const HOLDINGS: Holding[] = [
   { symbol: 'BTC',  qty: 0.00716019, category: 'Crypto', costBasis: 93144.18 },
-  { symbol: 'VTI',  qty: 2.512488,   category: 'Broad Market', costBasis: 348.28 },
-  { symbol: 'SGOV', qty: 6.923703,   category: 'Dry Powder', costBasis: 100.46 },
+  { symbol: 'VTI',  qty: 2.564816,   category: 'Broad Market', costBasis: 343.09 },
+  { symbol: 'SGOV', qty: 8.067879,   category: 'Dry Powder', costBasis: 100.47 },
   { symbol: 'GLD',  qty: 1.409832,   category: 'Gold', costBasis: 450.70 },
   { symbol: 'VTV',  qty: 1.790589,   category: 'Value', costBasis: 207.74 },
   { symbol: 'VXUS', qty: 3.106781,   category: 'International', costBasis: 82.21 },
@@ -24,8 +24,8 @@ export const HOLDINGS: Holding[] = [
   { symbol: 'TSM',  qty: 0.387065,   category: 'Quality Compounder', costBasis: 307.55 },
   { symbol: 'MSFT', qty: 0.642658,   category: 'Quality Compounder', costBasis: 391.81 },
   { symbol: 'PLTR', qty: 1.509316,   category: 'Quality Compounder', costBasis: 135.43 },
-  { symbol: 'BCI',  qty: 12.094244,  category: 'Commodity', costBasis: 22.06 },
-  { symbol: 'RKLB', qty: 1.246552,   category: 'High Conviction', costBasis: 44.79 },
+  { symbol: 'BCI',  qty: 10.460264,  category: 'Commodity', costBasis: 22.15 },
+  // RKLB sold in full 2026-08-11 @ $77.61 (realized +$40.91)
   { symbol: 'RVI',  qty: 3.034064,   category: 'High Conviction', costBasis: 32.30 },
   { symbol: 'SPCX', qty: 2.205146,   category: 'Conviction Core', costBasis: 132.87 },
 ];
