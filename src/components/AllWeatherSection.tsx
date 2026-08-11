@@ -233,6 +233,32 @@ const DRAWDOWN_LADDER = [
   { trigger: 'SPY –25%+ or VIX >40', triggerDetail: '', action: 'Aggressive — VTI + VXUS + high-conviction on sale', amount: '~$247 (remaining)' },
 ];
 
+// ─── Worked Examples (live) ───
+// The rebalance scenarios keep fixed illustrative drift percentages (63% / 8% / 52%),
+// but every dollar figure is computed from the CURRENT portfolio value and the
+// CURRENT composition of each sub-sleeve, following the documented priority rules
+// (sell high-conviction first, buy VTI first) — so the examples stay actionable
+// as the portfolio grows instead of quoting a stale portfolio size.
+
+interface ExamplePart {
+  symbol: string;
+  amount: number;
+}
+
+// Split a dollar total across a sub-sleeve's members in proportion to their
+// actual market values (bigger positions absorb bigger trims).
+function splitByValue(members: HoldingPosition[], total: number): ExamplePart[] {
+  const sum = members.reduce((s, m) => s + m.marketValue, 0);
+  if (sum <= 0 || total <= 0) return [];
+  return members
+    .map((m) => ({ symbol: m.symbol, amount: (total * m.marketValue) / sum }))
+    .filter((p) => Math.round(p.amount) >= 1);
+}
+
+const fmtUsd = (v: number) => formatCurrency(v, { decimals: 0 });
+const fmtParts = (parts: ExamplePart[]) =>
+  parts.map((p) => `${fmtUsd(p.amount)} ${p.symbol}`).join(' + ');
+
 // ─── Main Component ───
 
 // ─── Rebalance Simulator ───
@@ -476,6 +502,36 @@ export function AllWeatherSection({
   const realAssetSubSleeves = computeSubSleeveData(positions, REAL_ASSET_SUB_SLEEVE_TARGETS);
   const [expandedSubSleeve, setExpandedSubSleeve] = useState<string | null>('Quality Compounders');
   const scoreBySymbol = new Map((scores ?? []).map((s) => [s.symbol, s]));
+
+  // Live worked-example math — scenario drift %s are fixed, dollars come from
+  // the real portfolio value and the real mix inside each sub-sleeve.
+  const eqSleeve = sleeves.find((s) => s.name === 'Equities');
+  const hcSub = subSleeves.find((s) => s.label === 'High Conviction');
+  const qcSub = subSleeves.find((s) => s.label === 'Quality Compounders');
+  const eqMin = eqSleeve?.targetMin ?? 55;
+  const eqMax = eqSleeve?.targetMax ?? 60;
+  const eqMid = (eqMin + eqMax) / 2;
+  const V = portfolioValue;
+
+  // Scenario 1 — equities drift to 63%: trim back to the band midpoint, proceeds to SGOV.
+  // Sells come from high-conviction first (proportional to actual position sizes),
+  // spilling into quality compounders only if high conviction can't cover it.
+  const ex1SellTotal = ((63 - eqMid) / 100) * V;
+  const ex1FromHc = Math.min(ex1SellTotal, hcSub?.value ?? 0);
+  const ex1Parts = [
+    ...splitByValue(hcSub?.members ?? [], ex1FromHc),
+    ...splitByValue(qcSub?.members ?? [], Math.max(0, ex1SellTotal - ex1FromHc)),
+  ];
+
+  // Scenario 2 — equities in range but high conviction at 8% (cap 6.5%): trim to ~6%, recycle into VTI.
+  const ex2SellTotal = ((8 - 6) / 100) * V;
+  const ex2Parts = splitByValue(hcSub?.members ?? [], ex2SellTotal);
+
+  // Scenario 3 — equities at 52% after a dry-powder deployment: buy back to the midpoint
+  // via the buy priority order (VTI first, then VXUS/compounders).
+  const ex3BuyTotal = ((eqMid - 52) / 100) * V;
+  const ex3Vti = (ex3BuyTotal * 2) / 3;
+  const ex3Rest = ex3BuyTotal / 3;
 
   return (
     <>
@@ -727,35 +783,46 @@ export function AllWeatherSection({
             </div>
           </div>
 
-          {/* Worked Examples */}
+          {/* Worked Examples — dollar amounts computed live from the current portfolio */}
           <div>
-            <p className="text-xs font-semibold text-black/50 uppercase tracking-wider mb-3">Worked Examples</p>
+            <p className="text-xs font-semibold text-black/50 uppercase tracking-wider mb-1">Worked Examples</p>
+            <p className="text-xs text-black/40 mb-3">
+              The drift percentages are fixed illustrations, but every dollar figure below is computed live from your current {fmtUsd(V)} portfolio and the actual mix inside each sub-sleeve, following the sell/buy priority order above — so these numbers are always ready to act on.
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="p-4 bg-accent-orange/[0.04] rounded-xl border border-accent-orange/10">
-                <p className="text-xs font-semibold text-accent-orange mb-2">Equities Overweight (63%)</p>
+                <p className="text-xs font-semibold text-accent-orange mb-2">
+                  Equities Overweight (63%){eqSleeve ? ` · now ${eqSleeve.weight.toFixed(1)}%` : ''}
+                </p>
                 <div className="space-y-1.5 text-xs text-black/55">
-                  <p>Portfolio: $4,200 — need to sell ~$252</p>
-                  <p className="text-accent-red">Sell: $120 RKLB + $80 RVI + $52 NVDA</p>
-                  <p className="text-accent-green">Buy: $252 into SGOV</p>
-                  <p className="text-black/35 mt-1">Result: Equities back to ~57%</p>
+                  <p>Portfolio: {fmtUsd(V)} — need to sell ~{fmtUsd(ex1SellTotal)}</p>
+                  <p className="text-accent-red">
+                    Sell: {ex1Parts.length > 0 ? fmtParts(ex1Parts) : 'high-conviction first, then compounders'}
+                  </p>
+                  <p className="text-accent-green">Buy: {fmtUsd(ex1SellTotal)} into SGOV</p>
+                  <p className="text-black/35 mt-1">Result: Equities back to ~{eqMid.toFixed(1).replace(/\.0$/, '')}%</p>
                 </div>
               </div>
               <div className="p-4 bg-accent-blue/[0.04] rounded-xl border border-accent-blue/10">
-                <p className="text-xs font-semibold text-accent-blue mb-2">Internal Rebalance (57% OK)</p>
+                <p className="text-xs font-semibold text-accent-blue mb-2">
+                  Internal Rebalance (equities in range){hcSub ? ` · HC now ${hcSub.weight.toFixed(1)}%` : ''}
+                </p>
                 <div className="space-y-1.5 text-xs text-black/55">
-                  <p>Portfolio: $4,000 — high-conviction at 8%</p>
-                  <p className="text-accent-red">Sell: $50 RKLB + $30 RVI</p>
-                  <p className="text-accent-green">Buy: $80 into VTI</p>
-                  <p className="text-black/35 mt-1">Result: Total equities unchanged, internal balance fixed</p>
+                  <p>High-conviction drifts to 8% vs its 6.5% cap — sell ~{fmtUsd(ex2SellTotal)}</p>
+                  <p className="text-accent-red">
+                    Sell: {ex2Parts.length > 0 ? fmtParts(ex2Parts) : 'across high-conviction names'}
+                  </p>
+                  <p className="text-accent-green">Buy: {fmtUsd(ex2SellTotal)} into VTI</p>
+                  <p className="text-black/35 mt-1">Result: Total equities unchanged, internal balance restored</p>
                 </div>
               </div>
               <div className="p-4 bg-accent-green/[0.04] rounded-xl border border-accent-green/10">
                 <p className="text-xs font-semibold text-accent-green mb-2">Equities Underweight (52%)</p>
                 <div className="space-y-1.5 text-xs text-black/55">
-                  <p>Portfolio: $3,900 — after SGOV deployment</p>
+                  <p>Portfolio: {fmtUsd(V)} — after a dry-powder deployment</p>
                   <p className="text-accent-red">Sell: Nothing from equities</p>
-                  <p className="text-accent-green">Buy: $120 VTI + $60 VXUS/compounders</p>
-                  <p className="text-black/35 mt-1">Result: Equities back inside 55–60%</p>
+                  <p className="text-accent-green">Buy: {fmtUsd(ex3Vti)} VTI + {fmtUsd(ex3Rest)} VXUS/compounders</p>
+                  <p className="text-black/35 mt-1">Result: Equities back inside {eqMin}–{eqMax}%</p>
                 </div>
               </div>
             </div>
