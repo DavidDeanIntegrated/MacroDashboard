@@ -10,6 +10,7 @@ import {
   getTickerDetails,
   getWeeklySMA200,
 } from '@/lib/polygon';
+import { fetchBtcWma200 } from '@/lib/holdings';
 import type { PolygonTimeframe } from '@/lib/polygon';
 
 export async function GET(request: NextRequest) {
@@ -52,7 +53,8 @@ export async function GET(request: NextRequest) {
       }
 
       case 'wma200': {
-        // Batch: latest 200-week SMA per symbol. BTC maps to Polygon's crypto ticker.
+        // Batch: latest 200-week SMA per symbol. BTC is computed from Coinbase
+        // weekly closes (Polygon's weekly indicator doesn't cover X:BTCUSD here).
         const symbolsParam = searchParams.get('symbols');
         if (!symbolsParam) {
           return NextResponse.json({ error: 'Missing symbols' }, { status: 400 });
@@ -61,7 +63,7 @@ export async function GET(request: NextRequest) {
         const results = await Promise.all(
           symbols.map(async (symbol) => ({
             symbol,
-            wma200: await getWeeklySMA200(symbol === 'BTC' ? 'X:BTCUSD' : symbol),
+            wma200: symbol === 'BTC' ? await fetchBtcWma200() : await getWeeklySMA200(symbol),
           }))
         );
         return NextResponse.json(results);

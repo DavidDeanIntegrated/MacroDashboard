@@ -379,6 +379,35 @@ async function fetchBtcDailyBars(days: number): Promise<Map<string, number>> {
   return map;
 }
 
+// BTC 200-week moving average — Polygon's weekly SMA indicator doesn't cover
+// X:BTCUSD on the current plan, so compute it from daily candles instead:
+// bucket ~4 years of daily closes into calendar weeks (Monday-keyed), take each
+// week's final close, and average the last 200. Returns null on short data.
+export async function fetchBtcWma200(): Promise<number | null> {
+  return withCache('holdings:btc-wma200', TTL.MACRO, async () => {
+    const bars = await fetchBtcDailyBars(200 * 7 + 30);
+    if (bars.size < 500) return null;
+
+    const weekly = new Map<string, { date: string; close: number }>();
+    for (const [date, close] of Array.from(bars.entries())) {
+      const d = new Date(date + 'T00:00:00Z');
+      const daysSinceMonday = (d.getUTCDay() + 6) % 7;
+      const monday = new Date(d);
+      monday.setUTCDate(d.getUTCDate() - daysSinceMonday);
+      const key = monday.toISOString().split('T')[0];
+      const cur = weekly.get(key);
+      if (!cur || date > cur.date) weekly.set(key, { date, close });
+    }
+
+    const closes = Array.from(weekly.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([, v]) => v.close);
+    if (closes.length < 200) return null;
+    const last200 = closes.slice(-200);
+    return last200.reduce((s, v) => s + v, 0) / last200.length;
+  });
+}
+
 async function fetchBtcIntradayBars(): Promise<Map<string, number>> {
   const map = new Map<string, number>();
 
