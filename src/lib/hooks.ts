@@ -301,6 +301,13 @@ export function usePolygonMACD(symbol: string | null) {
   }>>(symbol ? `/api/polygon?action=macd&symbol=${symbol}` : null);
 }
 
+export function useWma200(symbols: string[]) {
+  const syms = symbols.length > 0 ? symbols.join(',') : null;
+  return useApi<Array<{ symbol: string; wma200: number | null }>>(
+    syms ? `/api/polygon?action=wma200&symbols=${syms}` : null
+  );
+}
+
 export function usePolygonSMA(symbol: string | null, window = 50) {
   return useApi<Array<{ date: string; value: number }>>(
     symbol ? `/api/polygon?action=sma&symbol=${symbol}&window=${window}` : null

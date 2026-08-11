@@ -206,6 +206,29 @@ export async function getSMA(
   });
 }
 
+// Latest 200-week simple moving average — the ~4-year full-cycle price anchor.
+// Computed server-side by Polygon on weekly bars. Returns null when the symbol
+// doesn't have ~200 weeks of history (recent IPOs) or the endpoint errors, so
+// callers can render "n/a" instead of breaking.
+export async function getWeeklySMA200(symbol: string): Promise<number | null> {
+  return withCache(`polygon:wma200:${symbol}`, TTL.MACRO, async () => {
+    try {
+      const url = polygonUrl(`/v1/indicators/sma/${symbol}`, {
+        timespan: 'week',
+        window: '200',
+        series_type: 'close',
+        order: 'desc',
+        limit: '1',
+      });
+      const data = await fetchJson<PolygonIndicatorResponse<PolygonIndicatorValue>>(url, { provider: 'Polygon' });
+      const v = data.results?.values?.[0]?.value;
+      return v != null && isFinite(v) && v > 0 ? v : null;
+    } catch {
+      return null;
+    }
+  });
+}
+
 export async function getRSI(
   symbol: string,
   window = 14,
