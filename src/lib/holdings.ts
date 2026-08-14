@@ -26,7 +26,7 @@ export const HOLDINGS: Holding[] = [
   { symbol: 'PLTR', qty: 1.212096,   category: 'Quality Compounder', costBasis: 135.02 },
   { symbol: 'BCI',  qty: 10.460264,  category: 'Commodity', costBasis: 22.15 },
   // RKLB sold in full 2026-08-11 @ $77.61 (realized +$40.91)
-  { symbol: 'RVI',  qty: 3.034064,   category: 'High Conviction', costBasis: 32.30 },
+  // RVI sold in full 2026-08-14 @ $28.51 (realized -$11.50)
   { symbol: 'SPCX', qty: 2.205146,   category: 'Conviction Core', costBasis: 132.87 },
 ];
 
