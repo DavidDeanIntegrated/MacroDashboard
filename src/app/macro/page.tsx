@@ -11,6 +11,13 @@ import { formatPercent, formatNumber, formatCurrency } from '@/lib/format';
 import { FRED_SERIES_NAMES } from '@/lib/fred';
 import { Term, Explainer } from '@/components/ui/Term';
 
+const fmtMonth = (d: string) =>
+  new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+const fmtDay = (d: string) =>
+  new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+// percentage-point move, explicit sign (+0.09pp / -0.07pp)
+const fmtPp = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}pp`;
+
 interface MacroDashboard {
   fedFunds: Array<{ date: string; value: number }>;
   t2y: Array<{ date: string; value: number }>;
@@ -440,6 +447,55 @@ export default function MacroPage() {
     return { low12, avg3, sahmValue, triggered };
   })();
 
+  // 10Y-2Y spread context — everything the explainer under the chart cites is
+  // computed from the full FRED history (daily since 1976), so the narrative
+  // always describes today's reading instead of a hard-coded snapshot.
+  const spreadInfo = (() => {
+    const s = data.t10y2y || [];
+    if (s.length < 300) return null;
+    const last = s[s.length - 1];
+    const back = (n: number) => s[Math.max(0, s.length - 1 - n)];
+    const monthChange = last.value - back(21).value;
+    const yearChange = last.value - back(252).value;
+
+    // Inversion episodes: contiguous runs below zero, merging positive
+    // flickers shorter than ~2 trading weeks (the Aug/Sep-2024 re-crossing
+    // whipsawed around zero for days; those blips aren't separate episodes).
+    const runs: Array<{ start: number; end: number }> = [];
+    for (let i = 0; i < s.length; i++) {
+      if (s[i].value >= 0) continue;
+      const prev = runs[runs.length - 1];
+      if (prev && i - prev.end <= 10) prev.end = i;
+      else runs.push({ start: i, end: i });
+    }
+    const ep = runs[runs.length - 1];
+    if (!ep) return null;
+    let trough = s[ep.start];
+    for (let i = ep.start; i <= ep.end; i++) if (s[i].value < trough.value) trough = s[i];
+    const monthsBetween = (a: string, b: string) =>
+      Math.round((new Date(b).getTime() - new Date(a).getTime()) / (30.44 * 24 * 3600 * 1000));
+    const episodeMonths = monthsBetween(s[ep.start].date, s[ep.end].date);
+    const isLongest = runs.every(
+      (r) => r === ep || monthsBetween(s[r.start].date, s[r.end].date) <= episodeMonths
+    );
+    const stillInverted = ep.end === s.length - 1;
+    const positiveSince = s[Math.min(ep.end + 1, s.length - 1)].date;
+    const monthsPositive = monthsBetween(positiveSince, last.date);
+
+    // Which leg is moving: the same spread change means opposite things
+    // depending on whether the 2Y or the 10Y is doing the work.
+    const legChange = (arr: Array<{ value: number }>) =>
+      arr.length > 63 ? arr[arr.length - 1].value - arr[arr.length - 1 - 63].value : 0;
+    const d2y = legChange(data.t2y || []);
+    const d10y = legChange(data.t10y || []);
+
+    return {
+      last, monthChange, yearChange, episodeMonths, isLongest, stillInverted,
+      inversionStart: s[ep.start].date, inversionEnd: s[ep.end].date,
+      trough, positiveSince, monthsPositive, d2y, d10y,
+    };
+  })();
+
   const indicators = [
     { info: INDICATOR_INFO['FEDFUNDS'], data: data.fedFunds, suffix: '%' },
     { info: INDICATOR_INFO['DGS2'], data: data.t2y, suffix: '%' },
@@ -654,6 +710,45 @@ export default function MacroPage() {
           <p className="text-xs text-black/40 mt-3 leading-relaxed">
             The most-watched single recession signal: the 10-year <Term k="treasury">Treasury yield</Term> minus the 2-year. Negative values (<Term k="inversion">inversion</Term>) have warned of recession 6-24 months ahead every time since 1955. Counterintuitively, the <em>un-inversion</em> — this line turning positive again as the Fed starts cutting short rates — is often when the recession actually arrives, so a fresh flip back above zero is a caution flag, not an all-clear.
           </p>
+          <Explainer title="How to read this chart — and where the spread stands today">
+            <p>
+              <span className="font-medium text-black/70">What the line is.</span> Each point is one subtraction: the 10-year <Term k="treasury">Treasury</Term> yield minus the 2-year, in percentage points. The 2Y is essentially a bet on where the Fed&apos;s policy rate will average over the next two years, so it jumps when rate expectations move. The 10Y bundles long-run growth and inflation expectations plus a <Term def="The extra yield investors demand for locking money up longer, given uncertainty about future rates and inflation.">term premium</Term>. The spread therefore compresses when the Fed tightens harder than the long-run outlook justifies, and widens when policy is easy relative to it.
+            </p>
+            <p>
+              <span className="font-medium text-black/70">The zones on the graph.</span> Roughly +0.1% to +1.5% is the healthy slope — lenders earn a real reward for lending long, banks borrow short and lend long profitably. Hugging zero is late-cycle flattening: the Fed leaning on the brakes. Below zero is an <Term k="inversion">inversion</Term> — short money out-yields long money, which only makes sense if the market expects rate cuts, i.e. trouble; deeper than about −0.3% has preceded recession by 6-24 months every time since 1955. Above ~+1.5% usually appears just <em>after</em> a downturn, once heavy Fed cuts re-steepen the curve.
+            </p>
+            <p>
+              <span className="font-medium text-black/70">The sequence that matters.</span> The classic pattern on this graph is a shape, not a level: dive below zero, sit there while the Fed stays tight, then snap back up through zero as the Fed cuts the short end fast. Recessions historically begin near that <em>re-crossing</em>, not at the initial inversion — so the steep climb back above zero is the caution window, and merely being positive again is not an all-clear.
+            </p>
+            {spreadInfo && (
+              <>
+                <p>
+                  <span className="font-medium text-black/70">Where we stand today.</span> The latest reading is <span className="font-semibold text-black/75 tabular-nums">{spreadInfo.last.value >= 0 ? '+' : ''}{spreadInfo.last.value.toFixed(2)}%</span> ({fmtDay(spreadInfo.last.date)}) — {INDICATOR_INFO['T10Y2Y'].regimeSignal(spreadInfo.last.value).regime.toLowerCase()} territory on the scale above. It has moved {fmtPp(spreadInfo.monthChange)} over the past month and {fmtPp(spreadInfo.yearChange)} over the past year.{' '}
+                  {spreadInfo.stillInverted ? (
+                    <>The curve has been inverted since {fmtMonth(spreadInfo.inversionStart)} ({spreadInfo.episodeMonths} months{spreadInfo.isLongest ? ' — the longest stretch in this dataset, which starts in 1976' : ''}), so far bottoming at {spreadInfo.trough.value.toFixed(2)}% in {fmtMonth(spreadInfo.trough.date)}. History says the alarm rings loudest when this line climbs back through zero.</>
+                  ) : (
+                    <>The last inversion ran {fmtMonth(spreadInfo.inversionStart)} to {fmtMonth(spreadInfo.inversionEnd)} — {spreadInfo.episodeMonths} months{spreadInfo.isLongest ? ', the longest stretch in this dataset (which starts in 1976)' : ''} — bottoming at {spreadInfo.trough.value.toFixed(2)}% in {fmtMonth(spreadInfo.trough.date)}. The spread has now been positive for {spreadInfo.monthsPositive} months. By the historical playbook that un-inversion was the starting gun, so every additional month of growth makes this cycle look like either the signal&apos;s first false alarm since 1955 or an unusually long lead time — worth respecting, not worth panicking over.</>
+                  )}
+                </p>
+                <p>
+                  <span className="font-medium text-black/70">Which leg is moving.</span> The same spread change can mean opposite things depending on which yield is doing the work. Over the past ~3 months the 2Y moved {fmtPp(spreadInfo.d2y)} and the 10Y {fmtPp(spreadInfo.d10y)}.{' '}
+                  {(() => {
+                    const slopeMove = spreadInfo.d10y - spreadInfo.d2y;
+                    if (Math.abs(slopeMove) < 0.05)
+                      return 'That is a roughly parallel shift — the slope itself has barely changed, so the message of this chart is unchanged from recent months.';
+                    if (slopeMove > 0) {
+                      return spreadInfo.d2y < -0.05
+                        ? 'Steepening led by the short end falling — a "bull steepener." That is the market pricing in Fed cuts, historically the growth-scare flavor of steepening; watch the jobs data for confirmation.'
+                        : 'Steepening led by the long end rising — a "bear steepener." That reflects term-premium or inflation-expectation pressure rather than recession pricing; it pressures long-duration assets but is not the classic pre-recession shape.';
+                    }
+                    return spreadInfo.d2y > 0.05
+                      ? 'Flattening led by the short end rising — a "bear flattener," the market pricing a tighter Fed for longer. This is the classic late-cycle squeeze that eventually produces inversions.'
+                      : 'Flattening led by the long end falling — a "bull flattener," long rates dropping on growth worries while the Fed holds. Often an early risk-off tell.';
+                  })()}
+                </p>
+              </>
+            )}
+          </Explainer>
         </Card>
       </div>
 
