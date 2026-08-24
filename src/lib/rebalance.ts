@@ -14,7 +14,7 @@ import {
 } from './sleeves';
 
 // Rules encoded here (kept in one place so tuning is a one-line change):
-const HC_TRIM_TO = 3;        // trim High Conviction (RKLB/RVI) to ~3% when it breaches its 4% cap
+const HC_TRIM_TO = 3;        // trim High Conviction (VST) to ~3% when it breaches its 4% cap
 const QC_CAP = 17;           // trim Quality Compounders when the group exceeds 17%
 const QC_TRIM_TO = 15.5;     // ...back to mid-band
 const BTC_FORCED_DRIFT = 5;  // BTC is only force-rebalanced when >5pp beyond its band
