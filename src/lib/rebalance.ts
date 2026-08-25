@@ -18,7 +18,7 @@ const HC_TRIM_TO = 3;        // trim High Conviction (VST) to ~3% when it breach
 const QC_CAP = 17;           // trim Quality Compounders when the group exceeds 17%
 const QC_TRIM_TO = 15.5;     // ...back to mid-band
 const BTC_FORCED_DRIFT = 5;  // BTC is only force-rebalanced when >5pp beyond its band
-const SGOV_FLOOR = 150;      // never let SGOV fall below this (emergency cash), in dollars
+export const SGOV_FLOOR = 150; // never let SGOV fall below this (emergency cash), in dollars
 const URGENT_DRIFT = 5;      // >5pp outside a band = act now, else quarterly window
 
 // Conviction Core (SPCX) — sized from the loss side: a total loss at the 8–10%
