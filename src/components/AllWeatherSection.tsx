@@ -37,8 +37,8 @@ function statusBadge(status: SleeveStatus) {
 }
 
 function gradeBadge(grade: string): 'green' | 'orange' | 'red' | 'neutral' {
-  if (grade === 'Strong Buy' || grade === 'Buy') return 'green';
-  if (grade === 'Hold') return 'neutral';
+  if (grade === 'Excellent' || grade === 'Good') return 'green';
+  if (grade === 'Fair') return 'neutral';
   if (grade === 'Weak') return 'orange';
   return 'red';
 }
@@ -418,7 +418,7 @@ function SubSleeveBreakdownCard({
                                       <Badge variant={macro.badge}>{macro.driver}</Badge>
                                     </Term>
                                     {score && !score.unavailable && (
-                                      <Term def={`Composite fundamentals score (0-100) built from five pillars: profitability, growth, valuation, financial health, and earnings quality. ${score.total}/100 grades as "${score.grade}". Full breakdown lives on the ticker page.`}>
+                                      <Term def={`Composite fundamentals score (0-100) built from five pillars: profitability, growth, valuation, financial health, and earnings & cash quality — sector-aware and growth-adjusted. ${score.total}/100 grades as "${score.grade}" (a quality grade, not a trade signal). Full breakdown lives on the ticker page.`}>
                                         <Badge variant={gradeBadge(score.grade)}>{score.grade} · {score.total}</Badge>
                                       </Term>
                                     )}

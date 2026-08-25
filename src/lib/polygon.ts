@@ -386,6 +386,7 @@ export interface TickerDetails {
   name: string;
   exchange: string;
   marketCap: number;
+  sicCode: string;
   sicDescription: string;
   employees: number;
   listDate: string;
@@ -401,6 +402,7 @@ export async function getTickerDetails(symbol: string): Promise<TickerDetails> {
       name: r.name,
       exchange: r.primary_exchange,
       marketCap: r.market_cap,
+      sicCode: r.sic_code,
       sicDescription: r.sic_description,
       employees: r.total_employees,
       listDate: r.list_date,

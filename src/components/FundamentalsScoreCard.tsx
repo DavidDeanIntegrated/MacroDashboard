@@ -3,49 +3,9 @@
 import { useState } from 'react';
 import { Card, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import type { FundamentalsScore } from '@/lib/fundamentals-score';
 
-interface ScoreData {
-  symbol: string;
-  total: number;
-  grade: 'Strong Buy' | 'Buy' | 'Hold' | 'Weak' | 'Poor';
-  gradeColor: string;
-  breakdown: {
-    profitabilityPts: number;
-    profitabilityMax: number;
-    profitabilityDetail: {
-      netMarginPts: number; grossMarginPts: number; roePts: number;
-      netMargin: number | null; grossMargin: number | null; roe: number | null;
-    };
-    growthPts: number;
-    growthMax: number;
-    growthDetail: {
-      revenueGrowthPts: number; epsGrowthPts: number;
-      revenueGrowth: number | null; epsGrowth: number | null;
-    };
-    valuationPts: number;
-    valuationMax: number;
-    valuationDetail: {
-      pePts: number; pbPts: number; psPts: number;
-      pe: number | null; pb: number | null; ps: number | null;
-    };
-    healthPts: number;
-    healthMax: number;
-    healthDetail: {
-      debtEquityPts: number; currentRatioPts: number; cashDebtPts: number;
-      debtToEquity: number | null; currentRatio: number | null; cashToDebt: number | null;
-    };
-    earningsQualityPts: number;
-    earningsQualityMax: number;
-    earningsQualityDetail: {
-      beatRatePts: number; surprisePts: number;
-      beatRate: number | null; avgSurprise: number | null; quartersAnalyzed: number;
-    };
-  };
-  rationale: string;
-  unavailable?: boolean;
-  unavailableReason?: string;
-  preRevenue?: boolean;
-}
+type ScoreData = FundamentalsScore;
 
 function pillarBar(label: string, pts: number, max: number) {
   const pct = max > 0 ? (pts / max) * 100 : 0;
@@ -78,6 +38,10 @@ function metricRow(label: string, value: number | null, suffix: string, pts: num
 function ScoreDetail({ score }: { score: ScoreData }) {
   const b = score.breakdown;
   const pr = score.preRevenue ? 'Pre-revenue' : 'N/A';
+  const ed = b.earningsQualityDetail;
+  const trendBasis = ed.basis === 'filings-trend';
+  const sources = Array.from(new Set(Object.values(b.meta.sources).filter((s): s is NonNullable<typeof s> => s !== undefined)));
+  const sourceLabel: Record<string, string> = { polygon: 'Polygon filings', finnhub: 'Finnhub', edgar: 'SEC EDGAR' };
   return (
     <div className="space-y-4 mt-4 pt-4 border-t border-black/[0.06]">
       {score.preRevenue && (
@@ -90,8 +54,8 @@ function ScoreDetail({ score }: { score: ScoreData }) {
         <p className="text-xs font-semibold text-black/60 uppercase tracking-wider mb-1.5">Profitability ({b.profitabilityPts}/{b.profitabilityMax})</p>
         <div className="space-y-1">
           {metricRow('Net Margin', b.profitabilityDetail.netMargin, '%', b.profitabilityDetail.netMarginPts, 10, pr)}
-          {metricRow('Gross Margin', b.profitabilityDetail.grossMargin, '%', b.profitabilityDetail.grossMarginPts, 8, pr)}
-          {metricRow('ROE', b.profitabilityDetail.roe, '%', b.profitabilityDetail.roePts, 7)}
+          {metricRow('Gross Margin', b.profitabilityDetail.grossMargin, '%', b.profitabilityDetail.grossMarginPts, 8, b.meta.sectorProfile === 'financial' ? 'N/A (sector)' : pr)}
+          {metricRow(b.profitabilityDetail.roeBasis === 'roa' ? 'ROA (neg. equity)' : 'ROE', b.profitabilityDetail.roe, '%', b.profitabilityDetail.roePts, 7)}
         </div>
       </div>
       {/* Growth */}
@@ -99,16 +63,18 @@ function ScoreDetail({ score }: { score: ScoreData }) {
         <p className="text-xs font-semibold text-black/60 uppercase tracking-wider mb-1.5">Growth ({b.growthPts}/{b.growthMax})</p>
         <div className="space-y-1">
           {metricRow('Revenue Growth', b.growthDetail.revenueGrowth, '%', b.growthDetail.revenueGrowthPts, 10, pr)}
-          {metricRow('EPS Growth', b.growthDetail.epsGrowth, '%', b.growthDetail.epsGrowthPts, 10, pr)}
+          {metricRow(b.growthDetail.lossNarrowing ? 'EPS Growth (loss narrowing)' : 'EPS Growth', b.growthDetail.epsGrowth, '%', b.growthDetail.epsGrowthPts, 10, pr)}
         </div>
       </div>
       {/* Valuation */}
       <div>
         <p className="text-xs font-semibold text-black/60 uppercase tracking-wider mb-1.5">Valuation ({b.valuationPts}/{b.valuationMax})</p>
         <div className="space-y-1">
-          {metricRow('P/E', b.valuationDetail.pe, 'x', b.valuationDetail.pePts, 10, pr)}
+          {b.valuationDetail.peBasis === 'peg'
+            ? metricRow(`PEG (${b.valuationDetail.pe?.toFixed(1)}x P/E ÷ growth)`, b.valuationDetail.peg, '', b.valuationDetail.pePts, 10)
+            : metricRow('P/E', b.valuationDetail.pe, 'x', b.valuationDetail.pePts, 10, pr)}
           {metricRow('P/B', b.valuationDetail.pb, 'x', b.valuationDetail.pbPts, 5)}
-          {metricRow('P/S', b.valuationDetail.ps, 'x', b.valuationDetail.psPts, 5, pr)}
+          {metricRow('P/S', b.valuationDetail.ps, 'x', b.valuationDetail.psPts, 5, b.meta.sectorProfile === 'financial' ? 'N/A (sector)' : pr)}
         </div>
       </div>
       {/* Financial Health */}
@@ -116,31 +82,36 @@ function ScoreDetail({ score }: { score: ScoreData }) {
         <p className="text-xs font-semibold text-black/60 uppercase tracking-wider mb-1.5">Financial Health ({b.healthPts}/{b.healthMax})</p>
         <div className="space-y-1">
           {metricRow('Debt/Equity', b.healthDetail.debtToEquity, 'x', b.healthDetail.debtEquityPts, 8)}
-          {metricRow('Current Ratio', b.healthDetail.currentRatio, 'x', b.healthDetail.currentRatioPts, 6)}
-          {metricRow('Cash/Debt', b.healthDetail.cashToDebt, 'x', b.healthDetail.cashDebtPts, 6)}
+          {metricRow('Current Ratio', b.healthDetail.currentRatio, 'x', b.healthDetail.currentRatioPts, 6, b.meta.sectorProfile === 'financial' ? 'N/A (sector)' : 'N/A')}
+          {metricRow('Cash/Debt', b.healthDetail.cashToDebt, 'x', b.healthDetail.cashDebtPts, 6, b.meta.sectorProfile === 'financial' ? 'N/A (sector)' : 'N/A')}
         </div>
       </div>
-      {/* Earnings Quality */}
+      {/* Earnings & Cash Quality */}
       <div>
-        <p className="text-xs font-semibold text-black/60 uppercase tracking-wider mb-1.5">Earnings Quality ({b.earningsQualityPts}/{b.earningsQualityMax})</p>
+        <p className="text-xs font-semibold text-black/60 uppercase tracking-wider mb-1.5">Earnings &amp; Cash Quality ({b.earningsQualityPts}/{b.earningsQualityMax})</p>
         <div className="space-y-1">
-          {metricRow(
-            b.earningsQualityDetail.avgSurprise !== null || b.earningsQualityDetail.beatRate === null ? 'Beat Rate' : 'EPS Trend',
-            b.earningsQualityDetail.beatRate, '%',
-            b.earningsQualityDetail.beatRatePts,
-            b.earningsQualityDetail.avgSurprise !== null || b.earningsQualityDetail.beatRate === null ? 10 : 7
-          )}
-          {metricRow(
-            b.earningsQualityDetail.avgSurprise !== null || b.earningsQualityDetail.beatRate === null ? 'Avg Surprise' : 'EPS Momentum',
-            b.earningsQualityDetail.avgSurprise, '%',
-            b.earningsQualityDetail.surprisePts,
-            b.earningsQualityDetail.avgSurprise !== null || b.earningsQualityDetail.beatRate === null ? 5 : 3
-          )}
+          {metricRow(trendBasis ? 'EPS Trend (YoY, SEC filings)' : 'Beat Rate', ed.beatRate, '%', ed.beatRatePts, 5)}
+          {metricRow(trendBasis ? 'Latest EPS Positive' : 'Avg Surprise', trendBasis ? null : ed.avgSurprise, '%', ed.surprisePts, 3, trendBasis ? (ed.surprisePts > 0 ? 'Yes' : 'No') : 'N/A')}
+          {metricRow('FCF Conversion', ed.fcfConversion !== null ? ed.fcfConversion * 100 : null, '%', ed.fcfConversionPts, 4, b.meta.sectorProfile === 'financial' ? 'N/A (sector)' : 'N/A')}
+          {metricRow('FCF Margin', ed.fcfMargin, '%', ed.fcfMarginPts, 3, b.meta.sectorProfile === 'financial' ? 'N/A (sector)' : 'N/A')}
           <div className="flex items-center justify-between text-xs">
             <span className="text-black/45">Quarters Analyzed</span>
-            <span className="text-black/65">{b.earningsQualityDetail.quartersAnalyzed}</span>
+            <span className="text-black/65">{ed.quartersAnalyzed}</span>
           </div>
         </div>
+      </div>
+      {/* Provenance footer */}
+      <div className="pt-2 border-t border-black/[0.04] flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-black/40">
+        <span>
+          Profile: <span className="font-medium text-black/55">{b.meta.sectorProfile === 'default' ? 'General' : b.meta.sectorProfile === 'financial' ? 'Financial' : 'Utility / Power'}</span>
+        </span>
+        <span>
+          Data coverage: <span className={`font-medium ${b.meta.coveragePct >= 60 ? 'text-black/55' : 'text-orange-600'}`}>{b.meta.coveragePct.toFixed(0)}%</span>
+        </span>
+        {sources.length > 0 && (
+          <span>Sources: {sources.map((s) => sourceLabel[s] ?? s).join(' · ')}</span>
+        )}
+        {b.meta.dataAsOf && <span>Filings through {b.meta.dataAsOf}</span>}
       </div>
     </div>
   );
@@ -151,7 +122,7 @@ export function FundamentalsScoreSection({
   loading,
   error,
   title = 'Fundamental Analysis Scores',
-  subtitle = 'Composite score (0–100) based on profitability, growth, valuation, financial health, and earnings quality',
+  subtitle = 'Composite score (0–100) based on profitability, growth, valuation, financial health, and earnings & cash quality — sector-aware, growth-adjusted',
 }: {
   scores: ScoreData[] | null;
   loading: boolean;
@@ -282,34 +253,34 @@ export function FundamentalsScoreSection({
         <CardTitle>Fundamental Score — Methodology</CardTitle>
         <div className="mt-3 space-y-3 text-xs text-black/55 leading-relaxed">
           <p>
-            Each stock receives a composite score from 0–100, computed across five pillars using data from SEC EDGAR filings, Finnhub valuation metrics, and earnings history. Scores update automatically as new filings and earnings reports become available.
+            Each stock receives a composite score from 0–100, computed across five pillars using data from Polygon filings, SEC EDGAR, Finnhub valuation metrics, and earnings history. Metrics score on smooth piecewise-linear curves (no bucket cliffs), thresholds adapt to the company&apos;s sector (financials and utilities are judged against their own norms, not software norms), and each pillar renormalizes over the metrics that actually have data — with the coverage %% reported per stock. Grades describe fundamentals quality only; buy/sell decisions belong to the rebalance rules.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="p-3 bg-black/[0.02] rounded-lg">
               <p className="font-semibold text-black/65 mb-1">Profitability (25 pts)</p>
-              <p>Net margin, gross margin, and return on equity. Measures how efficiently the company converts revenue into profit and returns value to shareholders.</p>
+              <p>Net margin, gross margin, and return on equity (falling back to return on assets for buyback-heavy companies with negative book equity). Measures how efficiently the company converts revenue into profit.</p>
             </div>
             <div className="p-3 bg-black/[0.02] rounded-lg">
               <p className="font-semibold text-black/65 mb-1">Growth (20 pts)</p>
-              <p>Year-over-year revenue and EPS growth (TTM). Higher growth earns more points, with declining metrics scoring zero.</p>
+              <p>Year-over-year revenue and EPS growth. A shrinking loss is credited as improvement but capped well below profitable growth — it never scores like real earnings momentum.</p>
             </div>
             <div className="p-3 bg-black/[0.02] rounded-lg">
               <p className="font-semibold text-black/65 mb-1">Valuation (20 pts)</p>
-              <p>P/E, P/B, and P/S ratios. Lower multiples score higher, reflecting cheaper entry points. Negative PE (unprofitable) scores zero.</p>
+              <p>Growth-adjusted P/E (scored as PEG when EPS growth is meaningful, so fast compounders aren&apos;t auto-penalized vs cheap decliners), plus P/B and P/S. Negative earnings score zero on P/E.</p>
             </div>
             <div className="p-3 bg-black/[0.02] rounded-lg">
               <p className="font-semibold text-black/65 mb-1">Financial Health (20 pts)</p>
-              <p>Debt-to-equity, current ratio, and cash-to-debt. Rewards strong balance sheets with low leverage and ample liquidity.</p>
+              <p>Debt-to-equity, current ratio, and cash-to-debt — scored against sector norms, so a utility&apos;s structural leverage isn&apos;t judged like a software company&apos;s.</p>
             </div>
             <div className="p-3 bg-black/[0.02] rounded-lg md:col-span-2">
-              <p className="font-semibold text-black/65 mb-1">Earnings Quality (15 pts)</p>
-              <p>Beat rate (% of quarters exceeding estimates) and average surprise magnitude. Consistent beats signal strong execution and conservative guidance.</p>
+              <p className="font-semibold text-black/65 mb-1">Earnings &amp; Cash Quality (15 pts)</p>
+              <p>Beat rate and surprise vs analyst estimates (or a year-over-year SEC-filings EPS trend when no estimates exist), plus free-cash-flow conversion and FCF margin — do reported earnings actually turn into cash?</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2 pt-1">
-            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-accent-green/20 text-green-800">80+ Strong Buy</span>
-            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-accent-green/10 text-green-700">65-79 Buy</span>
-            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-accent-blue/10 text-blue-700">50-64 Hold</span>
+            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-accent-green/20 text-green-800">80+ Excellent</span>
+            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-accent-green/10 text-green-700">65-79 Good</span>
+            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-accent-blue/10 text-blue-700">50-64 Fair</span>
             <span className="px-2 py-0.5 rounded text-xs font-semibold bg-accent-orange/10 text-orange-700">35-49 Weak</span>
             <span className="px-2 py-0.5 rounded text-xs font-semibold bg-accent-red/10 text-red-700">0-34 Poor</span>
           </div>
