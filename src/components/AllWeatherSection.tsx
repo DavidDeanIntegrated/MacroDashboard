@@ -16,6 +16,7 @@ import {
   type RegimeKey,
 } from '@/lib/sleeves';
 import { macroSensitivity } from '@/lib/macro-sensitivity';
+import { SGOV_FLOOR } from '@/lib/rebalance';
 import { Term } from '@/components/ui/Term';
 import { RecommendedUpdates } from '@/components/RecommendedUpdates';
 
@@ -184,27 +185,47 @@ function SleeveComparisonBars({
 }
 
 // ─── Holding Rationale Cards ───
+// Targets and sell rules here mirror lib/sleeves.ts (bands) and lib/rebalance.ts
+// (trim thresholds) — update those first, then keep this text in sync.
 
-const HOLDING_RATIONALES: { symbol: string; title: string; rationale: string }[] = [
-  { symbol: 'GLD', title: 'Gold — Safest Money in a Devaluation Cycle', rationale: 'Dalio\'s "safest money" in high-debt/devaluation cycles. $38T US debt, central bank buying, and de-dollarization tailwinds. Target: 10–15% of portfolio.' },
-  { symbol: 'BCI', title: 'Commodities — Buy Stuff That Beats Inflation', rationale: 'Broadest commodity exposure (Bloomberg Commodity Index). Purest expression of Dalio\'s "buy stuff that beats inflation" principle. No K-1 tax complexity, 0.26% ER.' },
-  { symbol: 'VTI', title: 'Broad US Core — The Growth Engine Anchor', rationale: 'Total US stock market index. Anchor of the equities sleeve — provides broad, low-cost exposure to the full US market as the first buy priority in every rebalance.' },
-  { symbol: 'VTV', title: 'Value Tilt — Margin of Safety', rationale: 'Value stocks historically outperform in inflationary periods and provide a margin of safety through lower valuations and higher dividend yields.' },
-  { symbol: 'VXUS', title: 'International — Against US Survivorship Bias', rationale: 'International diversification hedges against US exceptionalism fading. Vanguard projects 4.9–6.9% annual returns for non-US equities next decade.' },
-  { symbol: 'SGOV', title: 'Dry Powder — Tactical Cash Earning Yield', rationale: '0–3 month T-bill ETF earning ~4.5–5% yield. Tactical, not permanent — deploy on dips per the drawdown ladder. Never let this fall below ~$150 (emergency floor).' },
-  { symbol: 'NVDA+TSM+MSFT+PLTR', title: 'Quality Compounders — Secular Growth at Scale', rationale: 'NVDA (AI compute monopoly), TSM (foundry monopoly), MSFT (enterprise cloud + AI), and PLTR (AI/data analytics platform with government + commercial adoption). Quality compounders with durable moats. Combined 14–16% target — sell above 17%, buy below 13%.' },
-  { symbol: 'SPCX', title: 'Conviction Core — The 5-Year Thesis Bet', rationale: 'The one position sized to matter: an 8–10% dedicated sleeve built on the thesis that SPCX is a much more valuable company in 5 years. Sized from the loss side (a wipeout costs ~10% of portfolio — painful, survivable), built with new money only, trimmed only above a 15% hard ceiling. Full rules in the Conviction Core section below.' },
-  { symbol: 'RVI', title: 'High Conviction — Asymmetric Bets', rationale: 'RVI — an asymmetric, high-volatility bet held as a hold-and-dilute position. Never bought during rebalancing; only add with new money on 20%+ dips from cost basis, capped at ~4% combined across the bucket. (RKLB was sold 2026-08-11 at $77.61, realized +$40.91; any re-entry follows the same bucket rules.)' },
-  { symbol: 'BTC', title: 'Bitcoin — Digital Hard-Money Complement', rationale: 'Modern hard-asset hedge complementing gold. Combined with GLD forms the "real money" allocation. Will dilute naturally toward 8–12% target as the portfolio grows — no forced rebalance needed.' },
+const HOLDING_RATIONALES: { symbol: string; title: string; rationale: string; sellWhen: string }[] = [
+  { symbol: 'GLD', title: 'Gold — Safest Money in a Devaluation Cycle', rationale: 'Dalio\'s "safest money" in high-debt/devaluation cycles. $38T US debt, central bank buying, and de-dollarization tailwinds. Target: 10–12% of portfolio (core of the 14–16% Real Assets sleeve).',
+    sellWhen: 'Trim only when Real Assets exceed 16% of portfolio AND GLD is above its 12% sub-band — sell just enough to bring GLD back inside 10–12%, proceeds to whichever sleeve is under target (SGOV by default). Never sold on price weakness — it\'s the insurance, not the trade.' },
+  { symbol: 'BCI', title: 'Commodities — Buy Stuff That Beats Inflation', rationale: 'Broadest commodity exposure (Bloomberg Commodity Index). Purest expression of Dalio\'s "buy stuff that beats inflation" principle. No K-1 tax complexity, 0.26% ER. Target: ~4% (3.5–5% sub-band).',
+    sellWhen: 'Trim when Real Assets exceed 16% AND BCI is above its 5% sub-band — sell back to ~4%. Also the first Real-Assets trim candidate if both GLD and BCI are over, since GLD is the core hedge.' },
+  { symbol: 'VTI', title: 'Broad US Core — The Growth Engine Anchor', rationale: 'Total US stock market index. Anchor of the equities sleeve — provides broad, low-cost exposure to the full US market as the first buy priority in every rebalance. Target: 20–22% of portfolio.',
+    sellWhen: 'Last resort only. Sold solely when equities exceed 53% and trimming High Conviction then Quality Compounders can\'t cover the full overweight — and then only the residual amount needed to bring equities back inside 48–53%.' },
+  { symbol: 'VTV', title: 'Value Tilt — Margin of Safety', rationale: 'Value stocks historically outperform in inflationary periods and provide a margin of safety through lower valuations and higher dividend yields. Target: 7–9% of portfolio.',
+    sellWhen: 'Same last-resort rule as VTI — only trimmed (proportionally alongside VTI) when equities are over 53% and the higher-priority trims can\'t cover it.' },
+  { symbol: 'VXUS', title: 'International — Against US Survivorship Bias', rationale: 'International diversification hedges against US exceptionalism fading. Vanguard projects 4.9–6.9% annual returns for non-US equities next decade. Target: 5.5–6.5% of portfolio.',
+    sellWhen: 'No scheduled sell — the plan never trims VXUS. If it drifts overweight, it dilutes naturally as contributions go elsewhere; if equities as a whole are over, the sell priority (High Conviction → Compounders → VTI/VTV) handles it.' },
+  { symbol: 'SGOV', title: 'Dry Powder — Tactical Cash Earning Yield', rationale: '0–3 month T-bill ETF earning ~4.5–5% yield. Tactical, not permanent — deploy on dips per the drawdown ladder below. Target: 14–17% of portfolio. Never let this fall below ~$150 (emergency floor).',
+    sellWhen: 'SGOV is spent, not sold: deploy per the drawdown ladder (SPY −10% / −15% / −25%), always keeping the $150 floor. Above 17% of portfolio, the excess is the first funding source for rebalance buys. Refill rule: if it falls below 12% after a deployment and SPY recovers +10%, sell 40% of the deployed tranche back to SGOV.' },
+  { symbol: 'NVDA+TSM+MSFT+PLTR', title: 'Quality Compounders — Secular Growth at Scale', rationale: 'NVDA (AI compute monopoly), TSM (foundry monopoly), MSFT (enterprise cloud + AI), and PLTR (AI/data analytics platform with government + commercial adoption). Quality compounders with durable moats. Combined 14–16% target.',
+    sellWhen: 'Sell when the group exceeds 17% combined — trim proportionally (bigger positions absorb bigger trims) back to ~15.5%, recycling proceeds into VTI so total equity exposure is unchanged. Second in the sell-priority order when equities as a whole breach 53%. Buy only below 13% or on dips, with new money.' },
+  { symbol: 'SPCX', title: 'Conviction Core — The 5-Year Thesis Bet', rationale: 'The one position sized to matter: an 8–10% dedicated sleeve built on the thesis that SPCX is a much more valuable company in 5 years. Sized from the loss side (a wipeout costs ~10% of portfolio — painful, survivable), built with new money only. Full rules in the Conviction Core section above.',
+    sellWhen: 'Three sell triggers, none of them price volatility: (1) above the 15% hard ceiling — trim to ~12%, proceeds to SGOV; (2) at 2× average cost — optionally sell your original principal and let the rest ride as house money; (3) thesis break at quarterly review — exit the position entirely. Drawdowns alone are never a sell signal.' },
+  { symbol: 'VST', title: 'High Conviction — Asymmetric Bets', rationale: 'VST (Vistra) — independent power producer levered to AI/datacenter electricity demand; an asymmetric, high-volatility bet held as a hold-and-dilute position. Never bought during rebalancing; only add with new money on 20%+ dips from cost basis, capped at ~4% for the bucket. (RKLB sold 2026-08-11 +$40.91; RVI sold 2026-08-14 −$11.50 — re-entries follow the same bucket rules.)',
+    sellWhen: 'First in line for every trim: sold first (before compounders or index funds) whenever equities exceed 53%, and trimmed back to ~3% whenever the High Conviction bucket breaches its 4% cap even with equities in range — proceeds recycled into VTI. Also exit on thesis break, not on drawdown.' },
+  { symbol: 'BTC', title: 'Bitcoin — Digital Hard-Money Complement', rationale: 'Modern hard-asset hedge complementing gold. Combined with GLD forms the "real money" allocation. Will dilute naturally toward 8–12% target as the portfolio grows — no forced rebalance needed.',
+    sellWhen: 'No-touch buffer: hold and let contributions dilute it, even above the 12% band. A forced trim fires only if BTC exceeds 17% of portfolio (5pp beyond the band) — then sell back to the mid-buffer. Never bought to chase the band floor.' },
 ];
 
 // ─── Drawdown Ladder ───
+// Tranche dollars are computed live from the current SGOV position: everything
+// above the $150 emergency floor is deployable, split 30% / 30% / 40% across
+// the three rungs so the ladder scales automatically as SGOV grows.
 
-const DRAWDOWN_LADDER = [
-  { trigger: 'SPY –10%', triggerDetail: 'from rolling 3-month high', action: 'Buy VTI (broad US core)', amount: '~$180' },
-  { trigger: 'SPY –15%', triggerDetail: 'from rolling 3-month high', action: 'Buy Quality Compounders — equal split across NVDA/TSM/MSFT/PLTR', amount: '~$180' },
-  { trigger: 'SPY –25%+ or VIX >40', triggerDetail: '', action: 'Aggressive — VTI + VXUS + high-conviction on sale', amount: '~$247 (remaining)' },
-];
+const LADDER_SPLITS = [0.3, 0.3, 0.4];
+
+function buildDrawdownLadder(deployable: number) {
+  const fmt = (v: number) => `~${formatCurrency(v, { decimals: 0 })}`;
+  return [
+    { trigger: 'SPY –10%', triggerDetail: 'from rolling 3-month high', action: 'Buy VTI (broad US core)', amount: fmt(deployable * LADDER_SPLITS[0]) },
+    { trigger: 'SPY –15%', triggerDetail: 'from rolling 3-month high', action: 'Buy Quality Compounders — equal split across NVDA/TSM/MSFT/PLTR', amount: fmt(deployable * LADDER_SPLITS[1]) },
+    { trigger: 'SPY –25%+ or VIX >40', triggerDetail: '', action: 'Aggressive — VTI + VXUS + high-conviction on sale', amount: `${fmt(deployable * LADDER_SPLITS[2])} (remaining)` },
+  ];
+}
 
 // ─── Worked Examples (live) ───
 // The rebalance scenarios keep fixed illustrative drift percentages (63% / 8% / 52%),
@@ -496,7 +517,7 @@ export function AllWeatherSection({
     ...splitByValue(qcSub?.members ?? [], Math.max(0, ex1SellTotal - ex1FromHc)),
   ];
 
-  // Scenario 2 — equities in range but high conviction (RKLB/RVI) at 6% (cap 4%): trim to ~3%, recycle into VTI.
+  // Scenario 2 — equities in range but high conviction at 6% (cap 4%): trim to ~3%, recycle into VTI.
   const ex2SellTotal = ((6 - 3) / 100) * V;
   const ex2Parts = splitByValue(hcSub?.members ?? [], ex2SellTotal);
 
@@ -505,6 +526,11 @@ export function AllWeatherSection({
   const ex3BuyTotal = ((eqMid - 52) / 100) * V;
   const ex3Vti = (ex3BuyTotal * 2) / 3;
   const ex3Rest = ex3BuyTotal / 3;
+
+  // Drawdown ladder — tranche sizes computed live from the current SGOV position.
+  const sgovValue = positions.find((p) => p.symbol === 'SGOV')?.marketValue ?? 0;
+  const sgovDeployable = Math.max(0, sgovValue - SGOV_FLOOR);
+  const drawdownLadder = buildDrawdownLadder(sgovDeployable);
 
   return (
     <>
@@ -663,7 +689,7 @@ export function AllWeatherSection({
               { num: '1', title: 'No long-term bonds', desc: 'In a high-debt, rising-rate world, long-term Treasuries are the most vulnerable asset. Replaced with SGOV (0–3 month T-bills) as tactical dry powder earning ~4.5–5% yield.' },
               { num: '2', title: 'Higher equity allocation (48–53% core + 8–10% conviction vs 30%)', desc: 'Appropriate for a longer time horizon that can weather volatility in exchange for higher long-run compounding.' },
               { num: '3', title: 'Bitcoin as hard-money complement (8–12%)', desc: 'Modern digital store of value alongside traditional gold; held at cost and allowed to dilute naturally as the portfolio grows.' },
-              { num: '4', title: 'Quality compounders + conviction positions', desc: 'Instead of a pure index approach — NVDA/TSM/MSFT/PLTR (quality compounders with durable moats), a small asymmetric-bet bucket (currently RVI, ≤4%), and a dedicated SPCX Conviction Core sleeve (8–10%, its own rules — see the Conviction Core section).' },
+              { num: '4', title: 'Quality compounders + conviction positions', desc: 'Instead of a pure index approach — NVDA/TSM/MSFT/PLTR (quality compounders with durable moats), a small asymmetric-bet bucket (currently VST, ≤4%), and a dedicated SPCX Conviction Core sleeve (8–10%, its own rules — see the Conviction Core section).' },
               { num: '5', title: 'Real assets at 14–16%', desc: 'GLD + BCI as the core inflation/devaluation hedge. Dalio\'s "buy stuff" principle applied with modern instruments.' },
             ].map((mod) => (
               <div key={mod.num} className="flex gap-3">
@@ -688,7 +714,7 @@ export function AllWeatherSection({
       {/* ─── Holding Rationales ─── */}
       <CollapsibleSection
         title="Holding Rationales"
-        subtitle="Why each position exists in the portfolio and its role in the All-Weather framework"
+        subtitle="Why each position exists, its role in the All-Weather framework, and the specific rule for when to sell it"
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {HOLDING_RATIONALES.map((r) => (
@@ -698,6 +724,10 @@ export function AllWeatherSection({
               </div>
               <p className="text-xs font-medium text-black/60 mb-1.5">{r.title}</p>
               <p className="text-xs text-black/45 leading-relaxed">{r.rationale}</p>
+              <div className="mt-2.5 pt-2.5 border-t border-black/[0.05]">
+                <p className="text-[10px] font-semibold text-accent-red/70 uppercase tracking-wider mb-1">When to Sell</p>
+                <p className="text-xs text-black/45 leading-relaxed">{r.sellWhen}</p>
+              </div>
             </div>
           ))}
         </div>
@@ -709,9 +739,15 @@ export function AllWeatherSection({
         subtitle="When and how to deploy dry powder during market drawdowns"
       >
         <div className="space-y-5">
+          {/* Live deployable math */}
+          <div className="p-3 bg-black/[0.02] rounded-xl text-xs text-black/55">
+            Tranche sizes update live from your SGOV position: {formatCurrency(sgovValue)} SGOV − {formatCurrency(SGOV_FLOOR, { decimals: 0 })} emergency floor ={' '}
+            <span className="font-semibold text-black/75">{formatCurrency(sgovDeployable)} deployable</span>, split 30% / 30% / 40% across the three rungs.
+          </div>
+
           {/* Ladder visual */}
           <div className="space-y-0">
-            {DRAWDOWN_LADDER.map((rung, i) => (
+            {drawdownLadder.map((rung, i) => (
               <div key={rung.trigger} className="flex gap-4">
                 {/* Step indicator */}
                 <div className="flex flex-col items-center">
@@ -720,7 +756,7 @@ export function AllWeatherSection({
                   }`}>
                     {i + 1}
                   </div>
-                  {i < DRAWDOWN_LADDER.length - 1 && (
+                  {i < drawdownLadder.length - 1 && (
                     <div className="w-px h-12 bg-black/[0.08]" />
                   )}
                 </div>
@@ -736,6 +772,12 @@ export function AllWeatherSection({
               </div>
             ))}
           </div>
+
+          {sgovDeployable <= 0 && (
+            <p className="text-xs text-accent-orange">
+              SGOV is at or below the {formatCurrency(SGOV_FLOOR, { decimals: 0 })} emergency floor — nothing is deployable until the reserve is replenished (new contributions go to SGOV first).
+            </p>
+          )}
 
           {/* Tactics */}
           <div className="p-4 bg-black/[0.02] rounded-xl space-y-2">
@@ -786,7 +828,7 @@ export function AllWeatherSection({
             <p className="text-xs font-semibold text-black/50 uppercase tracking-wider mb-2">Sell Priority Order (Equities Overweight)</p>
             <div className="space-y-1.5">
               {[
-                { num: '1st', action: 'Trim high-conviction (currently RVI)', reason: 'Most volatile, highest valuation risk. SPCX is exempt — it only trims at its own 15% ceiling' },
+                { num: '1st', action: 'Trim high-conviction (currently VST)', reason: 'Most volatile, highest valuation risk. SPCX is exempt — it only trims at its own 15% ceiling' },
                 { num: '2nd', action: 'Trim quality compounders equally (NVDA/TSM/MSFT/PLTR)', reason: 'If group >17%' },
                 { num: '3rd', action: 'Trim VTI or VTV', reason: 'Only as last resort — most diversified' },
               ].map((item) => (
@@ -869,7 +911,7 @@ export function AllWeatherSection({
 
           {/* High-conviction buy rules */}
           <div className="p-4 bg-accent-purple/[0.04] rounded-xl border border-accent-purple/10">
-            <p className="text-xs font-semibold text-black/60 mb-2">When to Buy High-Conviction (currently RVI)</p>
+            <p className="text-xs font-semibold text-black/60 mb-2">When to Buy High-Conviction (currently VST)</p>
             <div className="space-y-1 text-xs text-black/50">
               <p>Only with new contributions (paycheck money) if:</p>
               <ul className="list-disc list-inside space-y-0.5 ml-2">
