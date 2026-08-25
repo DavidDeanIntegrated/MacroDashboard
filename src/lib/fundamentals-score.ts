@@ -80,29 +80,7 @@ import { getStockFinancials, getSnapshot, getTickerDetails, type StockFinancials
 import { getEarnings, getBasicFinancials, type EarningsEstimate, type BasicFinancials } from './finnhub';
 import { getCompanyFundamentals, extractScoringMetrics, type EdgarScoringMetrics, type CompanyFundamentals } from './edgar';
 import { withCache, TTL } from './cache';
-
-// ─── Piecewise-linear scoring ───
-
-/** [metricValue, points] — anchors sorted ascending by value; clamped at both ends */
-type Anchor = readonly [number, number];
-
-const round1 = (v: number) => Math.round(v * 10) / 10;
-
-function lerpScore(value: number | null, anchors: readonly Anchor[] | null): number | null {
-  if (value === null || anchors === null || !Number.isFinite(value)) return null;
-  if (value <= anchors[0][0]) return anchors[0][1];
-  const last = anchors[anchors.length - 1];
-  if (value >= last[0]) return last[1];
-  for (let i = 1; i < anchors.length; i++) {
-    const [x1, y1] = anchors[i - 1];
-    const [x2, y2] = anchors[i];
-    if (value <= x2) {
-      const t = (value - x1) / (x2 - x1);
-      return round1(y1 + t * (y2 - y1));
-    }
-  }
-  return last[1];
-}
+import { type Anchor, lerpScore, round1 } from './scoring-utils';
 
 // ─── Sector threshold profiles ───
 
