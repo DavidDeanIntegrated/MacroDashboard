@@ -9,6 +9,12 @@ import { TimeSeriesChart, MultiSeriesChart } from '@/components/charts/TimeSerie
 import { useMultiAggregates, useApi } from '@/lib/hooks';
 import { HOLDINGS } from '@/lib/holdings';
 import { Term } from '@/components/ui/Term';
+import {
+  computeReturns, stdDev, correlation, corrColor,
+  computeVolStats, getVolSignal, computeBottomScore,
+  type Bar,
+} from '@/lib/vol-signals';
+import { BottomScorePanel, BottomScoreMethodologyCard, VolSignalGuideCard } from '@/components/BottomScoreCard';
 
 type AnalyticsPeriod = '1M' | '3M' | '6M' | '1Y';
 
@@ -21,156 +27,6 @@ const PERIOD_DAYS: Record<AnalyticsPeriod, number> = {
 
 // Get non-BTC, non-cash-like holdings
 const EQUITY_HOLDINGS = HOLDINGS.filter((h) => h.symbol !== 'BTC' && h.symbol !== 'SGOV');
-
-// ─── Math utilities ───
-
-function computeReturns(closes: number[]): number[] {
-  const returns: number[] = [];
-  for (let i = 1; i < closes.length; i++) {
-    returns.push((closes[i] - closes[i - 1]) / closes[i - 1]);
-  }
-  return returns;
-}
-
-function mean(arr: number[]): number {
-  if (arr.length === 0) return 0;
-  return arr.reduce((a, b) => a + b, 0) / arr.length;
-}
-
-function stdDev(arr: number[]): number {
-  if (arr.length < 2) return 0;
-  const m = mean(arr);
-  const variance = arr.reduce((sum, v) => sum + (v - m) ** 2, 0) / (arr.length - 1);
-  return Math.sqrt(variance);
-}
-
-function correlation(a: number[], b: number[]): number {
-  const n = Math.min(a.length, b.length);
-  if (n < 3) return 0;
-  const aSlice = a.slice(-n);
-  const bSlice = b.slice(-n);
-  const ma = mean(aSlice);
-  const mb = mean(bSlice);
-  const sa = stdDev(aSlice);
-  const sb = stdDev(bSlice);
-  if (sa === 0 || sb === 0) return 0;
-  let cov = 0;
-  for (let i = 0; i < n; i++) {
-    cov += (aSlice[i] - ma) * (bSlice[i] - mb);
-  }
-  cov /= n - 1;
-  return cov / (sa * sb);
-}
-
-function corrColor(r: number): string {
-  if (r > 0.7) return 'bg-accent-red/20 text-red-800';
-  if (r > 0.4) return 'bg-accent-orange/15 text-orange-700';
-  if (r > 0.1) return 'bg-accent-orange/[0.06] text-orange-600';
-  if (r > -0.1) return 'bg-black/[0.04] text-black/55';
-  if (r > -0.4) return 'bg-accent-blue/[0.06] text-blue-600';
-  if (r > -0.7) return 'bg-accent-blue/15 text-blue-700';
-  return 'bg-accent-blue/25 text-blue-800';
-}
-
-// ─── Bottom Timing Score ───
-interface BottomScoreBreakdown {
-  total: number;
-  drawdownPts: number;
-  volSpikePts: number;
-  volumePts: number;
-  vixPts: number;
-  hySpreadPts: number;
-  pricePositionPts: number;
-  volMeanReversionPts: number;
-  grade: 'Extreme Capitulation' | 'Heavy Selling' | 'Moderate Distress' | 'Mild Weakness' | 'No Signal';
-  gradeColor: string;
-}
-
-function computeBottomScore(
-  stock: {
-    drawdown: number;
-    volPercentile: number;
-    pricePosition: number;
-    currentVol: number;
-    medianVol: number;
-  },
-  volumes: number[],
-  vixLevel: number | null,
-  hySpread: number | null,
-  allRollingVols: number[],
-): BottomScoreBreakdown {
-  // 1. Drawdown severity (0-20)
-  const dd = Math.abs(stock.drawdown);
-  const drawdownPts = dd > 30 ? 20 : dd > 25 ? 17 : dd > 20 ? 14 : dd > 15 ? 10 : dd > 10 ? 5 : 0;
-
-  // 2. Volatility spike (0-15)
-  const vp = stock.volPercentile;
-  const volSpikePts = vp > 0.95 ? 15 : vp > 0.90 ? 12 : vp > 0.75 ? 8 : vp > 0.60 ? 4 : 0;
-
-  // 3. Volume capitulation (0-15) — recent max volume vs average
-  let volumePts = 0;
-  if (volumes.length >= 20) {
-    const avgVol = volumes.slice(0, -5).reduce((a, b) => a + b, 0) / (volumes.length - 5);
-    const recentMax = Math.max(...volumes.slice(-5));
-    const volRatio = avgVol > 0 ? recentMax / avgVol : 0;
-    volumePts = volRatio > 3 ? 15 : volRatio > 2 ? 10 : volRatio > 1.5 ? 5 : 0;
-  }
-
-  // 4. VIX level (0-15)
-  let vixPts = 0;
-  if (vixLevel !== null) {
-    vixPts = vixLevel > 40 ? 15 : vixLevel > 30 ? 12 : vixLevel > 25 ? 8 : vixLevel > 20 ? 4 : 0;
-  }
-
-  // 5. HY spread (0-10)
-  let hySpreadPts = 0;
-  if (hySpread !== null) {
-    hySpreadPts = hySpread > 8 ? 10 : hySpread > 6 ? 7 : hySpread > 5 ? 5 : hySpread > 4 ? 3 : 0;
-  }
-
-  // 6. Price position (0-10)
-  const pp = stock.pricePosition;
-  const pricePositionPts = pp < 0.10 ? 10 : pp < 0.20 ? 7 : pp < 0.30 ? 4 : 0;
-
-  // 7. Volatility mean reversion signal (0-15)
-  let volMeanReversionPts = 0;
-  if (allRollingVols.length >= 3) {
-    const recent3 = allRollingVols.slice(-3);
-    const peak = Math.max(...allRollingVols.slice(-10));
-    const current = allRollingVols[allRollingVols.length - 1];
-    const isPastPeak = peak > current && (peak - current) / peak > 0.10;
-    if (isPastPeak && stock.volPercentile > 0.60) {
-      volMeanReversionPts = 15; // Vol peaked and declining from elevated levels
-    } else if (stock.volPercentile > 0.90) {
-      volMeanReversionPts = 8; // At extreme but hasn't peaked yet
-    } else if (recent3[2] < recent3[1] && stock.volPercentile > 0.50) {
-      volMeanReversionPts = 5; // Starting to decline
-    }
-  }
-
-  const total = drawdownPts + volSpikePts + volumePts + vixPts + hySpreadPts + pricePositionPts + volMeanReversionPts;
-
-  let grade: BottomScoreBreakdown['grade'];
-  let gradeColor: string;
-  if (total >= 75) {
-    grade = 'Extreme Capitulation';
-    gradeColor = 'bg-accent-red/15 text-red-700 border-accent-red/20';
-  } else if (total >= 55) {
-    grade = 'Heavy Selling';
-    gradeColor = 'bg-accent-orange/15 text-orange-700 border-accent-orange/20';
-  } else if (total >= 35) {
-    grade = 'Moderate Distress';
-    gradeColor = 'bg-accent-blue/15 text-blue-700 border-accent-blue/20';
-  } else if (total >= 20) {
-    grade = 'Mild Weakness';
-    gradeColor = 'bg-black/[0.06] text-black/65 border-black/[0.08]';
-  } else {
-    grade = 'No Signal';
-    gradeColor = 'bg-black/[0.04] text-black/45 border-black/[0.06]';
-  }
-
-  return { total, drawdownPts, volSpikePts, volumePts, vixPts, hySpreadPts, pricePositionPts, volMeanReversionPts, grade, gradeColor };
-}
 
 export default function AnalyticsPage() {
   const [period, setPeriod] = useState<AnalyticsPeriod>('3M');
@@ -209,10 +65,16 @@ export default function AnalyticsPage() {
     return d.toISOString().split('T')[0];
   })();
 
-  // Get sliced close prices for each symbol
+  // Get sliced close prices for each symbol (period-scoped sections: returns,
+  // correlations, vol table, charts)
   const symbolData: Record<string, { closes: number[]; dates: string[] }> = {};
+  // Full unsliced ~1Y bars — signal math always runs over the full lookback,
+  // regardless of the display period (a stock's drawdown and vol percentile
+  // are properties of the stock, not of the chart tab).
+  const symbolFullBars: Record<string, Bar[]> = {};
   for (const sym of allSymbols) {
     const series = aggData?.find((s) => s.symbol === sym)?.data || [];
+    symbolFullBars[sym] = series;
     const sliced = series.filter((d) => d.date >= periodCutoff);
     symbolData[sym] = {
       closes: sliced.map((d) => d.close),
@@ -293,125 +155,10 @@ export default function AnalyticsPage() {
   const spyAnnualizedVol = spyDailyVol * Math.sqrt(252) * 100;
 
   // ─── VOLATILITY SIGNALS ───
-  // For each holding: compare current 20-day vol to its historical median,
-  // and check price position relative to the period high/low.
-  const volSignals = EQUITY_HOLDINGS.map((h) => {
-    const closes = symbolData[h.symbol]?.closes || [];
-    if (closes.length < 30) return null;
-
-    // Current rolling 20-day vol
-    const recentReturns = computeReturns(closes.slice(-21));
-    const currentVol = stdDev(recentReturns) * Math.sqrt(252) * 100;
-
-    // Historical median rolling vol (all 20-day windows)
-    const allRollingVols: number[] = [];
-    for (let i = 20; i < closes.length; i++) {
-      const w = computeReturns(closes.slice(i - 20, i + 1));
-      allRollingVols.push(stdDev(w) * Math.sqrt(252) * 100);
-    }
-    allRollingVols.sort((a, b) => a - b);
-    const medianVol = allRollingVols[Math.floor(allRollingVols.length / 2)] || currentVol;
-    const volPercentile = allRollingVols.filter((v) => v <= currentVol).length / (allRollingVols.length || 1);
-
-    // Price position: how far is current price from period high/low?
-    const periodHigh = Math.max(...closes);
-    const periodLow = Math.min(...closes);
-    const currentPrice = closes[closes.length - 1];
-    const range = periodHigh - periodLow;
-    const pricePosition = range > 0 ? (currentPrice - periodLow) / range : 0.5; // 0 = at low, 1 = at high
-
-    // Price momentum: 20-day return
-    const momentum20d = closes.length >= 21
-      ? ((closes[closes.length - 1] - closes[closes.length - 21]) / closes[closes.length - 21]) * 100
-      : 0;
-
-    // Drawdown from period high
-    const drawdown = ((currentPrice - periodHigh) / periodHigh) * 100;
-
-    return {
-      symbol: h.symbol,
-      category: h.category,
-      currentVol,
-      medianVol,
-      volPercentile,
-      pricePosition,
-      momentum20d,
-      drawdown,
-      currentPrice,
-    };
-  }).filter(Boolean) as Array<{
-    symbol: string;
-    category: string;
-    currentVol: number;
-    medianVol: number;
-    volPercentile: number;
-    pricePosition: number;
-    momentum20d: number;
-    drawdown: number;
-    currentPrice: number;
-  }>;
-
-  // Generate signal for each holding
-  const getVolSignal = (s: typeof volSignals[0]) => {
-    const volExpanded = s.volPercentile > 0.75; // Vol is in the top 25% historically
-    const volContracted = s.volPercentile < 0.25; // Vol is in the bottom 25%
-    const nearLow = s.pricePosition < 0.25; // Price near period low
-    const nearHigh = s.pricePosition > 0.85; // Price near period high
-    const strongMomentum = s.momentum20d > 5;
-    const deepDrawdown = s.drawdown < -15;
-
-    // High vol + price near lows = potential accumulation zone
-    if (volExpanded && nearLow) {
-      return {
-        signal: 'Potential Buy Zone' as const,
-        badge: 'green' as const,
-        reason: `Volatility is elevated (${s.currentVol.toFixed(0)}% vs median ${s.medianVol.toFixed(0)}%) while price sits near period lows (${s.drawdown.toFixed(1)}% from high). Historically, high fear + depressed prices create opportunities for patient buyers. Consider scaling in if your thesis is intact.`,
-      };
-    }
-
-    // Deep drawdown with expanding vol = possible capitulation
-    if (deepDrawdown && volExpanded) {
-      return {
-        signal: 'Capitulation Watch' as const,
-        badge: 'blue' as const,
-        reason: `Down ${Math.abs(s.drawdown).toFixed(1)}% from period high with spiking volatility (${s.volPercentile > 0.9 ? 'top 10%' : 'top 25%'} of its historical range). Capitulation selling can mark bottoms, but wait for vol to peak and start declining before adding. Catching a falling knife is risky.`,
-      };
-    }
-
-    // Low vol + near highs + strong momentum = ride the trend but tighten stops
-    if (volContracted && nearHigh && strongMomentum) {
-      return {
-        signal: 'Trim / Tighten Stops' as const,
-        badge: 'orange' as const,
-        reason: `Price is near period highs with unusually low volatility (bottom 25% historically). Low-vol rallies can persist, but compressed vol often precedes a sharp move. Consider taking partial profits or tightening stop-losses to protect gains.`,
-      };
-    }
-
-    // High vol + near highs = potential distribution
-    if (volExpanded && nearHigh) {
-      return {
-        signal: 'Caution — Elevated Risk' as const,
-        badge: 'red' as const,
-        reason: `Price is near highs but volatility is expanding (${s.currentVol.toFixed(0)}% annualized, above median). This pattern can indicate distribution — smart money selling into strength. Watch for failed breakouts or reversal patterns before adding.`,
-      };
-    }
-
-    // Low vol + near lows = coiling for a move
-    if (volContracted && nearLow) {
-      return {
-        signal: 'Coiling — Watch for Breakout' as const,
-        badge: 'blue' as const,
-        reason: `Volatility is compressed (bottom 25%) while price is near period lows. This "coiling" pattern often precedes a significant directional move. Wait for a clear breakout with volume confirmation before entering. Could break either direction.`,
-      };
-    }
-
-    // Neutral
-    return {
-      signal: 'Neutral' as const,
-      badge: 'neutral' as const,
-      reason: `Volatility is near its historical median (${s.currentVol.toFixed(0)}% vs ${s.medianVol.toFixed(0)}% median) with no extreme price positioning. No strong buy/sell signal from vol alone. Use fundamental analysis and macro context to guide decisions.`,
-    };
-  };
+  // Always computed over the FULL ~1Y lookback via lib/vol-signals.ts.
+  const volSignals = EQUITY_HOLDINGS
+    .map((h) => computeVolStats(h.symbol, h.category, symbolFullBars[h.symbol] || []))
+    .filter((s): s is NonNullable<typeof s> => s !== null);
 
   // Relative strength chart — each series indexed to 100 at its first close.
   // Only full-period holdings are eligible so a recent IPO can't hijack the y-axis.
@@ -787,41 +534,23 @@ export default function AnalyticsPage() {
           <div className="mt-4">
             <h3 className="text-lg font-semibold text-black/75 tracking-tight mb-1">Volatility Signals — Buy vs Sell Context</h3>
             <p className="text-xs text-black/40 mb-4 max-w-3xl leading-relaxed">
-              Each holding is scored against <em>its own</em> history — the <Term k="vol-percentile">volatility percentile</Term> asks &quot;is this stock unusually stormy or calm right now, for this stock?&quot; — and that&apos;s combined with where the price sits in its recent range. The pattern matters more than either piece alone: high fear near the lows can mark <Term k="capitulation">capitulation</Term> (opportunity), while rising turbulence at the highs can mark <Term k="distribution">distribution</Term> (risk).
+              Each holding is scored against <em>its own</em> history — the <Term k="vol-percentile">volatility percentile</Term> asks &quot;is this stock unusually stormy or calm right now, for this stock?&quot; — combined with where price sits in its 1-year range, whether the vol spike has peaked, and whether the 200-day trend is intact. High fear near the lows can mark <Term k="capitulation">capitulation</Term> (opportunity) once vol turns, while rising turbulence at the highs can mark <Term k="distribution">distribution</Term> (risk).
             </p>
           </div>
 
           <Card padding="none">
             <div className="px-6 pt-6 pb-3">
-              <CardTitle>Per-Holding Signals ({period})</CardTitle>
+              <CardTitle>Per-Holding Signals (1Y lookback)</CardTitle>
               <p className="text-xs text-black/40 mt-1">
-                Based on 20-day rolling vol percentile, drawdown from high, and price position in the period range
+                Fixed 1-year window regardless of the period selector — based on rolling vol percentile, drawdown, price position, vol mean-reversion state, and the 200-day trend
               </p>
             </div>
             <div className="divide-y divide-black/[0.04]">
               {volSignals.map((s) => {
-                const signal = getVolSignal(s);
-                const showBottomScore = signal.signal === 'Capitulation Watch' || signal.signal === 'Potential Buy Zone';
-
-                // Compute bottom score for eligible stocks
-                const bottomScore = showBottomScore ? (() => {
-                  const series = aggData?.find((a) => a.symbol === s.symbol)?.data || [];
-                  const sliced = series.filter((d) => d.date >= periodCutoff);
-                  const volumes = sliced.map((d) => d.volume);
-                  const closes = sliced.map((d) => d.close);
-
-                  // Compute rolling vols for mean reversion
-                  const rollingVols: number[] = [];
-                  for (let i = 20; i < closes.length; i++) {
-                    const w = computeReturns(closes.slice(i - 20, i + 1));
-                    rollingVols.push(stdDev(w) * Math.sqrt(252) * 100);
-                  }
-
-                  const vixLevel = macroData?.vix?.length ? macroData.vix[macroData.vix.length - 1].value : null;
-                  const hySpread = macroData?.highYieldSpread?.length ? macroData.highYieldSpread[macroData.highYieldSpread.length - 1].value : null;
-
-                  return computeBottomScore(s, volumes, vixLevel, hySpread, rollingVols);
-                })() : null;
+                const signal = getVolSignal(s, 'holdings');
+                const bottomScore = signal.isBottomCandidate
+                  ? computeBottomScore(s, symbolFullBars[s.symbol] || [], macroData?.vix, macroData?.highYieldSpread)
+                  : null;
 
                 return (
                   <div key={s.symbol} className="px-6 py-4">
@@ -837,61 +566,7 @@ export default function AnalyticsPage() {
                         </p>
 
                         {/* Bottom Timing Score */}
-                        {bottomScore && (
-                          <div className={`mt-3 rounded-xl border p-4 ${bottomScore.gradeColor}`}>
-                            <div className="flex items-center justify-between mb-3">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-bold uppercase tracking-wider">Bottom Timing Score</span>
-                                <span className="text-lg font-black tabular-nums">{bottomScore.total}</span>
-                                <span className="text-xs font-medium opacity-60">/ 100</span>
-                              </div>
-                              <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-white/40">{bottomScore.grade}</span>
-                            </div>
-                            {/* Score bar */}
-                            <div className="w-full h-2.5 rounded-full bg-black/[0.08] mb-3 overflow-hidden">
-                              <div
-                                className={`h-full rounded-full transition-all ${
-                                  bottomScore.total >= 75 ? 'bg-accent-red' :
-                                  bottomScore.total >= 55 ? 'bg-accent-orange' :
-                                  bottomScore.total >= 35 ? 'bg-accent-blue' :
-                                  'bg-black/25'
-                                }`}
-                                style={{ width: `${bottomScore.total}%` }}
-                              />
-                            </div>
-                            {/* Component breakdown */}
-                            <div className="grid grid-cols-4 md:grid-cols-7 gap-2 text-[10px]">
-                              <div className="text-center">
-                                <p className="opacity-60 uppercase tracking-wider mb-0.5">Drawdown</p>
-                                <p className="font-bold tabular-nums">{bottomScore.drawdownPts}/20</p>
-                              </div>
-                              <div className="text-center">
-                                <p className="opacity-60 uppercase tracking-wider mb-0.5">Vol Spike</p>
-                                <p className="font-bold tabular-nums">{bottomScore.volSpikePts}/15</p>
-                              </div>
-                              <div className="text-center">
-                                <p className="opacity-60 uppercase tracking-wider mb-0.5">Volume</p>
-                                <p className="font-bold tabular-nums">{bottomScore.volumePts}/15</p>
-                              </div>
-                              <div className="text-center">
-                                <p className="opacity-60 uppercase tracking-wider mb-0.5">VIX</p>
-                                <p className="font-bold tabular-nums">{bottomScore.vixPts}/15</p>
-                              </div>
-                              <div className="text-center">
-                                <p className="opacity-60 uppercase tracking-wider mb-0.5">HY Spread</p>
-                                <p className="font-bold tabular-nums">{bottomScore.hySpreadPts}/10</p>
-                              </div>
-                              <div className="text-center">
-                                <p className="opacity-60 uppercase tracking-wider mb-0.5">Price Pos</p>
-                                <p className="font-bold tabular-nums">{bottomScore.pricePositionPts}/10</p>
-                              </div>
-                              <div className="text-center">
-                                <p className="opacity-60 uppercase tracking-wider mb-0.5">Vol Revert</p>
-                                <p className="font-bold tabular-nums">{bottomScore.volMeanReversionPts}/15</p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                        {bottomScore && <BottomScorePanel score={bottomScore} />}
                       </div>
                       <div className="shrink-0 text-right space-y-1">
                         <div>
@@ -903,7 +578,7 @@ export default function AnalyticsPage() {
                           </p>
                         </div>
                         <div>
-                          <p className="text-[10px] uppercase tracking-wider text-black/35">From High</p>
+                          <p className="text-[10px] uppercase tracking-wider text-black/35">From 1Y High</p>
                           <p className={`text-sm font-semibold tabular-nums ${
                             s.drawdown < -10 ? 'text-accent-red' : s.drawdown < -5 ? 'text-accent-orange' : 'text-black/65'
                           }`}>
@@ -915,7 +590,15 @@ export default function AnalyticsPage() {
                           <p className={`text-sm font-semibold tabular-nums ${
                             s.momentum20d > 0 ? 'text-accent-green' : 'text-accent-red'
                           }`}>
-                            {s.momentum20d > 0 ? '+' : ''}{s.momentum20d.toFixed(1)}%
+                            {s.momentum20d > 0 ? '+' : ''}{s.momentum20d.toFixed(1)}% <span className="text-black/35 font-normal">({s.momentumSigma >= 0 ? '+' : ''}{s.momentumSigma.toFixed(1)}σ)</span>
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wider text-black/35">vs 200d MA</p>
+                          <p className={`text-sm font-semibold tabular-nums ${
+                            s.trendPct === null ? 'text-black/35' : s.trendPct >= 0 ? 'text-accent-green' : 'text-accent-red'
+                          }`}>
+                            {s.trendPct === null ? '—' : `${s.trendPct >= 0 ? '+' : ''}${s.trendPct.toFixed(1)}%`}
                           </p>
                         </div>
                       </div>
@@ -926,113 +609,8 @@ export default function AnalyticsPage() {
             </div>
           </Card>
 
-          {/* Bottom Timing Score Methodology */}
-          <Card>
-            <CardTitle>Bottom Timing Score — Methodology</CardTitle>
-            <p className="text-xs text-black/40 mt-1 mb-4">
-              An evidence-based composite score (0-100) for gauging how close a stock may be to a capitulation bottom. Shown for stocks in &quot;Capitulation Watch&quot; or &quot;Potential Buy Zone.&quot;
-            </p>
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                <div className="rounded-lg border border-black/[0.06] p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-black/50 mb-1">Drawdown Severity (0-20)</p>
-                  <p className="text-xs text-black/55 leading-relaxed">
-                    How far the stock has fallen from its period high. Deeper drawdowns score higher: &gt;30% = 20pts, &gt;25% = 17pts, &gt;20% = 14pts, &gt;15% = 10pts.
-                  </p>
-                </div>
-                <div className="rounded-lg border border-black/[0.06] p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-black/50 mb-1">Volatility Spike (0-15)</p>
-                  <p className="text-xs text-black/55 leading-relaxed">
-                    Current 20-day rolling vol percentile vs history. Top 5% = 15pts, top 10% = 12pts, top 25% = 8pts. Extreme vol spikes historically coincide with capitulation selling.
-                  </p>
-                </div>
-                <div className="rounded-lg border border-black/[0.06] p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-black/50 mb-1">Volume Capitulation (0-15)</p>
-                  <p className="text-xs text-black/55 leading-relaxed">
-                    Recent 5-day max volume vs prior average. &gt;3x average = 15pts, &gt;2x = 10pts, &gt;1.5x = 5pts. Volume spikes indicate forced selling or panic liquidation.
-                  </p>
-                </div>
-                <div className="rounded-lg border border-black/[0.06] p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-black/50 mb-1">VIX Level (0-15)</p>
-                  <p className="text-xs text-black/55 leading-relaxed">
-                    Market-wide fear gauge from CBOE options. &gt;40 = 15pts (extreme panic), &gt;30 = 12pts, &gt;25 = 8pts, &gt;20 = 4pts. High VIX confirms broad market stress, not just stock-specific.
-                  </p>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="rounded-lg border border-black/[0.06] p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-black/50 mb-1">HY Credit Spread (0-10)</p>
-                  <p className="text-xs text-black/55 leading-relaxed">
-                    High yield bond spread over Treasuries. &gt;8% = 10pts (credit crisis), &gt;6% = 7pts, &gt;5% = 5pts. Widening spreads confirm systemic stress — credit markets lead equities.
-                  </p>
-                </div>
-                <div className="rounded-lg border border-black/[0.06] p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-black/50 mb-1">Price Position (0-10)</p>
-                  <p className="text-xs text-black/55 leading-relaxed">
-                    Where the current price sits in the period range. Bottom 10% = 10pts, bottom 20% = 7pts, bottom 30% = 4pts. Near the absolute low of the range adds conviction.
-                  </p>
-                </div>
-                <div className="rounded-lg border border-black/[0.06] p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-black/50 mb-1">Vol Mean Reversion (0-15)</p>
-                  <p className="text-xs text-black/55 leading-relaxed">
-                    Has volatility peaked and started declining? Vol peaked then dropped &gt;10% = 15pts, at extreme = 8pts, starting to decline = 5pts. The best entries are when vol peaks and turns — not while it&apos;s still rising.
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-2">
-              <div className="text-center py-2 rounded-lg bg-accent-red/10 border border-accent-red/15">
-                <p className="text-[10px] font-bold text-red-700">75-100</p>
-                <p className="text-[10px] text-red-600">Extreme Capitulation</p>
-              </div>
-              <div className="text-center py-2 rounded-lg bg-accent-orange/10 border border-accent-orange/15">
-                <p className="text-[10px] font-bold text-orange-700">55-74</p>
-                <p className="text-[10px] text-orange-600">Heavy Selling</p>
-              </div>
-              <div className="text-center py-2 rounded-lg bg-accent-blue/10 border border-accent-blue/15">
-                <p className="text-[10px] font-bold text-blue-700">35-54</p>
-                <p className="text-[10px] text-blue-600">Moderate Distress</p>
-              </div>
-              <div className="text-center py-2 rounded-lg bg-black/[0.04] border border-black/[0.06]">
-                <p className="text-[10px] font-bold text-black/60">20-34</p>
-                <p className="text-[10px] text-black/45">Mild Weakness</p>
-              </div>
-              <div className="text-center py-2 rounded-lg bg-black/[0.02] border border-black/[0.04]">
-                <p className="text-[10px] font-bold text-black/40">0-19</p>
-                <p className="text-[10px] text-black/30">No Signal</p>
-              </div>
-            </div>
-            <p className="text-xs text-black/35 mt-4 italic leading-relaxed">
-              This score is a probabilistic framework, not a prediction. Scores above 75 are historically rare and have clustered around major market bottoms (2008-09, March 2020, Q4 2018). A high score means conditions are <span className="font-medium">consistent</span> with capitulation — it does not guarantee the bottom is in. Always scale into positions rather than going all-in, and confirm with fundamental thesis before acting. The strongest signal is when the score peaks and then starts declining (vol mean reversion turning positive).
-            </p>
-          </Card>
-
-          {/* Framework explanation */}
-          <Card>
-            <CardTitle>How to Read Volatility Signals</CardTitle>
-            <p className="text-xs text-black/40 mt-1 mb-4">A framework for using volatility to time entries and exits</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="border border-accent-green/20 rounded-xl p-4 bg-accent-green/[0.03]">
-                <p className="text-xs font-semibold text-accent-green uppercase tracking-wider mb-2">When to Consider Buying</p>
-                <ul className="text-xs text-black/55 space-y-1.5 leading-relaxed">
-                  <li><span className="font-medium text-black/70">High vol + price near lows:</span> Fear is elevated and the stock has sold off. If your fundamental thesis is intact, this is often the best risk/reward entry.</li>
-                  <li><span className="font-medium text-black/70">Vol starting to decline from a spike:</span> The panic is subsiding. A &quot;vol crush&quot; after a spike often coincides with a price recovery.</li>
-                  <li><span className="font-medium text-black/70">Low vol coiling near support:</span> Compressed volatility suggests a big move is brewing. If it breaks upward with volume, it can run.</li>
-                </ul>
-              </div>
-              <div className="border border-accent-red/20 rounded-xl p-4 bg-accent-red/[0.03]">
-                <p className="text-xs font-semibold text-accent-red uppercase tracking-wider mb-2">When to Consider Selling / Trimming</p>
-                <ul className="text-xs text-black/55 space-y-1.5 leading-relaxed">
-                  <li><span className="font-medium text-black/70">Low vol + price at highs:</span> Complacency. The market is pricing in a best-case scenario. Small catalysts can trigger outsized drops.</li>
-                  <li><span className="font-medium text-black/70">Rising vol + price at highs:</span> Distribution pattern. Volatility expanding near tops suggests large players are selling. Take partial profits.</li>
-                  <li><span className="font-medium text-black/70">Vol &gt;1.5x its median for extended periods:</span> Persistent high vol erodes compounding. If a position stays volatile for weeks, reassess your conviction level.</li>
-                </ul>
-              </div>
-            </div>
-            <p className="text-xs text-black/35 mt-4 italic leading-relaxed">
-              Volatility signals work best as a complement to fundamental analysis, not a replacement. They tell you about market sentiment and positioning, not intrinsic value. Always size positions inversely to volatility — smaller positions in high-vol names.
-            </p>
-          </Card>
+          <BottomScoreMethodologyCard />
+          <VolSignalGuideCard mode="holdings" />
         </>
       )}
     </div>
