@@ -28,7 +28,7 @@ export const HOLDINGS: Holding[] = [
   // RKLB sold in full 2026-08-11 @ $77.61 (realized +$40.91)
   // RVI sold in full 2026-08-14 @ $28.51 (realized -$11.50)
   { symbol: 'VST',  qty: 1.26874,    category: 'High Conviction', costBasis: 136.99 },
-  { symbol: 'SPCX', qty: 2.465188,   category: 'Conviction Core', costBasis: 133.05 },
+  { symbol: 'SPCX', qty: 2.679045,   category: 'Conviction Core', costBasis: 133.63 },
 ];
 
 // Category display order and badge variants
