@@ -7,8 +7,11 @@ export interface IndicatorSpec {
   key: string; id: string; name: string; axis: Axis; family: string;
   transform: Transform; center: number; scale: number; direction: number;
   staleDays: number; units: string; role: string;
+  // Months of lag applied to the reading: the yield curve leads growth by about a year, so the
+  // outlook scores the slope from 12 months ago, not today's. Staleness is still judged on the latest obs.
+  lagMonths?: number;
 }
-const spec = (key: string, id: string, name: string, axis: Axis, family: string, transform: Transform, center: number, scale: number, direction = 1, staleDays = 100, units = '%', role = 'Coincident'): IndicatorSpec => ({ key, id, name, axis, family, transform, center, scale, direction, staleDays, units, role });
+const spec = (key: string, id: string, name: string, axis: Axis, family: string, transform: Transform, center: number, scale: number, direction = 1, staleDays = 100, units = '%', role = 'Coincident', lagMonths?: number): IndicatorSpec => ({ key, id, name, axis, family, transform, center, scale, direction, staleDays, units, role, ...(lagMonths ? { lagMonths } : {}) });
 // Family averages prevent several correlated labor/price series from dominating.
 // Thresholds are transparent heuristics; no probabilities or fitted confidence.
 export const ECONOMIC_INDICATORS: IndicatorSpec[] = [
@@ -48,8 +51,8 @@ export const ECONOMIC_INDICATORS: IndicatorSpec[] = [
   spec('chinaProduction', 'CHNPRINTO01IXPYM', 'China industrial production (prior year = 100)', 'context', 'global', 'level', 0, 1, 1, 150, 'index, prior year = 100'),
   // Outlook-only inputs: they say nothing about where the economy IS, only where it tends to go next.
   // Together with the growth/financial rows tagged 'Leading' they form the forward-looking axis.
-  spec('curveSlope', 'T10Y2Y', 'Yield curve slope (10Y minus 2Y)', 'outlook', 'curve', 'level', 0, 1, 1, 10, 'pp', 'Leading'),
-  spec('curve10y3m', 'T10Y3M', 'Yield curve slope (10Y minus 3M)', 'outlook', 'curve', 'level', 0, 1, 1, 10, 'pp', 'Leading'),
+  spec('curveSlope', 'T10Y2Y', 'Yield curve slope a year ago (10Y minus 2Y)', 'outlook', 'curve', 'level', 0, 1, 1, 10, 'pp', 'Leading', 12),
+  spec('curve10y3m', 'T10Y3M', 'Yield curve slope a year ago (10Y minus 3M)', 'outlook', 'curve', 'level', 0, 1, 1, 10, 'pp', 'Leading', 12),
   spec('leadingIndex', 'USALOLITONOSTSAM', 'OECD composite leading indicator', 'outlook', 'composite', 'level', 100, 1, 1, 100, 'index, 100 = trend', 'Leading'),
   spec('coreCapexOrders', 'NEWORDER', 'Core capital-goods orders', 'outlook', 'orders', 'yoy', 0, 5, 1, 100, '% YoY', 'Leading'),
   spec('consumerSentiment', 'UMCSENT', 'Consumer sentiment', 'outlook', 'sentiment', 'yoy', 0, 15, 1, 100, '% YoY', 'Leading'),
@@ -141,7 +144,8 @@ export function assessEconomy(data: Record<string, Observation[]>, asOf = new Da
     const last = clean.at(-1);
     const monthly = monthlyMean(clean);
     const transformed = s.transform === 'level' ? monthly : percentChange(monthly, s.transform === 'yoy' ? 12 : 3, s.transform === 'annualized');
-    const current = transformed.at(-1);
+    const latest = transformed.at(-1);
+    const current = s.lagMonths && latest ? transformed.find(p => p.date.slice(0, 7) === monthOffset(latest.date, -s.lagMonths!)) : latest;
     const previous = current ? transformed.find(p => p.date.slice(0, 7) === monthOffset(current.date, -3)) : undefined;
     const age = last ? (Date.parse(asOf) - Date.parse(last.date)) / 86400000 : Infinity;
     const status: Evidence['status'] = !last ? 'missing' : age > s.staleDays ? 'stale' : !current || !previous ? 'insufficient' : 'available';
@@ -153,11 +157,13 @@ export function assessEconomy(data: Record<string, Observation[]>, asOf = new Da
       status, source: `https://fred.stlouisfed.org/series/${s.id}` };
   });
   const summarize = (axis: Axis | 'leading'): AxisSummary => {
+    // On the borrowing axis a positive score means "tight"; as a leading signal for growth that is bad news, so it enters the outlook with its sign flipped.
+    const sign = (e: Evidence) => axis === 'leading' && e.axis === 'financial' ? -1 : 1;
     const rows = evidence.filter(e => axis === 'leading' ? isLeading(e) : e.axis === axis);
     const families = Array.from(new Set(rows.map(e => e.family)));
     const groups = families.map(f => rows.filter(e => e.family === f && e.score !== null));
-    const scores = groups.flatMap(g => { const v = average(g.map(e => e.score!)); return v === null ? [] : [v]; });
-    const momentum = groups.flatMap(g => { const v = average(g.map(e => e.momentum!)); return v === null ? [] : [v]; });
+    const scores = groups.flatMap(g => { const v = average(g.map(e => e.score! * sign(e))); return v === null ? [] : [v]; });
+    const momentum = groups.flatMap(g => { const v = average(g.map(e => e.momentum! * sign(e))); return v === null ? [] : [v]; });
     return { score: average(scores), momentum: average(momentum), coverage: rows.filter(e => e.score !== null).length / rows.length,
       families: scores.length, totalFamilies: families.length, disagreement: scores.some(v => v > .15) && scores.some(v => v < -.15) };
   };
