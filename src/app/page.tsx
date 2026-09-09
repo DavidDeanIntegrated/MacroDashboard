@@ -172,7 +172,7 @@ export default function BriefingPage() {
               {regime ? `${regime.latestInflation?.toFixed(1) ?? '—'}%` : '—'} <span className="text-sm text-black/40">{trendArrow(regime?.inflationTrend)}</span>
             </p>
             <p className="text-[11px] text-black/40">
-              <span className="capitalize">{regime?.inflationTrend ?? ''}</span>{regime ? ' · CPI, not the PCE policy target' : ''}
+              {regime ? <>3-mo trend <span className="capitalize">{regime.inflationTrend}</span> (CPI + PCE blend) · Fed targets PCE</> : ''}
             </p>
           </div>
           <div className="rounded-xl bg-white/60 border border-black/[0.05] p-3">
@@ -180,7 +180,7 @@ export default function BriefingPage() {
             <p className="text-lg font-semibold tabular-nums text-black/80">
               {regime ? `${regime.latestUnemployment?.toFixed(1) ?? '—'}%` : '—'} <span className="text-sm text-black/40">{trendArrow(regime?.growthTrend)}</span>
             </p>
-            <p className="text-[11px] text-black/40 capitalize">{regime?.growthTrend ? `growth ${regime.growthTrend}` : ''}</p>
+            <p className="text-[11px] text-black/40">{regime?.growthTrend ? <>Growth trend <span className="capitalize">{regime.growthTrend}</span> (8-series blend)</> : ''}</p>
           </div>
           <div className="rounded-xl bg-white/60 border border-black/[0.05] p-3">
             <p className="text-[10px] uppercase tracking-wider text-black/35"><Term k="inversion">Yield Curve (10Y–2Y)</Term></p>

@@ -457,7 +457,7 @@ function getCompoundAlerts(
     alerts.push({
       tag: 'Note',
       variant: 'blue',
-      text: 'Crypto is overweight outside a Goldilocks backdrop — size the satellite carefully given liquidity risk.',
+      text: 'Crypto is overweight outside a growing, contained-inflation season — size the satellite carefully given liquidity risk.',
       why: 'Crypto is the portfolio\'s most liquidity-sensitive asset — it thrives when money is cheap and risk appetite is high, and falls hardest when conditions tighten. Holding more than target is fine in a benign (Goldilocks) season; in any other regime, the same overweight carries meaningfully more downside risk.',
     });
   }
@@ -474,7 +474,7 @@ function getRegimeSignals(
 
   switch (regime) {
     case 'goldilocks':
-      signals.push({ text: 'Favorable for broad equity exposure (SPY, QQQ)', sentiment: 'positive', explanation: 'In a Goldilocks regime, moderate growth and contained inflation create ideal conditions for equities. Broad index funds capture upside without excessive sector concentration risk.' });
+      signals.push({ text: 'Favorable for broad equity exposure (SPY, QQQ)', sentiment: 'positive', explanation: 'When the economy is growing with inflation contained (the classic "Goldilocks" season), moderate growth and contained inflation create ideal conditions for equities. Broad index funds capture upside without excessive sector concentration risk.' });
       signals.push({ text: 'Growth stocks likely outperform value', sentiment: 'positive', explanation: 'Low and stable interest rates keep discount rates low, boosting the present value of future earnings. This disproportionately benefits high-growth companies with cash flows further out in the future.' });
       signals.push({ text: 'Credit spreads likely to tighten — corporate bonds attractive', sentiment: 'positive', explanation: 'When the economy is growing steadily without inflation pressure, corporate default risk falls. Investors accept lower premiums for credit risk, pushing spreads tighter and bond prices higher.' });
       break;
@@ -485,7 +485,7 @@ function getRegimeSignals(
       signals.push({ text: 'Long-duration treasuries face headwinds (TLT)', sentiment: 'negative', explanation: 'Long bonds have the highest sensitivity to interest rate changes. In a rising rate environment, TLT can lose 15-25% in a single year as yields increase and bond prices fall inversely.' });
       break;
     case 'stagflation':
-      signals.push({ text: 'Defensive positioning recommended — consider reducing equity exposure', sentiment: 'negative', explanation: 'Stagflation is the worst environment for traditional portfolios. Both stocks and bonds can decline simultaneously as inflation prevents the Fed from cutting rates to support growth.' });
+      signals.push({ text: 'Defensive positioning recommended — consider reducing equity exposure', sentiment: 'negative', explanation: 'Weak growth with inflation running warm (stagflation) is the worst environment for traditional portfolios. Both stocks and bonds can decline simultaneously as inflation prevents the Fed from cutting rates to support growth.' });
       signals.push({ text: 'Gold and commodities as inflation hedge (GLD)', sentiment: 'positive', explanation: 'Gold has historically outperformed during stagflation because it holds value when currencies weaken and real rates are negative. It is one of the few assets that benefits from both inflation and fear.' });
       signals.push({ text: 'Avoid long-duration bonds and high-growth equities', sentiment: 'negative', explanation: 'High inflation erodes the fixed coupons of long bonds, while rising costs and slowing revenue crush high-multiple growth stocks. Both ends of the duration spectrum suffer.' });
       signals.push({ text: 'Utilities and consumer staples may provide relative stability', sentiment: 'neutral', explanation: 'Defensive sectors with pricing power and stable demand hold up better than the broad market. Consumers still buy electricity and groceries even in downturns, providing resilient cash flows.' });

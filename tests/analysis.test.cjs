@@ -117,3 +117,22 @@ test('Portfolio rejects zero or stale quotes without emitting false allocation w
   assert.equal(validQuote(100,100,null),false);
   assert.equal(validQuote(100,100,new Date().toISOString()),true);
 });
+
+const { INDICATOR_ZONES, trendOverDays, changeTone } = require('../src/lib/indicator-zones.ts');
+test('Level zones: a 4.78% 10-year reads Restrictive regardless of trend; curve steepening is good news', () => {
+  assert.equal(INDICATOR_ZONES.DGS10(4.78).regime, 'Restrictive');
+  assert.equal(INDICATOR_ZONES.DGS10(4.78).tone, 'bearish');
+  assert.equal(INDICATOR_ZONES.T10Y2Y(0.6).tone, 'bullish');
+  assert.equal(changeTone(0.3, true), 'up');   // spread widening = green
+  assert.equal(changeTone(0.3, false), 'down'); // yield rising = red
+  assert.equal(changeTone(0.05, false), 'neutral');
+});
+test('One-month trend uses the calendar, not the last three points', () => {
+  const daily = Array.from({ length: 45 }, (_, i) => ({ date: new Date(Date.UTC(2026, 6, 1 + i)).toISOString().slice(0, 10), value: 4.3 + i * 0.012 }));
+  const t = trendOverDays(daily, 30, 0.15);
+  assert.equal(t.trend, 'rising');                 // +0.36 over a month, even though the last 3 days moved only 0.024
+  assert.equal(t.from, '2026-07-15');
+  const monthly = [{ date: '2026-05-01', value: 4.2 }, { date: '2026-06-01', value: 4.2 }, { date: '2026-07-01', value: 4.25 }];
+  assert.equal(trendOverDays(monthly, 30, 0.15).trend, 'flat');
+  assert.equal(trendOverDays([{ date: '2026-07-01', value: 1 }], 30).from, null);
+});

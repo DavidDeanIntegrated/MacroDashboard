@@ -2,6 +2,7 @@
 
 import { EconomicEvidence } from '@/components/EconomicAssessment';
 import { percentChange } from '@/lib/time-series';
+import { zoneSignal, HIGHER_IS_BETTER, changeTone } from '@/lib/indicator-zones';
 import type { EconomicAssessment as Assessment } from '@/lib/economy';
 
 import { useState, useEffect, useRef } from 'react';
@@ -68,16 +69,7 @@ const periodMap: Record<ChartPeriod, number> = {
 // signal. For everything else, a rising value is treated as negative (the
 // default "up = bad" convention used for VIX, MOVE, HY spread, unemployment,
 // CPI, initial claims, etc.).
-const HIGHER_IS_BETTER: Record<string, boolean> = {
-  T10Y2Y: true, // un-inverting yield curve
-  USALOLITONOSTSAM: true, // LEI
-  UMCSENT: true, // consumer sentiment
-  PERMIT: true, // building permits
-  MANEMP: true, // manufacturing employment (YoY growth)
-  M2SL: true, // M2 money supply (YoY growth)
-  COREPCE: false, // rising core inflation pressures the Fed to stay tight
-  T10YIE: false, // rising inflation expectations
-};
+// HIGHER_IS_BETTER and the level zones live in lib/indicator-zones so the Guide page reads the same table.
 
 // Convert a monthly level series into year-over-year % change (index offset of 12
 // works because these FRED series are strictly monthly with no gaps).
@@ -117,122 +109,56 @@ const INDICATOR_INFO: Record<string, IndicatorInfo> = {
     label: FRED_SERIES_NAMES['FEDFUNDS'],
     description:
       'The interest rate at which banks lend to each other overnight. Set by the Federal Reserve, it is the most important lever for monetary policy — rippling through mortgages, corporate debt, and all borrowing costs.',
-    regimeSignal: (v) => {
-      if (v < 1)
-        return { regime: 'Crisis / Deflation', badge: 'blue', explanation: 'Near-zero rates signal emergency conditions. The Fed has exhausted conventional tools and may be using QE.' };
-      if (v < 2.5)
-        return { regime: 'Goldilocks', badge: 'green', explanation: 'Moderately low rates support asset valuations and economic growth without overheating.' };
-      if (v < 4.5)
-        return { regime: 'Reflation', badge: 'orange', explanation: 'Rates are elevated — the Fed is tightening to combat inflation. Watch for yield curve inversion and slowing growth.' };
-      return { regime: 'Restrictive / Stagflation risk', badge: 'red', explanation: 'Very high rates compress multiples and raise recession risk. This level historically precedes downturns.' };
-    },
+    regimeSignal: zoneSignal('FEDFUNDS'),
   },
   DGS2: {
     key: 'DGS2',
     label: FRED_SERIES_NAMES['DGS2'],
     description:
       'The yield on 2-year government bonds. This is the most rate-sensitive Treasury and closely tracks expectations for near-term Fed policy. It leads the curve — when the 2Y rises above the 10Y, the curve inverts.',
-    regimeSignal: (v) => {
-      if (v < 1)
-        return { regime: 'Deflation / Crisis', badge: 'blue', explanation: 'Ultra-low short rates reflect expectations of prolonged easing or recession.' };
-      if (v < 3)
-        return { regime: 'Goldilocks', badge: 'green', explanation: 'Moderate 2Y yield suggests the market expects stable, accommodative policy.' };
-      if (v < 4.5)
-        return { regime: 'Reflation', badge: 'orange', explanation: 'Elevated 2Y yield shows the market pricing in more hikes or sustained tightness.' };
-      return { regime: 'Stagflation risk', badge: 'red', explanation: 'Very high short-term yields signal aggressive tightening expectations. Often precedes inversions and recessions.' };
-    },
+    regimeSignal: zoneSignal('DGS2'),
   },
   DGS10: {
     key: 'DGS10',
     label: FRED_SERIES_NAMES['DGS10'],
     description:
       'The benchmark "risk-free" rate used to discount nearly every financial asset. Reflects long-term growth and inflation expectations. When it rises, equity multiples compress; when it falls, bonds rally.',
-    regimeSignal: (v) => {
-      if (v < 1.5)
-        return { regime: 'Deflation / Crisis', badge: 'blue', explanation: 'Ultra-low long rates signal a flight to safety. Investors accept near-zero returns for security.' };
-      if (v < 3.5)
-        return { regime: 'Goldilocks', badge: 'green', explanation: 'Moderate long rates support equity valuations with a reasonable discount rate.' };
-      if (v < 4.5)
-        return { regime: 'Reflation', badge: 'orange', explanation: 'Elevated yields reflect inflation expectations or rising term premium. Compressing equity multiples.' };
-      return { regime: 'Restrictive', badge: 'red', explanation: 'High long rates compete with equities for capital and raise government borrowing costs. Unsustainable above 5% for long.' };
-    },
+    regimeSignal: zoneSignal('DGS10'),
   },
   T10Y2Y: {
     key: 'T10Y2Y',
     label: FRED_SERIES_NAMES['T10Y2Y'],
     description:
       'The yield curve slope — the difference between 10Y and 2Y yields. The single most reliable recession predictor. Every U.S. recession since 1955 was preceded by an inversion. The un-inversion is when recession typically starts.',
-    regimeSignal: (v) => {
-      if (v < -0.3)
-        return { regime: 'Recession warning', badge: 'red', explanation: 'Deeply inverted curve. Historically signals recession within 6-24 months. Markets may not have priced in the risk yet.' };
-      if (v < 0.1)
-        return { regime: 'Late cycle', badge: 'orange', explanation: 'Flat or slightly inverted curve. The economy is at a turning point — either heading into slowdown or the Fed is about to pivot.' };
-      if (v < 1.5)
-        return { regime: 'Goldilocks', badge: 'green', explanation: 'Normal positive slope. Banks can lend profitably, credit flows freely, and growth expectations are healthy.' };
-      return { regime: 'Early recovery', badge: 'blue', explanation: 'Very steep curve typically occurs after Fed cuts — signals early recovery from recession. Bullish for cyclicals and banks.' };
-    },
+    regimeSignal: zoneSignal('T10Y2Y'),
   },
   CPIYOY: {
     key: 'CPIYOY',
     label: 'CPI YoY Inflation',
     description:
       'The rate at which consumer prices are rising. The Fed targets 2%. Too high erodes purchasing power and forces tightening; too low (deflation) signals weak demand and can spiral into a debt crisis.',
-    regimeSignal: (v) => {
-      if (v < 0)
-        return { regime: 'Deflation / Depression', badge: 'blue', explanation: 'Falling prices signal demand collapse. Consumers delay purchases, revenues shrink, debt burdens increase in real terms.' };
-      if (v < 2.5)
-        return { regime: 'Goldilocks', badge: 'green', explanation: 'Inflation in the Fed\'s comfort zone. No pressure to tighten. Supports steady growth and equity multiples.' };
-      if (v < 4)
-        return { regime: 'Reflation', badge: 'orange', explanation: 'Inflation above target but manageable. The Fed is likely tightening. Favors commodities and value over growth.' };
-      return { regime: 'Stagflation risk', badge: 'red', explanation: 'High inflation forces aggressive tightening, compresses margins, and erodes real returns. Historically very bearish for 60/40 portfolios.' };
-    },
+    regimeSignal: zoneSignal('CPIYOY'),
   },
   UNRATE: {
     key: 'UNRATE',
     label: FRED_SERIES_NAMES['UNRATE'],
     description:
       'A lagging indicator — by the time unemployment rises meaningfully, recession has usually begun. The Sahm Rule triggers when the 3-month average rises 0.50% above its 12-month low. See the Sahm Rule panel on the chart below for the current 12-month low and trigger status.',
-    regimeSignal: (v) => {
-      if (v > 8)
-        return { regime: 'Depression / Crisis', badge: 'red', explanation: 'Severe labor market deterioration. Requires massive fiscal stimulus. Historically, equities are near bottoms at these levels.' };
-      if (v > 5.5)
-        return { regime: 'Recession', badge: 'orange', explanation: 'Unemployment at recessionary levels. The Fed is likely cutting aggressively. Defensive positioning and duration tend to outperform.' };
-      if (v > 4.3)
-        return { regime: 'Late cycle / Softening', badge: 'neutral', explanation: 'Labor market softening from a strong base. Watch for Sahm Rule trigger. The cycle may be turning.' };
-      return { regime: 'Expansion', badge: 'green', explanation: 'Tight labor market supports consumer spending and wage growth. Favorable for risk assets when paired with moderate inflation.' };
-    },
+    regimeSignal: zoneSignal('UNRATE'),
   },
   BAMLH0A0HYM2: {
     key: 'BAMLH0A0HYM2',
     label: FRED_SERIES_NAMES['BAMLH0A0HYM2'],
     description:
       'The extra yield investors demand for risky corporate bonds over Treasuries. Measures credit stress and risk appetite in real time. Bond markets often lead equities — widening spreads are an early warning.',
-    regimeSignal: (v) => {
-      if (v > 8)
-        return { regime: 'Crisis / Panic', badge: 'red', explanation: 'Credit markets freezing. Companies can\'t refinance, defaults spike. The Fed typically intervenes with emergency facilities at these levels.' };
-      if (v > 5)
-        return { regime: 'Stress / Bear', badge: 'orange', explanation: 'Growing risk aversion. Weaker companies struggle to borrow. Often precedes equity sell-offs. Reduce credit exposure.' };
-      if (v > 3.5)
-        return { regime: 'Neutral', badge: 'neutral', explanation: 'Credit conditions are normal. Not signaling stress, but not excessively loose either.' };
-      return { regime: 'Risk-on / Bull', badge: 'green', explanation: 'Very tight spreads indicate strong risk appetite and easy credit. Supportive of equity bull markets, but can signal complacency.' };
-    },
+    regimeSignal: zoneSignal('BAMLH0A0HYM2'),
   },
   VIXCLS: {
     key: 'VIXCLS',
     label: FRED_SERIES_NAMES['VIXCLS'],
     description:
       'The CBOE Volatility Index measures 30-day expected volatility of the S&P 500, derived from options prices. Known as the "fear gauge" — it spikes during panics and crashes. Historically, VIX above 40 has coincided with major market bottoms.',
-    regimeSignal: (v) => {
-      if (v > 40)
-        return { regime: 'Extreme Fear / Capitulation', badge: 'red', explanation: 'VIX above 40 signals panic selling and extreme fear. Historically rare and often marks major bottoms. Contrarian buy signal for long-term investors.' };
-      if (v > 30)
-        return { regime: 'High Fear', badge: 'orange', explanation: 'Elevated fear — markets pricing in significant downside risk. Often seen during corrections. Conditions may be ripe for a reversal if catalysts emerge.' };
-      if (v > 20)
-        return { regime: 'Elevated Caution', badge: 'neutral', explanation: 'Above-average volatility expectations. Market is uncertain but not panicking. Normal during mild pullbacks or ahead of major events.' };
-      if (v > 12)
-        return { regime: 'Calm / Normal', badge: 'green', explanation: 'Low volatility reflects complacency and confidence. Supportive of steady equity gains, but extremely low VIX can precede sharp corrections.' };
-      return { regime: 'Extreme Complacency', badge: 'blue', explanation: 'VIX below 12 signals extreme complacency. Markets are pricing in near-zero risk. Historically, this level precedes volatility spikes and corrections.' };
-    },
+    regimeSignal: zoneSignal('VIXCLS'),
   },
   USALOLITONOSTSAM: {
     key: 'USALOLITONOSTSAM',
@@ -626,7 +552,7 @@ export default function MacroPage() {
           </div>
           <div className="text-left sm:text-right space-y-2 shrink-0 sm:ml-8">
             <div>
-              <p className="text-xxs text-black/35 uppercase">Inflation (YoY)</p>
+              <p className="text-xxs text-black/35 uppercase">CPI inflation (YoY)</p>
               <p className="text-lg font-semibold tabular-nums text-black/85">
                 {(regime.latestInflation === null ? '—' : formatPercent(regime.latestInflation))}
               </p>
@@ -647,32 +573,32 @@ export default function MacroPage() {
           label="Fed Funds Rate"
           value={`${(Number.isFinite(getLatest(data.fedFunds)) ? getLatest(data.fedFunds).toFixed(2) : "—")}%`}
           change={formatPercent(getChange(data.fedFunds))}
-          trend={getChange(data.fedFunds) > 0 ? 'up' : getChange(data.fedFunds) < 0 ? 'down' : 'neutral'}
+          trend={changeTone(getChange(data.fedFunds), false, 0)}
         />
         <MetricCard
           label="10Y Treasury"
           value={`${(Number.isFinite(getLatest(data.t10y)) ? getLatest(data.t10y).toFixed(2) : "—")}%`}
           change={formatPercent(getChange(data.t10y))}
-          trend={getChange(data.t10y) > 0 ? 'up' : 'down'}
+          trend={changeTone(getChange(data.t10y), false, 0.02)}
         />
         <MetricCard
           label="CPI YoY"
           value={formatPercent(getLatest(data.cpiYoY))}
           change={formatPercent(getChange(data.cpiYoY))}
           changeLabel="vs prev"
-          trend={getChange(data.cpiYoY) > 0 ? 'up' : 'down'}
+          trend={changeTone(getChange(data.cpiYoY), false, 0.05)}
         />
         <MetricCard
           label="HY Spread"
           value={`${(Number.isFinite(getLatest(data.highYieldSpread)) ? getLatest(data.highYieldSpread).toFixed(2) : "—")}%`}
           change={formatPercent(getChange(data.highYieldSpread))}
-          trend={getChange(data.highYieldSpread) > 0 ? 'up' : 'down'}
+          trend={changeTone(getChange(data.highYieldSpread), false, 0.02)}
         />
         <MetricCard
           label="VIX"
           value={(Number.isFinite(getLatest(data.vix)) ? getLatest(data.vix).toFixed(1) : "—")}
           change={formatNumber(getChange(data.vix), { decimals: 1 })}
-          trend={getChange(data.vix) > 0 ? 'up' : 'down'}
+          trend={changeTone(getChange(data.vix), false, 0.3)}
         />
       </div>
 
