@@ -364,7 +364,13 @@ export default function PortfolioPage() {
       </Card>
 
       {/* All-Weather Strategy — promoted above the positions table */}
-      <Card><CardTitle>Position source and risk coverage</CardTitle><p className="text-sm mt-2">{portfolio.source}. Quantities last maintained: {portfolio.holdingsAsOf}. Valuation fetched: {portfolio.valuationAsOf}. Manual mode requires recording fills in the holdings file. Alpaca sync covers only that account. Historical portfolio reconstruction is unavailable in broker mode without a transaction ledger.</p><Link href="/risk" className="text-accent-blue">Inspect total portfolio risk, factor exposures, and stress scenarios →</Link></Card>
+      <Card>
+        <CardTitle>Where these numbers come from</CardTitle>
+        <p className="text-sm text-black/55 mt-2 leading-relaxed max-w-3xl">
+          Share counts are kept by hand in the holdings file (last reconciled <span className="font-medium text-black/70">{portfolio.holdingsAsOf}</span>); prices are live from the broker feed (fetched {new Date(portfolio.valuationAsOf).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}). After you place a trade, the counts here don&apos;t change until the file is updated — live prices alone can&apos;t see a fill.
+        </p>
+        <Link href="/risk" className="inline-block mt-3 text-sm font-medium text-accent-blue hover:text-accent-blue/80">See what drives this portfolio&apos;s risk and how it would fare in a downturn →</Link>
+      </Card>
       <AllWeatherSection
         positions={portfolio.positions}
         portfolioValue={portfolio.portfolioValue}

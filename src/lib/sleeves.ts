@@ -48,6 +48,10 @@ export interface SubSleeveTarget {
   targetMin: number;
   targetMax: number;
   priority: string;
+  /** Status flips to "over" only above this weight (defaults to targetMax). Used for rows whose trim rule sits above their build target. */
+  overAt?: number;
+  /** Shown for context only — the position is governed by its own sleeve and rules, not by the equity sub-sleeve engine. */
+  displayOnly?: boolean;
 }
 
 export const SUB_SLEEVE_TARGETS: SubSleeveTarget[] = [
@@ -56,6 +60,10 @@ export const SUB_SLEEVE_TARGETS: SubSleeveTarget[] = [
   { label: 'VXUS (International)', symbols: ['VXUS'], targetMin: 5.5, targetMax: 6.5, priority: 'Hold / Buy if under' },
   { label: 'Quality Compounders', symbols: ['NVDA', 'TSM', 'MSFT', 'PLTR'], targetMin: 14, targetMax: 16, priority: 'Sell if >17%, Buy if <13%' },
   { label: 'High Conviction', symbols: ['VST'], targetMin: 0, targetMax: 4, priority: 'Sell first if over' },
+  // Added 2026-09-09 at David's request so the equity view is complete. SPCX is
+  // still its own Conviction Core sleeve: the rebalance engine looks sub-sleeves up
+  // by label and never touches this row — its rules live in CONVICTION_CORE.
+  { label: 'Conviction Core (SPCX)', symbols: ['SPCX'], targetMin: 8, targetMax: 10, overAt: 15, displayOnly: true, priority: 'Own sleeve · new money only · trim only above 15%' },
 ];
 
 export const REAL_ASSET_SUB_SLEEVE_TARGETS: SubSleeveTarget[] = [

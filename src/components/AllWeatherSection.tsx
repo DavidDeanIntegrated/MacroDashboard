@@ -366,7 +366,7 @@ function SubSleeveBreakdownCard({
           </thead>
           <tbody>
             {subSleeves.map((sub) => {
-              const status = getSleeveStatus(sub.weight, sub.targetMin, sub.targetMax);
+              const status = getSleeveStatus(sub.weight, sub.targetMin, sub.overAt ?? sub.targetMax);
               const isOpen = expanded === sub.label;
               const isExpandable = sub.members.length > 0;
               return (
@@ -387,7 +387,7 @@ function SubSleeveBreakdownCard({
                         </svg>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm font-medium text-black/75">{sub.label}</td>
+                    <td className="px-4 py-3 text-sm font-medium text-black/75">{sub.label}{sub.displayOnly && <span className="ml-2 text-[10px] font-normal text-black/40 uppercase tracking-wider">own sleeve</span>}</td>
                     <td className="px-4 py-3 text-xs text-black/50">{sub.members.length || sub.symbols.length} {(sub.members.length || sub.symbols.length) === 1 ? 'name' : 'names'}</td>
                     <td className="px-4 py-3 text-sm tabular-nums text-black/75">{sub.weight.toFixed(1)}%</td>
                     <td className="px-4 py-3 text-sm tabular-nums text-black/50">{sub.targetMin}–{sub.targetMax}%</td>
@@ -575,7 +575,7 @@ export function AllWeatherSection({
       {/* ─── Sub-Sleeve Equity Breakdown ─── */}
       <SubSleeveBreakdownCard
         title="Equity Sub-Sleeve Breakdown"
-        subtitle="Internal balance within the 48–53% core-equities allocation (SPCX lives in its own Conviction Core sleeve) · click a row to see its holdings"
+        subtitle="Internal balance within the 48–53% core-equities allocation, plus SPCX for the full equity picture (it stays in its own 8–10% Conviction Core sleeve and is not counted in the 48–53%) · click a row to see its holdings"
         subSleeves={subSleeves}
         expanded={expandedSubSleeve}
         setExpanded={setExpandedSubSleeve}

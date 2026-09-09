@@ -1,6 +1,6 @@
 'use client';
 
-import { EconomicAssessment } from '@/components/EconomicAssessment';
+import { EconomicEvidence } from '@/components/EconomicAssessment';
 import { percentChange } from '@/lib/time-series';
 import type { EconomicAssessment as Assessment } from '@/lib/economy';
 
@@ -619,8 +619,8 @@ export default function MacroPage() {
               {regime.description}
             </p>
             <div className="max-w-xl">
-              <Explainer title="How is this regime determined?">
-                <p>Growth and inflation combine family-balanced evidence from demand, labor, production, housing, output, and prices. The financial-conditions axis separately tracks credit, lending, real yields, and the dollar. Levels and momentum are distinct; missing and stale inputs are excluded. See the evidence table for dates, coverage, and thresholds.</p>
+              <Explainer title="How is this regime determined — and what's the evidence?">
+                <EconomicEvidence assessment={data.assessment} />
               </Explainer>
             </div>
           </div>
@@ -640,8 +640,6 @@ export default function MacroPage() {
           </div>
         </div>
       </Card>
-
-      <EconomicAssessment assessment={data.assessment} />
 
       {/* Key metrics row */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">

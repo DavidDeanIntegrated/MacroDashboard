@@ -51,7 +51,7 @@ test('Economic narrative and trend agree; inflation level does not determine mom
   const data=economicData();
   data.cpi=monthly(32,i=>100*Math.exp(.001*i+.00005*i*i));
   data.coreCpi=data.cpi; data.corePce=data.cpi; data.pce=data.cpi;
-  const a=assessEconomy(data,'2026-08-31'); assert.equal(a.inflationTrend,'rising'); assert.match(a.description,/inflation pressure is rising/); assert.ok(!a.description.includes('cooling'));
+  const a=assessEconomy(data,'2026-08-31'); assert.equal(a.inflationTrend,'rising'); assert.match(a.description,/inflation is [a-z' ]+ and building/); assert.ok(!a.description.includes('easing'));
 });
 test('Future observations cannot influence an as-of assessment', () => {
   const data=economicData(), base=assessEconomy(data,'2026-08-31');

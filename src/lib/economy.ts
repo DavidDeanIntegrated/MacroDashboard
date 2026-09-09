@@ -61,6 +61,28 @@ export interface EconomicAssessment {
   axes: Record<'growth' | 'inflation' | 'financial', AxisSummary>;
   evidence: Evidence[]; caveats: string[]; changes: { name: string; change: number; date: string }[];
 }
+export type CoreAxis = 'growth' | 'inflation' | 'financial';
+// Plain-English readings of the −1…+1 axis scores, so the UI never has to show a bare number first.
+export function describeLevel(axis: CoreAxis, score: number | null): string {
+  if (score === null) return 'not enough data';
+  if (axis === 'growth') return score > .4 ? 'expanding strongly' : score > .1 ? 'expanding modestly' : score > -.1 ? 'roughly flat' : score > -.4 ? 'contracting modestly' : 'contracting sharply';
+  if (axis === 'inflation') return score > .5 ? 'running hot' : score > .25 ? 'running warm' : score > -.25 ? "near the Fed's target" : 'unusually low';
+  return score > .4 ? 'tight' : score > .15 ? 'somewhat tight' : score > -.15 ? 'neutral' : score > -.4 ? 'somewhat easy' : 'easy';
+}
+export function describeMomentum(axis: CoreAxis, momentum: number | null): string {
+  if (momentum === null) return 'trend unavailable';
+  if (axis === 'growth') return momentum > .1 ? 'picking up' : momentum < -.1 ? 'slowing' : 'steady';
+  if (axis === 'inflation') return momentum > .1 ? 'building' : momentum < -.1 ? 'easing' : 'steady';
+  return momentum > .1 ? 'tightening' : momentum < -.1 ? 'loosening' : 'steady';
+}
+// What each season has historically meant for a portfolio — same voice as the rest of the dashboard.
+export const REGIME_PLAIN: Record<RegimeKey, string> = {
+  goldilocks: 'The economy is growing and inflation is contained — historically the friendliest season for stocks, because profits grow while the Fed has little reason to tighten.',
+  reflation: 'The economy is growing, but inflation is running above where the Fed wants it. Real assets (commodities, gold) and value stocks have historically led; bonds and expensive growth stocks feel rate pressure.',
+  stagflation: "Growth is weak while inflation stays elevated — the hardest season, because the Fed can't cut rates to help growth without feeding inflation. Gold, commodities, and cash have historically held up best.",
+  deflation: "Growth is weak and inflation is contained — a slowdown. This season favors safety: cash earning yield, high-quality bonds, and defensive stocks, since the Fed's usual response (rate cuts) rewards exactly those assets.",
+  unknown: "The evidence doesn't point clearly one way — growth is close to flat, or too few inputs are available to make the call. Treat this as \"wait for more data\" rather than a signal.",
+};
 const average = (v: number[]) => v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
 const clamp = (v: number) => Math.max(-1, Math.min(1, v));
 export function assessEconomy(data: Record<string, Observation[]>, asOf = new Date().toISOString().slice(0, 10)): EconomicAssessment {
@@ -94,7 +116,7 @@ export function assessEconomy(data: Record<string, Observation[]>, asOf = new Da
   const g = axes.growth.score ?? 0, i = axes.inflation.score ?? 0;
   // A neutral zone prevents tiny changes being presented as a decisive regime.
   const regime: RegimeKey = !ready || Math.abs(g) < .1 ? 'unknown' : g > 0 ? i > .25 ? 'reflation' : 'goldilocks' : i > .25 ? 'stagflation' : 'deflation';
-  const labels: Record<RegimeKey, string> = { unknown: 'Mixed / insufficient evidence', goldilocks: 'Expansion / contained inflation', reflation: 'Expansion / inflation pressure', stagflation: 'Weak growth / inflation pressure', deflation: 'Weak growth / contained inflation' };
+  const labels: Record<RegimeKey, string> = { unknown: 'Mixed / not enough evidence', goldilocks: 'Growing, inflation contained', reflation: 'Growing, inflation running warm', stagflation: 'Weak growth, inflation running warm', deflation: 'Weak growth, inflation contained' };
   const inflationTrend = (axes.inflation.momentum ?? 0) > .1 ? 'rising' : (axes.inflation.momentum ?? 0) < -.1 ? 'falling' : 'stable';
   const growthTrend = (axes.growth.momentum ?? 0) > .1 ? 'accelerating' : (axes.growth.momentum ?? 0) < -.1 ? 'decelerating' : 'stable';
   const credit = axes.financial.score === null ? 'unavailable' : axes.financial.score > .15 ? 'restrictive' : axes.financial.score < -.15 ? 'supportive' : 'mixed';
@@ -105,7 +127,8 @@ export function assessEconomy(data: Record<string, Observation[]>, asOf = new Da
   if (Object.values(axes).some(a => a.disagreement)) caveats.push('Indicators disagree within at least one axis; inspect the opposing evidence before interpreting the aggregate.');
   if (evidence.some(e => e.status !== 'available')) caveats.push('Stale, missing, and insufficient series are excluded from the axes; coverage shows what remains.');
   const latestInflation = percentChange(data.cpi ?? []).filter(p => p.date <= asOf).at(-1)?.value ?? null;
-  return { asOf, version: 'economy-v1', regime, label: labels[regime], description: `${labels[regime]}. Growth momentum is ${axes.growth.momentum === null ? 'unavailable' : growthTrend}; inflation pressure is ${axes.inflation.momentum === null ? 'unavailable' : inflationTrend}. Financial conditions are ${credit}.`,
+  const now = `Right now: growth is ${describeLevel('growth', axes.growth.score)} and ${describeMomentum('growth', axes.growth.momentum)}; inflation is ${describeLevel('inflation', axes.inflation.score)} and ${describeMomentum('inflation', axes.inflation.momentum)}; borrowing conditions are ${credit === 'unavailable' ? 'unavailable' : describeLevel('financial', axes.financial.score)}.`;
+  return { asOf, version: 'economy-v1', regime, label: labels[regime], description: `${REGIME_PLAIN[regime]} ${now}`,
     inflationTrend, growthTrend, latestInflation, latestUnemployment: cleanSeries(data.unemployment ?? [], asOf).at(-1)?.value ?? null,
     axes, evidence, caveats, changes: evidence.filter(e => e.status === 'available' && e.change !== null).sort((a, b) => Math.abs(b.momentum ?? 0) - Math.abs(a.momentum ?? 0)).slice(0, 5).map(e => ({ name: e.name, change: e.change!, date: e.date! })) };
 }
