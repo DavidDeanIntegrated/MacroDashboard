@@ -248,6 +248,40 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     term: 'Ex-dividend date',
     def: 'The cutoff for a dividend: you must own the stock BEFORE this date to receive the payment. Buy on or after it and the dividend goes to the previous owner.',
   },
+
+  // ─── Portfolio risk & the economic evidence block ───
+  'variance-share': {
+    term: 'Share of variance',
+    def: 'How much of your portfolio\'s day-to-day swings one holding is responsible for, as a percentage that sums to 100 across all holdings. Compare it to the holding\'s share of your money: a position that is 10% of the portfolio but 30% of the variance is contributing three times its weight to the bumps.',
+  },
+  'factor-beta': {
+    term: 'Factor beta',
+    def: 'How much a holding has historically moved when one outside force moved. A SPY beta of 1.2 means that on days the market rose 1%, this holding rose about 1.2% on average. For yields and credit spreads the unit is percentage points instead of percent.',
+  },
+  'standard-error': {
+    term: '± range (standard error)',
+    def: 'How sure the estimate is. The number after ± is roughly the range the true value could sit in; a ± bigger than the estimate itself means the relationship is too noisy to trust.',
+  },
+  'r-squared': {
+    term: 'R²',
+    def: 'The fraction of a holding\'s moves that one factor explains, from 0 (none) to 1 (all). Below about 0.2 the factor is a minor influence even if the beta looks large.',
+  },
+  'stress-test': {
+    term: 'Stress test',
+    def: 'A what-if: apply an assumed price drop (or rise) to every holding at once and add up the damage in dollars. The shocks are assumptions you can edit, not predictions.',
+  },
+  'look-through': {
+    term: 'Look-through',
+    def: 'Counting what your funds hold as if you owned it directly. If VTI is 30% of your money and Microsoft is 6% of VTI, you own another 1.8% Microsoft through VTI on top of any shares you hold outright.',
+  },
+  'financial-conditions': {
+    term: 'Financial conditions',
+    def: 'How easy or hard it is to borrow money right now, read from credit spreads, bank lending standards, real interest rates, and the dollar. "Tight" conditions slow the economy with a lag even before growth data show it.',
+  },
+  momentum: {
+    term: 'Momentum (3-month change)',
+    def: 'Whether a reading is getting better or worse compared with three months ago. Level tells you where the economy is; momentum tells you which way it is heading.',
+  },
 };
 
 export function glossaryDef(key: string): GlossaryEntry | undefined {

@@ -1,6 +1,6 @@
 'use client';
 
-import { EconomicAssessment } from '@/components/EconomicAssessment';
+import { EconomicEvidence } from '@/components/EconomicAssessment';
 import type { EconomicAssessment as Assessment } from '@/lib/economy';
 
 import Link from 'next/link';
@@ -145,8 +145,6 @@ export default function BriefingPage() {
 
       {(portfolioError || macroError) && <Card><p role="alert" className="text-sm text-accent-red">{[portfolioError, macroError].filter(Boolean).join(' · ')} — suggestions are withheld until the data loads.</p></Card>}
       {!portfolioError && !macroError && refreshWarning && <Card><p role="status" className="text-sm text-accent-orange">Latest refresh failed ({refreshWarning}). Showing the last successful data.</p></Card>}
-      <EconomicAssessment assessment={dashboard?.assessment} />
-      <Link className="block text-accent-blue" href="/risk">Portfolio exposures, scenarios, and research evidence →</Link>
       {/* Regime verdict */}
       <Card className={style.bg}>
         <div className="flex items-start justify-between flex-wrap gap-4">
@@ -156,13 +154,14 @@ export default function BriefingPage() {
               <Badge variant={style.badge}>{regime?.label ?? 'Loading…'}</Badge>
             </div>
             <p className="text-sm text-black/55 leading-relaxed">{regime?.description ?? 'Fetching the latest macro read…'}</p>
-            <Explainer title="How is this regime determined?">
-              <p>The assessment combines growth and inflation evidence across independent families. Financial conditions provide a separate risk overlay. Levels and three-month momentum are reported separately. Missing or stale inputs do not vote; limited coverage or near-neutral growth produces a mixed call. Inspect all inputs below.</p>
+            <Explainer title="How is this regime determined — and what's the evidence?">
+              <EconomicEvidence assessment={dashboard?.assessment} />
             </Explainer>
           </div>
-          <Link href="/macro" className="text-sm font-medium text-accent-blue hover:text-accent-blue/80 shrink-0">
-            Full macro view →
-          </Link>
+          <div className="flex flex-col gap-1.5 shrink-0 text-sm font-medium">
+            <Link href="/macro" className="text-accent-blue hover:text-accent-blue/80">Full macro view →</Link>
+            <Link href="/risk" className="text-accent-blue hover:text-accent-blue/80">How your portfolio would fare →</Link>
+          </div>
         </div>
 
         {/* Driver chips */}
