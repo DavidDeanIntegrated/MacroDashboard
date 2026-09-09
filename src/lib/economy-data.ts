@@ -18,13 +18,20 @@ export async function getEconomicDashboard(asOf?: string) {
     // Bounded concurrency stays well under FRED's 120 req/min. Each failure is independent.
     // Live requests take the full history (the 10Y-2Y explainer scans inversions back to 1976);
     // vintage (asOf) requests are bounded to keep historical validation cheap.
+    // A FRED id used under several keys (e.g. T10Y2Y for the chart and for the outlook) is fetched once.
     const start = asOf ? '1990-01-01' : undefined;
     const entries = Object.entries(series);
-    for (let i = 0; i < entries.length; i += 12) {
-      await Promise.all(entries.slice(i, i + 12).map(async ([key, id]) => {
-        try { data[key] = await getFredSeries(id, start, asOf, undefined, asOf); }
-        catch { data[key] = []; errors[key] = `${id}: unavailable from FRED`; }
+    const ids = Array.from(new Set(entries.map(([, id]) => id)));
+    const fetched: Record<string, Observation[] | null> = {};
+    for (let i = 0; i < ids.length; i += 12) {
+      await Promise.all(ids.slice(i, i + 12).map(async id => {
+        try { fetched[id] = await getFredSeries(id, start, asOf, undefined, asOf); }
+        catch { fetched[id] = null; }
       }));
+    }
+    for (const [key, id] of entries) {
+      data[key] = fetched[id] ?? [];
+      if (fetched[id] === null) errors[key] = `${id}: unavailable from FRED`;
     }
     // Every series failing means FRED itself is unreachable or unconfigured; surface that
     // as a request error (pages show a retry state) rather than an all-empty dashboard.

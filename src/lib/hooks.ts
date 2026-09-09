@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { HoldingsPortfolio } from './holdings';
 import type { FundamentalsScore } from './fundamentals-score';
+import type { EconomicAssessment } from './economy';
 
 interface UseApiOptions {
   refreshInterval?: number; // ms, 0 = no auto-refresh
@@ -118,16 +119,9 @@ export function useYieldCurve() {
   );
 }
 
+// The regime action returns the full economic assessment (today's regime + the outlook).
 export function useMacroRegime() {
-  return useApi<{
-    regime: string;
-    label: string;
-    description: string;
-    inflationTrend: string;
-    growthTrend: string;
-    latestInflation: number | null;
-    latestUnemployment: number | null;
-  }>('/api/fred?action=regime');
+  return useApi<EconomicAssessment>('/api/fred?action=regime');
 }
 
 export function usePortfolio() {

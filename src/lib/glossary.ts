@@ -118,6 +118,14 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     term: 'Leading indicator',
     def: 'An economic statistic that tends to turn BEFORE the overall economy does (building permits, factory orders, the yield curve). The OECD combines several into one index where 100 = long-term trend growth.',
   },
+  'curve-model': {
+    term: 'Yield-curve recession model',
+    def: 'The New York Fed\'s long-running formula that turns the gap between 10-year and 3-month Treasury yields into a probability that a recession begins within the next 12 months. A normal upward-sloping curve gives low odds (a +2 point gap ≈ 4%); a flat curve about 30%; an inverted curve above 50%. It uses published coefficients (Estrella & Trubin, 2006), not anything fitted on this dashboard.',
+  },
+  outlook: {
+    term: 'Economic outlook',
+    def: 'Where the economy is likely heading over the next few quarters, read only from leading indicators (jobless claims, hours, permits, orders, lending standards, the yield curve, the OECD composite, sentiment). It is separate from the regime label, which reads where the economy is today.',
+  },
   'lagging-indicator': {
     term: 'Lagging indicator',
     def: 'A statistic that only moves after the economy has already turned — unemployment is the classic example. By the time it rises clearly, the slowdown usually started months earlier.',

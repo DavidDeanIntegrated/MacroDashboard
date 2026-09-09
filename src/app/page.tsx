@@ -1,6 +1,6 @@
 'use client';
 
-import { EconomicEvidence } from '@/components/EconomicAssessment';
+import { EconomicEvidence, EconomicOutlook } from '@/components/EconomicAssessment';
 import type { EconomicAssessment as Assessment } from '@/lib/economy';
 
 import Link from 'next/link';
@@ -157,6 +157,7 @@ export default function BriefingPage() {
             <Explainer title="How is this regime determined — and what's the evidence?">
               <EconomicEvidence assessment={dashboard?.assessment} />
             </Explainer>
+            <EconomicOutlook assessment={dashboard?.assessment} />
           </div>
           <div className="flex flex-col gap-1.5 shrink-0 text-sm font-medium">
             <Link href="/macro" className="text-accent-blue hover:text-accent-blue/80">Full macro view →</Link>
