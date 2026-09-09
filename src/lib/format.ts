@@ -4,6 +4,7 @@ export function formatCurrency(
   value: number,
   options?: { compact?: boolean; decimals?: number }
 ): string {
+  if (!Number.isFinite(value)) return '—';
   const { compact = false, decimals } = options || {};
 
   if (compact) {
@@ -22,6 +23,7 @@ export function formatCurrency(
 }
 
 export function formatPercent(value: number, decimals = 2): string {
+  if (!Number.isFinite(value)) return '—';
   const sign = value > 0 ? '+' : '';
   return `${sign}${value.toFixed(decimals)}%`;
 }
@@ -30,6 +32,7 @@ export function formatNumber(
   value: number,
   options?: { compact?: boolean; decimals?: number }
 ): string {
+  if (!Number.isFinite(value)) return '—';
   const { compact = false, decimals = 2 } = options || {};
 
   if (compact) {

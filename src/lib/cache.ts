@@ -6,6 +6,8 @@ interface CacheEntry<T> {
   expiresAt: number;
 }
 
+const inFlight = new Map<string, Promise<unknown>>();
+let generation = 0;
 const cache = new Map<string, CacheEntry<unknown>>();
 
 export function getCached<T>(key: string): T | null {
@@ -26,6 +28,8 @@ export function setCache<T>(key: string, data: T, ttlSeconds: number): void {
 }
 
 export function invalidatePrefix(prefix: string): number {
+  generation++;
+  for (const key of Array.from(inFlight.keys())) if (key.startsWith(prefix)) inFlight.delete(key);
   let count = 0;
   const keys = Array.from(cache.keys());
   for (const key of keys) {
@@ -44,9 +48,15 @@ export async function withCache<T>(
 ): Promise<T> {
   const cached = getCached<T>(key);
   if (cached !== null) return cached;
-  const data = await fetcher();
-  setCache(key, data, ttlSeconds);
-  return data;
+  const existing = inFlight.get(key);
+  if (existing) return existing as Promise<T>;
+  const started = generation;
+  const pending = fetcher().then(data => {
+    if (started === generation) setCache(key, data, ttlSeconds);
+    return data;
+  }).finally(() => { if (inFlight.get(key) === pending) inFlight.delete(key); });
+  inFlight.set(key, pending);
+  return pending;
 }
 
 // TTL presets (in seconds)

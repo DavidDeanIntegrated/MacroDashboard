@@ -52,6 +52,7 @@ export interface RebalancePlan {
   fundingGap: number;
   allInRange: boolean;
   urgent: boolean;
+  blockedReason?: string;
 }
 
 const usd = (v: number) =>
@@ -71,7 +72,11 @@ export function buildRebalancePlan(positions: HoldingPosition[], portfolioValue:
   const empty: RebalancePlan = {
     sells, buys, notes, totalSell: 0, totalBuy: 0, fundingGap: 0, allInRange: true, urgent: false,
   };
-  if (!positions.length || V <= 0) return empty;
+  if (!positions.length || V <= 0) return { ...empty, allInRange: false, blockedReason: 'No complete portfolio valuation.' };
+  const supported = new Set(['VTI','VTV','VXUS','NVDA','TSM','MSFT','PLTR','VST','SPCX','GLD','BCI','BTC','SGOV','CASH']);
+  if (positions.some(p => !Number.isFinite(p.marketValue) || p.marketValue < 0 || !Number.isFinite(p.currentPrice) || p.currentPrice <= 0 || !Number.isFinite(p.weight)) || Math.abs(positions.reduce((sum,p)=>sum+p.weight,0)-100) > .1 || Math.abs(positions.reduce((sum,p)=>sum+p.marketValue,0)-V) > Math.max(1,V*.001)) return { ...empty, allInRange: false, blockedReason: 'Incomplete or inconsistent valuation; suggestions withheld.' };
+  if (positions.some(p => !supported.has(p.symbol) || p.category === 'Unclassified')) return { ...empty, allInRange: false, blockedReason: 'This account contains holdings outside the configured strategy. Define their categories and target rules before generating trades.' };
+  const sold = new Map<string, number>();
 
   const sleeves = computeSleeveData(positions);
   const eqSubs = computeSubSleeveData(positions, SUB_SLEEVE_TARGETS);
@@ -86,12 +91,14 @@ export function buildRebalancePlan(positions: HoldingPosition[], portfolioValue:
   // Sell a dollar total across a set of positions proportionally to their sizes.
   // Returns the amount actually placed (capped by what the positions hold).
   function sellAcross(members: HoldingPosition[], total: number, reason: string, urgency: 'now' | 'quarterly'): number {
-    const sum = members.reduce((s, m) => s + m.marketValue, 0);
+    const remaining = (m: HoldingPosition) => Math.max(0, m.marketValue - (sold.get(m.symbol) ?? 0));
+    const sum = members.reduce((s, m) => s + remaining(m), 0);
     if (sum <= 0 || total < 1) return 0;
     const usable = Math.min(total, sum);
     for (const m of members) {
-      const amount = (usable * m.marketValue) / sum;
+      const amount = (usable * remaining(m)) / sum;
       if (amount < 1) continue;
+      sold.set(m.symbol, (sold.get(m.symbol) ?? 0) + amount);
       sells.push({
         kind: 'sell', symbol: m.symbol, amount, price: m.currentPrice,
         shares: sharesFor(amount, m.currentPrice),
@@ -130,7 +137,7 @@ export function buildRebalancePlan(positions: HoldingPosition[], portfolioValue:
   if (dp) {
     const status = getSleeveStatus(dp.weight, dp.targetMin, dp.targetMax);
     if (status === 'over') {
-      dpExcessCash = Math.min(pctToUsd(dp.weight - dp.targetMax), sgovSpendable);
+      dpExcessCash = Math.min(pctToUsd(dp.weight - dp.targetMax), sgovSpendable + (pos('CASH')?.marketValue ?? 0));
     } else if (status === 'under') {
       const deficit = pctToUsd(dp.targetMin - dp.weight);
       buyOne(
@@ -251,7 +258,7 @@ export function buildRebalancePlan(positions: HoldingPosition[], portfolioValue:
         notes.push({
           kind: 'note', symbol: 'SPCX',
           action: `SPCX has ${(spcx.currentPrice / spcx.costBasis).toFixed(1)}×'d from cost — house-money rule available: sell ~${usd(principal)} to recover principal`,
-          reason: `Selling your original investment back out leaves the entire remaining position as pure profit riding the 5-year thesis — a wipeout from here would cost you nothing net. Optional, but it's the cleanest way to hold an aggressive position with a calm stomach.`,
+          reason: `Recovering the original principal changes your cumulative cash flows, not the economic risk of the remaining shares — the remaining position still has market value at risk and can lose its entire value. Optional, but it's the cleanest way to hold an aggressive position with a calm stomach.`,
           urgency: 'info',
         });
       }

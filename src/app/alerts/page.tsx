@@ -390,8 +390,8 @@ interface DashboardRegime {
   description: string;
   inflationTrend: string;
   growthTrend: string;
-  latestInflation: number;
-  latestUnemployment: number;
+  latestInflation: number | null;
+  latestUnemployment: number | null;
 }
 
 interface DashboardData {

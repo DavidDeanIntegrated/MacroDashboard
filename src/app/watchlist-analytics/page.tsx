@@ -1,5 +1,7 @@
 'use client';
 
+import { datedCorrelation } from '@/lib/time-series';
+
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Card, CardTitle, MetricCard } from '@/components/ui/Card';
@@ -10,7 +12,7 @@ import { TimeSeriesChart, MultiSeriesChart } from '@/components/charts/TimeSerie
 import { useMultiAggregates, useApi, useFundamentalsScores } from '@/lib/hooks';
 import { WATCHLIST, WATCHLIST_CATEGORY_CONFIG } from '@/lib/holdings';
 import {
-  computeReturns, stdDev, correlation, corrColor,
+  computeReturns, stdDev, corrColor,
   computeVolStats, getVolSignal, computeBottomScore,
   type Bar,
 } from '@/lib/vol-signals';
@@ -130,16 +132,9 @@ export default function WatchlistAnalyticsPage() {
 
   // ─── CORRELATION MATRIX ───
   const corrSymbols = WATCH_STOCKS.map((h) => h.symbol);
-  const dailyReturns: Record<string, number[]> = {};
-  for (const sym of corrSymbols) {
-    dailyReturns[sym] = computeReturns(symbolData[sym]?.closes || []);
-  }
-  dailyReturns['SPY'] = spyReturns;
   const corrMatrixSymbols = [...corrSymbols, 'SPY'];
-
-  const corrMatrix: number[][] = corrMatrixSymbols.map((a) =>
-    corrMatrixSymbols.map((b) => correlation(dailyReturns[a] || [], dailyReturns[b] || []))
-  );
+  const closesFor = (symbol: string) => (symbolData[symbol]?.closes ?? []).map((close, i) => ({ close, date: symbolData[symbol].dates[i] }));
+  const corrMatrix = corrMatrixSymbols.map(a => corrMatrixSymbols.map(b => datedCorrelation(closesFor(a), closesFor(b)).value));
 
   // ─── VOLATILITY ───
   const volatility = WATCH_STOCKS.map((h) => {
@@ -349,7 +344,7 @@ export default function WatchlistAnalyticsPage() {
 
       <Card padding="none">
         <div className="px-6 pt-6 pb-3">
-          <CardTitle>Daily Return Correlations</CardTitle>
+          <CardTitle>Matched-Date Return Correlations</CardTitle><p className="text-xs text-black/45">At least 20 shared intervals per pair; — means unavailable. Prices are aligned before returns, including crypto weekends. Price returns exclude distributions.</p>
           <div className="flex items-center gap-4 mt-2">
             <div className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 rounded bg-accent-red/20" />
@@ -390,9 +385,9 @@ export default function WatchlistAnalyticsPage() {
                     return (
                       <td key={colSym} className="px-1 py-1 text-center">
                         <span className={`inline-block w-full px-1 py-1 rounded text-[10px] font-semibold tabular-nums ${
-                          i === j ? 'bg-black/[0.06] text-black/30' : corrColor(val)
+                          val === null ? 'text-black/30' : i === j ? 'bg-black/[0.06] text-black/30' : corrColor(val)
                         }`}>
-                          {i === j ? '1.00' : val.toFixed(2)}
+                          {val === null ? '—' : val.toFixed(2)}
                         </span>
                       </td>
                     );
@@ -410,10 +405,11 @@ export default function WatchlistAnalyticsPage() {
         let count = 0;
         for (let i = 0; i < corrSymbols.length; i++) {
           for (let j = i + 1; j < corrSymbols.length; j++) {
-            totalCorr += corrMatrix[i][j];
-            count++;
+            const value = corrMatrix[i][j];
+            if (value !== null) { totalCorr += value; count++; }
           }
         }
+        if (!count) return <Card><CardTitle>Correlation unavailable</CardTitle><p>At least 20 shared return intervals are required. Missing data is not zero correlation.</p></Card>;
         const avgCorr = count > 0 ? totalCorr / count : 0;
         const badge = avgCorr > 0.6 ? 'red' : avgCorr > 0.35 ? 'orange' : avgCorr > 0.1 ? 'green' : 'blue';
         const text = avgCorr > 0.6

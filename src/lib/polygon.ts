@@ -80,12 +80,12 @@ export async function getAggregates(
     return d.toISOString().split('T')[0];
   })();
 
-  const cacheKey = `polygon:agg:${symbol}:${timeframe}:${defaultFrom}:${defaultTo}`;
+  const cacheKey = `polygon:agg:${symbol}:${timeframe}:${defaultFrom}:${defaultTo}:${limit}`;
   const ttl = timeframe === '1day' ? TTL.MACRO : TTL.QUOTES;
 
   return withCache(cacheKey, ttl, async () => {
     const url = polygonUrl(
-      `/v2/aggs/ticker/${symbol}/range/${tf.multiplier}/${tf.timespan}/${defaultFrom}/${defaultTo}`,
+      `/v2/aggs/ticker/${symbol === 'BTC' ? 'X:BTCUSD' : symbol}/range/${tf.multiplier}/${tf.timespan}/${defaultFrom}/${defaultTo}`,
       { adjusted: 'true', sort: 'asc', limit: limit.toString() }
     );
 
@@ -93,7 +93,7 @@ export async function getAggregates(
     if (!data.results) return [];
 
     return data.results.map((r) => ({
-      date: new Date(r.t).toISOString(),
+      date: timeframe === '1day' ? new Date(r.t).toISOString().slice(0, 10) : new Date(r.t).toISOString(),
       open: r.o,
       high: r.h,
       low: r.l,
@@ -123,6 +123,7 @@ interface PolygonSnapshotResponse {
 
 export interface PolygonSnapshot {
   price: number;
+  asOf: string | null;
   change: number;
   changePercent: number;
   open: number;
@@ -139,6 +140,7 @@ export async function getSnapshot(symbol: string): Promise<PolygonSnapshot> {
     const t = data.ticker;
     return {
       price: t.lastTrade?.p || t.day?.c || 0,
+      asOf: t.lastTrade?.t ? new Date(t.lastTrade.t / 1e6).toISOString() : null,
       change: t.todaysChange || 0,
       changePercent: t.todaysChangePerc || 0,
       open: t.day?.o || 0,

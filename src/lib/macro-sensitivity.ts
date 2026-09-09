@@ -10,7 +10,8 @@ export type MacroDriver =
   | 'Real Rates / USD'
   | 'Inflation'
   | 'Front-end Rates'
-  | 'Liquidity / Risk-on';
+  | 'Liquidity / Risk-on'
+  | 'Power demand / Energy';
 
 export interface MacroSensitivity {
   driver: MacroDriver;
@@ -19,6 +20,7 @@ export interface MacroSensitivity {
 }
 
 const DRIVER_META: Record<MacroDriver, { badge: MacroSensitivity['badge']; note: string }> = {
+  'Power demand / Energy': { badge: 'orange', note: 'Power demand, electricity prices, fuel costs, hedges, generation reliability and financing costs influence results. Examine company disclosures; a generic growth-stock tag is insufficient.' },
   'Rates / Risk-on':    { badge: 'purple', note: 'Long-duration growth — hurt by rising real rates & tightening liquidity, helped by easing.' },
   'Value / Cyclical':   { badge: 'green',  note: 'Earnings track the cycle; tends to lead in reflation and lag in slowdowns.' },
   'Broad Beta':         { badge: 'blue',   note: 'Moves with the overall market — your core risk exposure.' },
@@ -31,6 +33,7 @@ const DRIVER_META: Record<MacroDriver, { badge: MacroSensitivity['badge']; note:
 
 const SYMBOL_DRIVER: Record<string, MacroDriver> = {
   // Growth equities / semis / high-conviction → rates & risk appetite
+  VST: 'Power demand / Energy',
   NVDA: 'Rates / Risk-on', TSM: 'Rates / Risk-on', MSFT: 'Rates / Risk-on',
   PLTR: 'Rates / Risk-on', RKLB: 'Rates / Risk-on', RVI: 'Rates / Risk-on', SPCX: 'Rates / Risk-on',
   // Core / style / international

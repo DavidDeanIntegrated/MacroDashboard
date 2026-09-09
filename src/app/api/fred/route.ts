@@ -1,14 +1,15 @@
+import { getEconomicDashboard } from '@/lib/economy-data';
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getFredSeries,
   getFredSeriesInfo,
-  computeYoYChange,
-  classifyMacroRegime,
   getUpcomingReleaseDates,
   FRED_SERIES,
 } from '@/lib/fred';
-import { getYahooSeries } from '@/lib/yahoo';
 import { invalidatePrefix } from '@/lib/cache';
+
+// The dashboard action fans out to ~45 FRED series on a cold cache.
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -57,75 +58,11 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(results);
       }
 
-      case 'regime': {
-        const [cpiRaw, unrate] = await Promise.all([
-          getFredSeries(FRED_SERIES.CPI),
-          getFredSeries(FRED_SERIES.UNEMPLOYMENT),
-        ]);
-        const cpiYoY = computeYoYChange(cpiRaw);
-        const regime = classifyMacroRegime(cpiYoY, unrate);
-        return NextResponse.json(regime);
-      }
-
+      case 'regime':
       case 'dashboard': {
-        // Bust FRED cache if requested (e.g., on release day refresh)
-        if (searchParams.get('bust') === '1') {
-          invalidatePrefix('fred:');
-        }
-        // Fetch all key macro indicators in parallel
-        const seriesMap = {
-          fedFunds: FRED_SERIES.FED_FUNDS,
-          t2y: FRED_SERIES.T2Y,
-          t10y: FRED_SERIES.T10Y,
-          t10y2y: FRED_SERIES.T10Y2Y,
-          cpi: FRED_SERIES.CPI,
-          unemployment: FRED_SERIES.UNEMPLOYMENT,
-          highYieldSpread: FRED_SERIES.HIGH_YIELD_SPREAD,
-          industrialProduction: FRED_SERIES.INDUSTRIAL_PRODUCTION,
-          vix: FRED_SERIES.VIX,
-          lei: FRED_SERIES.LEI,
-          consumerSentiment: FRED_SERIES.CONSUMER_SENTIMENT,
-          buildingPermits: FRED_SERIES.BUILDING_PERMITS,
-          ismManufacturing: FRED_SERIES.ISM_MANUFACTURING,
-          initialClaims: FRED_SERIES.INITIAL_CLAIMS,
-          m2: FRED_SERIES.M2,
-          corePce: FRED_SERIES.CORE_PCE,
-          breakeven10y: FRED_SERIES.BREAKEVEN_10Y,
-        };
-
-        const entries = Object.entries(seriesMap);
-        const [results, moveData] = await Promise.all([
-          Promise.all(
-            entries.map(async ([key, id]) => {
-              const data = await getFredSeries(id);
-              return [key, data] as const;
-            })
-          ),
-          getYahooSeries('^MOVE', '5y', '1d').catch(() => []),
-        ]);
-
-        const dashboard: Record<string, unknown> = {};
-        for (const [key, data] of results) {
-          dashboard[key] = data;
-        }
-        dashboard.moveIndex = moveData;
-
-        // Add CPI YoY
-        const cpiData = results.find(([k]) => k === 'cpi')?.[1] || [];
-        dashboard.cpiYoY = computeYoYChange(cpiData);
-
-        // Core PCE YoY — the Fed's preferred inflation gauge
-        const corePceData = results.find(([k]) => k === 'corePce')?.[1] || [];
-        dashboard.corePceYoY = computeYoYChange(corePceData);
-
-        // Add regime
-        const unrateData = results.find(([k]) => k === 'unemployment')?.[1] || [];
-        dashboard.regime = classifyMacroRegime(
-          dashboard.cpiYoY as Awaited<ReturnType<typeof computeYoYChange>>,
-          unrateData
-        );
-
-        return NextResponse.json(dashboard);
+        if (searchParams.get('bust') === '1') invalidatePrefix('fred:');
+        const dashboard = await getEconomicDashboard();
+        return NextResponse.json(action === 'regime' ? dashboard.regime : dashboard);
       }
 
       case 'release-calendar': {
