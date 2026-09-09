@@ -41,9 +41,11 @@ export function RegimeBadge({ regime }: { regime: string }) {
     unknown: 'neutral',
   };
 
+  // Classic nickname for the season; the full plain-English label sits next to it.
+  const nickname: Record<string, string> = { goldilocks: 'Goldilocks', reflation: 'Reflation', stagflation: 'Stagflation', deflation: 'Slowdown', unknown: 'Mixed' };
   return (
     <Badge variant={variantMap[regime] || 'neutral'} size="md">
-      {regime.charAt(0).toUpperCase() + regime.slice(1)}
+      {nickname[regime] ?? regime.charAt(0).toUpperCase() + regime.slice(1)}
     </Badge>
   );
 }

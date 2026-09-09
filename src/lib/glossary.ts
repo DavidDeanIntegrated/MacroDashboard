@@ -16,23 +16,23 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
   // ─── Regime & framework ───
   regime: {
     term: 'Macro regime',
-    def: 'The current "economic season," classified from two inputs: is inflation high or low, and is the job market strengthening or weakening? Each combination historically favors different assets — that mapping is what drives this dashboard\'s suggestions.',
+    def: 'The current "economic season," read from three questions answered by separate groups of official data: is the economy growing or shrinking, are prices rising faster than the Fed wants, and is money easy or hard to borrow? Growth and inflation pick the season; each one historically favors different assets, and that mapping is what drives this dashboard\'s sleeve guidance.',
   },
   goldilocks: {
-    term: 'Goldilocks',
+    term: 'Growing, inflation contained ("Goldilocks")',
     def: 'Steady growth with inflation near the Fed\'s 2% target — "not too hot, not too cold." Historically the friendliest season for stocks, because profits grow while the Fed has no reason to raise rates.',
   },
   reflation: {
-    term: 'Reflation',
-    def: 'Inflation running above ~3% while the economy is still strong. Prices of real things (commodities, gold) tend to do well; bonds and expensive growth stocks tend to struggle as rates rise.',
+    term: 'Growing, inflation running warm ("Reflation")',
+    def: 'Inflation running above roughly 2.5% while the economy is still growing. Prices of real things (commodities, gold) tend to do well; bonds and expensive growth stocks tend to struggle as rates rise.',
   },
   stagflation: {
-    term: 'Stagflation',
-    def: 'The worst combination: inflation stays high while the job market weakens. The Fed can\'t cut rates to help growth without feeding inflation, so both stocks AND bonds can fall together. Gold and cash historically hold up best.',
+    term: 'Weak growth, inflation running warm ("Stagflation")',
+    def: 'The worst combination: inflation stays warm while growth turns down. The Fed can\'t cut rates to help growth without feeding inflation, so both stocks AND bonds can fall together. Gold and cash historically hold up best.',
   },
   deflation: {
-    term: 'Disinflation / slowdown',
-    def: 'Inflation cooling while the job market softens — the economy is decelerating. Cash and high-quality bonds usually do well because the Fed responds by cutting rates.',
+    term: 'Weak growth, inflation contained (slowdown)',
+    def: 'Growth turning down while inflation stays contained — the economy is decelerating. Cash and high-quality bonds usually do well because the Fed responds by cutting rates.',
   },
   sleeve: {
     term: 'Sleeve',

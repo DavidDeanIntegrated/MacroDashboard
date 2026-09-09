@@ -5,6 +5,8 @@ import { Badge, RegimeBadge } from '@/components/ui/Badge';
 import { LoadingPage, ErrorState } from '@/components/ui/Loading';
 import { useApi } from '@/lib/hooks';
 import { formatPercent } from '@/lib/format';
+import { INDICATOR_ZONES, trendOverDays, changeTone, type Zone, type Trend } from '@/lib/indicator-zones';
+import { describeLevel, describeMomentum, type EconomicAssessment } from '@/lib/economy';
 
 interface MacroDashboard {
   fedFunds: Array<{ date: string; value: number }>;
@@ -14,6 +16,7 @@ interface MacroDashboard {
   unemployment: Array<{ date: string; value: number }>;
   highYieldSpread: Array<{ date: string; value: number }>;
   industrialProduction: Array<{ date: string; value: number }>;
+  assessment?: EconomicAssessment;
   regime: {
     regime: string;
     label: string;
@@ -29,13 +32,10 @@ function getLatest(data: Array<{ date: string; value: number }>): number {
   return data.length > 0 ? data[data.length - 1].value : 0;
 }
 
-function getTrend(data: Array<{ date: string; value: number }>, lookback = 3): 'rising' | 'falling' | 'flat' {
-  if (data.length < lookback + 1) return 'flat';
-  const recent = data[data.length - 1].value;
-  const prior = data[data.length - 1 - lookback].value;
-  const diff = recent - prior;
-  if (Math.abs(diff) < 0.15) return 'flat';
-  return diff > 0 ? 'rising' : 'falling';
+// One-month trend on a calendar basis, so daily and monthly series are judged on
+// the same horizon. Returns the change too, so the chip can show it.
+function getTrend(data: Array<{ date: string; value: number }>, threshold = 0.15) {
+  return trendOverDays(data, 30, threshold);
 }
 
 // Section component for consistent styling
@@ -51,7 +51,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Indicator({
   name,
   format,
+  zone,
   trend,
+  risingIsGood = false,
   description,
   bullish,
   bearish,
@@ -59,24 +61,32 @@ function Indicator({
 }: {
   name: string;
   format: string;
-  trend: 'rising' | 'falling' | 'flat';
+  zone: Zone | null;
+  trend: { trend: Trend; change: number; from: string | null };
+  risingIsGood?: boolean;
   description: string;
   bullish: string;
   bearish: string;
   crisis: string;
 }) {
-  const trendBadge = trend === 'rising' ? 'red' : trend === 'falling' ? 'green' : 'neutral';
-  const trendLabel = trend === 'rising' ? 'Rising' : trend === 'falling' ? 'Falling' : 'Stable';
+  // Two separate reads: WHERE the level sits (zone, from the shared threshold
+  // table) and WHICH WAY it has moved over the past month (trend). A 4.8% 10-year
+  // is "Restrictive" even on a week when it hasn't budged.
+  const tone = changeTone(trend.change, risingIsGood, 0);
+  const trendBadge = trend.trend === 'flat' ? 'neutral' : tone === 'up' ? 'green' : 'red';
+  const trendLabel = trend.trend === 'flat' ? 'Flat over 1 mo' : `${trend.trend === 'rising' ? '↑' : '↓'} ${Math.abs(trend.change).toFixed(2)} over 1 mo`;
 
   return (
     <div className="py-5 border-b border-black/[0.06] last:border-0">
-      <div className="flex items-start justify-between mb-2">
+      <div className="flex items-start justify-between mb-2 gap-3 flex-wrap">
         <h4 className="text-base font-semibold text-black/80">{name}</h4>
-        <div className="flex items-center gap-2 shrink-0 ml-4">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {zone && <Badge variant={zone.badge}>{zone.regime}</Badge>}
           <Badge variant={trendBadge}>{trendLabel}</Badge>
           <span className="text-sm font-semibold text-black/85 tabular-nums">{format}</span>
         </div>
       </div>
+      {zone && <p className="text-xs text-black/50 leading-relaxed mb-2"><span className="font-medium text-black/65">Level read:</span> {zone.explanation}</p>}
       <p className="text-sm text-black/55 leading-relaxed mb-3">{description}</p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="bg-accent-green/[0.06] rounded-xl px-3 py-2.5">
@@ -114,37 +124,41 @@ export default function GuidePage() {
   const pct1 = (v: number) => (Number.isFinite(v) ? `${v.toFixed(1)}%` : '—');
   const hySpread = getLatest(data.highYieldSpread);
 
-  // Determine overall assessment
+  // Rule-of-thumb checklist — every chip comes from the SAME threshold table the
+  // Macro page uses (lib/indicator-zones), so the two pages can't disagree.
+  const zoneOf = (key: string, value: number): Zone | null => (Number.isFinite(value) ? INDICATOR_ZONES[key](value) : null);
+  const zones = {
+    fedFunds: zoneOf('FEDFUNDS', fedFunds), t10y: zoneOf('DGS10', t10y), spread: zoneOf('T10Y2Y', spread10y2y),
+    cpi: zoneOf('CPIYOY', cpi), unemp: zoneOf('UNRATE', unemp), hy: zoneOf('BAMLH0A0HYM2', hySpread),
+  };
+  const sentimentOf = (z: Zone): 'bullish' | 'bearish' | 'neutral' => (z.tone === 'bullish' ? 'bullish' : z.tone === 'neutral' ? 'neutral' : 'bearish');
   const signals: Array<{ label: string; sentiment: 'bullish' | 'bearish' | 'neutral' }> = [];
-
-  // CPI assessment
-  if (!Number.isFinite(cpi)) { /* no CPI reading — no inflation signal */ }
-  else if (cpi < 2.5) signals.push({ label: 'Inflation contained', sentiment: 'bullish' });
-  else if (cpi > 4.0) signals.push({ label: 'Inflation elevated', sentiment: 'bearish' });
-  else signals.push({ label: 'Inflation moderate', sentiment: 'neutral' });
-
-  // Unemployment
-  if (!Number.isFinite(unemp)) { /* no unemployment reading — no labor signal */ }
-  else if (unemp < 4.5) signals.push({ label: 'Labor market strong', sentiment: 'bullish' });
-  else if (unemp > 6.0) signals.push({ label: 'Labor market weak', sentiment: 'bearish' });
-  else signals.push({ label: 'Labor market softening', sentiment: 'neutral' });
-
-  // Yield curve
-  if (spread10y2y > 0.5) signals.push({ label: 'Yield curve normal', sentiment: 'bullish' });
-  else if (spread10y2y < 0) signals.push({ label: 'Yield curve inverted', sentiment: 'bearish' });
-  else signals.push({ label: 'Yield curve flat', sentiment: 'neutral' });
-
-  // HY spread
-  if (hySpread < 3.5) signals.push({ label: 'Credit stress low', sentiment: 'bullish' });
-  else if (hySpread > 6.0) signals.push({ label: 'Credit stress elevated', sentiment: 'bearish' });
-  else signals.push({ label: 'Credit conditions tightening', sentiment: 'neutral' });
+  const chip = (name: string, z: Zone | null) => { if (z) signals.push({ label: `${name}: ${z.regime}`, sentiment: sentimentOf(z) }); };
+  chip('Inflation', zones.cpi); chip('Jobs', zones.unemp); chip('Yield curve', zones.spread); chip('Credit', zones.hy); chip('10Y yield', zones.t10y);
 
   // Fed funds vs CPI
   const realRate = fedFunds - cpi;
   if (!Number.isFinite(realRate)) { /* no policy signal without both readings */ }
-  else if (realRate > 1.5) signals.push({ label: 'Policy restrictive', sentiment: 'bearish' });
-  else if (realRate < 0) signals.push({ label: 'Policy accommodative', sentiment: 'bullish' });
-  else signals.push({ label: 'Policy neutral', sentiment: 'neutral' });
+  else if (realRate > 1.5) signals.push({ label: 'Policy: restrictive', sentiment: 'bearish' });
+  else if (realRate < 0) signals.push({ label: 'Policy: accommodative', sentiment: 'bullish' });
+  else signals.push({ label: 'Policy: neutral', sentiment: 'neutral' });
+
+  // Cycle phase comes from the economic assessment's growth axis (level + trend),
+  // never from a second set of CPI/unemployment rules.
+  const growth = data.assessment?.axes.growth;
+  const gLevel = growth ? describeLevel('growth', growth.score) : 'not enough data';
+  const gTrend = growth ? describeMomentum('growth', growth.momentum) : 'trend unavailable';
+  const phase = !growth || growth.score === null
+    ? { name: 'not yet readable', text: 'The growth axis needs more of its inputs before a cycle phase can be named.' }
+    : growth.score > 0.1 && (growth.momentum ?? 0) >= -0.1
+      ? { name: 'expansion', text: 'Growth is positive and not fading — the phase where earnings rise and equities usually do best. The risk to watch is inflation warming up and pulling the Fed in.' }
+      : growth.score > 0.1
+        ? { name: 'late expansion (near the peak)', text: 'Still growing, but the momentum has turned down. Historically this is when the curve flattens, credit gets pickier, and quality starts to beat speculation.' }
+        : growth.score < -0.1 && (growth.momentum ?? 0) <= 0.1
+          ? { name: 'contraction', text: 'Growth is negative and not yet improving. Defensive stocks, high-quality bonds, and cash tend to hold up; the Fed usually cuts.' }
+          : growth.score < -0.1
+            ? { name: 'trough (early recovery)', text: 'Growth is still weak but improving — historically the best entry point for cyclicals and small caps, and the point where the curve steepens.' }
+            : { name: 'turning point', text: 'Growth is close to flat, so the data cannot say whether we are topping out or bottoming. Wait for the trend to declare itself.' };
 
   const bullCount = signals.filter(s => s.sentiment === 'bullish').length;
   const bearCount = signals.filter(s => s.sentiment === 'bearish').length;
@@ -175,7 +189,7 @@ export default function GuidePage() {
             </p>
           </div>
           <div className="text-right shrink-0 ml-8">
-            <p className="text-xxs text-black/35 uppercase">Signals</p>
+            <p className="text-xxs text-black/35 uppercase">Rule-of-thumb checklist</p>
             <p className="text-lg font-semibold text-black/85">
               {bullCount} bull / {bearCount} bear
             </p>
@@ -206,20 +220,12 @@ export default function GuidePage() {
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <div className="bg-accent-green/[0.06] rounded-xl p-4">
-              <p className="text-sm font-semibold text-accent-green mb-2">Current Assessment</p>
+              <p className="text-sm font-semibold text-accent-green mb-2">Current phase: {phase.name}</p>
               <p className="text-sm text-black/65">
-                With CPI at {formatPercent(cpi)}, unemployment at {pct1(unemp)},
-                and the Fed Funds rate at {fedFunds.toFixed(2)}%,
-                {!Number.isFinite(cpi) || !Number.isFinite(unemp)
-                  ? ' a cycle-phase read is not possible until both the inflation and unemployment series are available.'
-                  : cpi < 3 && unemp < 5
-                  ? ' the economy appears to be in a mid-to-late expansion phase. Growth is solid and inflation is manageable. This is historically favorable for equities, especially quality growth stocks.'
-                  : cpi > 3 && unemp < 5
-                    ? ' the economy is showing signs of overheating. Strong employment but elevated inflation creates pressure for tighter monetary policy. Commodities, TIPS, and value stocks tend to outperform.'
-                    : cpi > 3 && unemp > 5
-                      ? ' the economy is exhibiting stagflationary characteristics. This is the most challenging environment for investors. Hard assets (gold, commodities) and cash tend to hold up best.'
-                      : ' the economy is in a disinflationary slowdown. Falling inflation with weakening employment suggests the cycle is turning. Bonds and defensive equities tend to outperform.'
-                }
+                The growth axis reads <span className="font-medium text-black/75">{gLevel}</span> and <span className="font-medium text-black/75">{gTrend}</span>. {phase.text}
+              </p>
+              <p className="text-xs text-black/45 mt-2">
+                Same growth reading as the regime card above — CPI {formatPercent(cpi)}, unemployment {pct1(unemp)}, and Fed Funds {fedFunds.toFixed(2)}% are context, not the rule.
               </p>
             </div>
             <div className="bg-accent-blue/[0.06] rounded-xl p-4">
@@ -249,9 +255,10 @@ export default function GuidePage() {
         <div className="px-6">
           <Indicator
             name="Fed Funds Rate"
+            zone={zones.fedFunds}
 
             format={`${fedFunds.toFixed(2)}%`}
-            trend={getTrend(data.fedFunds)}
+            trend={getTrend(data.fedFunds, 0.1)}
             description="The interest rate at which banks lend to each other overnight. Set by the Federal Reserve, this is the most important lever for monetary policy. It ripples through all borrowing costs — mortgages, corporate debt, consumer loans. When the Fed raises rates, it cools the economy; when it cuts, it stimulates."
             bullish="Rate cuts (or pivot expectations) signal the Fed is easing. Falling rates boost asset valuations, especially for growth stocks and bonds. Historical avg: 1.5-2.5% in expansions."
             bearish="Rapid hikes above 4-5% signal the Fed is fighting inflation aggressively. This raises the cost of capital, compresses multiples, and can trigger recession. Watch for an inversion in the yield curve."
@@ -260,6 +267,7 @@ export default function GuidePage() {
 
           <Indicator
             name="10-Year Treasury Yield"
+            zone={zones.t10y}
 
             format={`${t10y.toFixed(2)}%`}
             trend={getTrend(data.t10y)}
@@ -271,6 +279,8 @@ export default function GuidePage() {
 
           <Indicator
             name="10Y-2Y Yield Spread"
+            zone={zones.spread}
+            risingIsGood
 
             format={`${spread10y2y.toFixed(2)}%`}
             trend={getTrend(data.t10y2y)}
@@ -282,9 +292,10 @@ export default function GuidePage() {
 
           <Indicator
             name="CPI Year-over-Year"
+            zone={zones.cpi}
 
             format={formatPercent(cpi)}
-            trend={getTrend(data.cpiYoY)}
+            trend={getTrend(data.cpiYoY, 0.1)}
             description="Consumer Price Index measures inflation — the rate at which prices for goods and services are rising. The Fed targets 2% inflation. Too high erodes purchasing power; too low (deflation) signals weak demand and can lead to a debt-deflation spiral."
             bullish="CPI between 1.5-2.5% is the 'Goldilocks' zone — enough inflation to signal healthy demand without eroding purchasing power. Allows the Fed to maintain easy policy. Supportive of earnings growth and equity multiples."
             bearish="CPI above 3.5-4% forces the Fed to tighten, raising rates and reducing liquidity. Margin compression for companies that can't pass costs through. Bonds lose value as yields rise to match inflation."
@@ -293,9 +304,10 @@ export default function GuidePage() {
 
           <Indicator
             name="Unemployment Rate"
+            zone={zones.unemp}
 
             format={pct1(unemp)}
-            trend={getTrend(data.unemployment)}
+            trend={getTrend(data.unemployment, 0.1)}
             description="The percentage of the labor force that is jobless and actively seeking work. This is a lagging indicator — by the time unemployment rises meaningfully, recession has usually begun. The Sahm Rule states that recession starts when the 3-month moving average rises 0.5% above its 12-month low."
             bullish="Unemployment below 4.5% signals a tight labor market. Workers have bargaining power (wage growth), consumer spending stays strong. Businesses invest to compete for talent. Historically, equity returns are strong when unemployment is low and stable."
             bearish="Unemployment rising from a low base (even slightly from 3.5% to 4.5%) can trigger the Sahm Rule, signaling recession onset. Rising unemployment means falling consumer spending, lower corporate revenues, and higher credit defaults."
@@ -304,6 +316,7 @@ export default function GuidePage() {
 
           <Indicator
             name="High Yield Credit Spread"
+            zone={zones.hy}
 
             format={`${hySpread.toFixed(2)}%`}
             trend={getTrend(data.highYieldSpread)}
