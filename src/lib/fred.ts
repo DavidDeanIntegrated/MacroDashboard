@@ -1,6 +1,7 @@
 // FRED API client — Federal Reserve Economic Data
 // Docs: https://fred.stlouisfed.org/docs/api/fred/
 
+import { percentChange } from './time-series';
 import { config } from './config';
 import { fetchJson } from './fetcher';
 import { withCache, TTL } from './cache';
@@ -96,7 +97,7 @@ export const FRED_SERIES_NAMES: Record<string, string> = {
   USALOLITONOSTSAM: 'OECD Leading Indicator (US)',
   UMCSENT: 'Consumer Sentiment (UMich)',
   PERMIT: 'Building Permits',
-  MANEMP: 'ISM Manufacturing Employment',
+  MANEMP: 'Manufacturing Payroll Employment',
   SAHMREALTIME: 'Sahm Rule Indicator',
 };
 
@@ -134,9 +135,10 @@ export async function getFredSeries(
   seriesId: string,
   start?: string,
   end?: string,
-  frequency?: string
+  frequency?: string,
+  asOf?: string
 ): Promise<FredObservation[]> {
-  const cacheKey = `fred:${seriesId}:${start}:${end}:${frequency}`;
+  const cacheKey = `fred:${seriesId}:${start}:${end}:${frequency}:${asOf}`;
 
   return withCache(cacheKey, TTL.MACRO, async () => {
     const params = new URLSearchParams({
@@ -146,6 +148,8 @@ export async function getFredSeries(
       sort_order: 'asc',
     });
 
+    if (!config.fred.apiKey) throw new Error('FRED_API_KEY is not configured');
+    if (asOf) { params.set('realtime_start', asOf); params.set('realtime_end', asOf); }
     if (start) params.set('observation_start', start);
     if (end) params.set('observation_end', end);
     if (frequency) params.set('frequency', frequency);
@@ -196,30 +200,7 @@ export async function getFredSeriesInfo(
 export function computeYoYChange(
   observations: FredObservation[]
 ): FredObservation[] {
-  const result: FredObservation[] = [];
-
-  for (let i = 0; i < observations.length; i++) {
-    const current = observations[i];
-    // Find observation ~12 months ago
-    const targetDate = new Date(current.date);
-    targetDate.setFullYear(targetDate.getFullYear() - 1);
-
-    const yearAgo = observations.find((obs) => {
-      const d = new Date(obs.date);
-      return Math.abs(d.getTime() - targetDate.getTime()) < 45 * 24 * 3600 * 1000;
-    });
-
-    if (yearAgo && yearAgo.value !== null && current.value !== null) {
-      result.push({
-        date: current.date,
-        value: parseFloat(
-          (((current.value - yearAgo.value) / yearAgo.value) * 100).toFixed(2)
-        ),
-      });
-    }
-  }
-
-  return result;
+  return percentChange(observations, 12).map(p => ({ ...p, value: Math.round(p.value * 100) / 100 }));
 }
 
 // ─── Release Schedule ───
@@ -236,7 +217,7 @@ export const FRED_RELEASE_IDS: Record<string, { releaseId: number; name: string;
   USALOLITONOSTSAM: { releaseId: 352, name: 'OECD Leading Indicator', frequency: 'Monthly',       source: 'OECD' },
   UMCSENT:       { releaseId: 492, name: 'Consumer Sentiment',   frequency: 'Monthly',          source: 'UMich' },
   PERMIT:        { releaseId: 29,  name: 'Building Permits',     frequency: 'Monthly',          source: 'Census Bureau' },
-  MANEMP:        { releaseId: 14,  name: 'ISM Manufacturing',    frequency: 'Monthly',          source: 'ISM' },
+  MANEMP:        { releaseId: 50,  name: 'Manufacturing Payrolls', frequency: 'Monthly',          source: 'BLS' },
   ICSA:          { releaseId: 176, name: 'Initial Claims',       frequency: 'Weekly',           source: 'DOL' },
   M2SL:          { releaseId: 21,  name: 'M2 Money Supply',      frequency: 'Monthly',          source: 'Federal Reserve' },
 };
@@ -395,7 +376,7 @@ export function classifyMacroRegime(
     description = `Inflation is elevated (${latestCPI.toFixed(1)}% vs the Fed's ~2% goal) while the job market deteriorates — the one season where stocks and bonds can fall together, because the Fed can't cut rates to help growth without feeding inflation. Gold, commodities, and cash have historically held up best.`;
   } else if (highInflation && !risingUnemployment) {
     regime = 'reflation';
-    label = 'Reflation';
+    label = 'High inflation / stable labor';
     description = `Inflation is running hot (${latestCPI.toFixed(1)}%) but the job market is holding firm — an economy running warmer than the Fed wants. Prices of real things (commodities, gold) and value stocks tend to lead; bonds and expensive growth stocks face rate pressure.`;
   } else if (!highInflation && !risingUnemployment) {
     regime = 'goldilocks';
@@ -403,8 +384,8 @@ export function classifyMacroRegime(
     description = `Inflation is contained (${latestCPI.toFixed(1)}%) and the job market is solid (${latestUnemp.toFixed(1)}% unemployment) — "not too hot, not too cold." Historically the friendliest season for stocks: profits grow while the Fed has no reason to tighten.`;
   } else {
     regime = 'deflation';
-    label = 'Disinflation / Slowdown';
-    description = `Inflation is cooling while the job market softens — the economy is decelerating. This season favors safety: cash earning yield, high-quality bonds, and defensive stocks, since the Fed's usual response (rate cuts) rewards exactly those assets.`;
+    label = 'Contained inflation / softening labor';
+    description = `Inflation is below the 3% screening threshold while unemployment has increased. This two-series screen does not establish the direction of inflation or overall growth. This season favors safety: cash earning yield, high-quality bonds, and defensive stocks, since the Fed's usual response (rate cuts) rewards exactly those assets.`;
   }
 
   return {

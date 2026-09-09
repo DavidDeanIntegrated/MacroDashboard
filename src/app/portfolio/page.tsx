@@ -13,7 +13,7 @@ import { usePortfolio, usePortfolioChart, usePolygonAggregates, usePolygonRSI, u
 import type { RegimeKey } from '@/lib/sleeves';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/format';
 import { Term } from '@/components/ui/Term';
-import { CATEGORY_CONFIG, HOLDINGS, WATCHLIST, WATCHLIST_CATEGORY_CONFIG } from '@/lib/holdings';
+import { CATEGORY_CONFIG, WATCHLIST, WATCHLIST_CATEGORY_CONFIG } from '@/lib/holdings';
 import type { PolygonTimeframe } from '@/lib/polygon';
 
 // Map badge variants to hex colors for the pie chart
@@ -65,13 +65,13 @@ export default function PortfolioPage() {
   const [chartTimeframe, setChartTimeframe] = useState<PolygonTimeframe>('1day');
   const { data: chartData } = usePolygonAggregates(selectedSymbol, chartTimeframe);
   const { data: rsiData } = usePolygonRSI(selectedSymbol && selectedSymbol !== 'BTC' ? selectedSymbol : null);
-  const { data: dividends } = usePortfolioDividends(HOLDINGS.map((h) => h.symbol));
+  const { data: dividends } = usePortfolioDividends((portfolio?.positions ?? []).filter(p => p.symbol !== 'CASH').map(h => h.symbol));
 
   // SPY drawdown from 3-month peak
   const { data: spyDailyData } = usePolygonAggregates('SPY', '1day');
 
   // Fundamentals scores for portfolio holdings
-  const portfolioSymbols = useMemo(() => HOLDINGS.map((h) => h.symbol), []);
+  const portfolioSymbols = useMemo(() => (portfolio?.positions ?? []).filter(p => p.symbol !== 'CASH').map(h => h.symbol), [portfolio]);
   const { data: portfolioScores, loading: scoresLoading, error: scoresError } = useFundamentalsScores(portfolioSymbols);
 
   // 200-week moving average per holding (full-cycle valuation anchor)
@@ -364,6 +364,7 @@ export default function PortfolioPage() {
       </Card>
 
       {/* All-Weather Strategy — promoted above the positions table */}
+      <Card><CardTitle>Position source and risk coverage</CardTitle><p className="text-sm mt-2">{portfolio.source}. Quantities last maintained: {portfolio.holdingsAsOf}. Valuation fetched: {portfolio.valuationAsOf}. Manual mode requires recording fills in the holdings file. Alpaca sync covers only that account. Historical portfolio reconstruction is unavailable in broker mode without a transaction ledger.</p><Link href="/risk" className="text-accent-blue">Inspect total portfolio risk, factor exposures, and stress scenarios →</Link></Card>
       <AllWeatherSection
         positions={portfolio.positions}
         portfolioValue={portfolio.portfolioValue}

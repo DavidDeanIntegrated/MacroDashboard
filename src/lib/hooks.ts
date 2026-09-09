@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import type { HoldingsPortfolio } from './holdings';
 import type { FundamentalsScore } from './fundamentals-score';
 
 interface UseApiOptions {
@@ -12,6 +13,8 @@ interface UseApiOptions {
 interface UseApiResult<T> {
   data: T | null;
   error: string | null;
+  /** Set when a background refresh fails after data was already loaded; `data` keeps the last good value. */
+  refreshError: string | null;
   loading: boolean;
   refresh: () => void;
 }
@@ -23,11 +26,14 @@ export function useApi<T>(
   const { refreshInterval = 0, enabled = true, timeoutMs = 60000 } = options;
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const hasDataRef = useRef(false);
+  const requestId = useRef(0);
 
   const fetchData = useCallback(async () => {
-    if (!url || !enabled) return;
+    if (!url || !enabled) { setLoading(false); return; }
+    const id = ++requestId.current;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -42,29 +48,34 @@ export function useApi<T>(
         throw new Error(err.error || `HTTP ${response.status}`);
       }
       const result = await response.json();
+      if (id !== requestId.current) return;
       setData(result);
       hasDataRef.current = true;
       setError(null);
+      setRefreshError(null);
     } catch (err) {
-      // On background refresh failures, keep existing data and don't show error
-      if (hasDataRef.current) return;
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        setError('Request timed out');
-      } else {
-        setError(err instanceof Error ? err.message : 'An error occurred');
-      }
+      if (id !== requestId.current) return;
+      const message = err instanceof DOMException && err.name === 'AbortError'
+        ? 'Request timed out'
+        : err instanceof Error ? err.message : 'An error occurred';
+      // Preserve the last successful value on a failed background refresh, but
+      // expose the failure separately so pages can warn without unmounting.
+      if (hasDataRef.current) setRefreshError(message);
+      else setError(message);
     } finally {
       clearTimeout(timeout);
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }, [url, enabled, timeoutMs]);
 
   // Reset when URL changes (new data source)
   useEffect(() => {
+    requestId.current++;
     hasDataRef.current = false;
     setData(null);
     setLoading(true);
     setError(null);
+    setRefreshError(null);
   }, [url]);
 
   useEffect(() => {
@@ -76,7 +87,7 @@ export function useApi<T>(
     }
   }, [fetchData, refreshInterval, enabled]);
 
-  return { data, error, loading, refresh: fetchData };
+  return { data, error, refreshError, loading, refresh: fetchData };
 }
 
 // Typed hooks for each API
@@ -114,31 +125,13 @@ export function useMacroRegime() {
     description: string;
     inflationTrend: string;
     growthTrend: string;
-    latestInflation: number;
-    latestUnemployment: number;
+    latestInflation: number | null;
+    latestUnemployment: number | null;
   }>('/api/fred?action=regime');
 }
 
 export function usePortfolio() {
-  return useApi<{
-    portfolioValue: number;
-    dayChange: number;
-    dayChangePercent: number;
-    positions: Array<{
-      symbol: string;
-      qty: number;
-      currentPrice: number;
-      marketValue: number;
-      weight: number;
-      dayChange: number;
-      dayChangePercent: number;
-      category: string;
-      open: number;
-      high: number;
-      low: number;
-      volume: number;
-    }>;
-  }>('/api/alpaca?action=portfolio', { refreshInterval: 60000 });
+  return useApi<HoldingsPortfolio>('/api/alpaca?action=portfolio', { refreshInterval: 60000 });
 }
 
 export function useWatchlist() {

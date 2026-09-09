@@ -97,7 +97,7 @@ export default function SectorsPage() {
     return d.toISOString().split('T')[0];
   }, []);
 
-  const { data: sectorData, loading } = useMultiAggregates(
+  const { data: sectorData, loading, error: sectorError } = useMultiAggregates(
     SECTOR_ETFS.map((s) => s.symbol),
     '1day',
     fromDate
@@ -114,6 +114,7 @@ export default function SectorsPage() {
   const { data: fredDashboard } = useFredDashboard();
 
   if (loading) return <LoadingPage />;
+  if (sectorError || !sectorData || sectorData.some(s => s.data.length < 2) || sectorData.length < SECTOR_ETFS.length || !benchmarkData?.[0]?.data.length) return <Card><CardTitle>Sector evidence unavailable</CardTitle><p>Complete sector and benchmark histories are required before scoring agreement. Missing returns are not treated as zero.</p></Card>;
 
   // Compute returns for each period
   const allPeriods: HeatmapPeriod[] = ['1W', '1M', '3M', '6M', '1Y'];
@@ -397,7 +398,7 @@ export default function SectorsPage() {
       ? 'contradicts' : 'neutral' as const;
     leadingIndicators.push({
       name: 'CPI YoY',
-      value: `${fredRegime.latestInflation.toFixed(1)}%`,
+      value: fredRegime.latestInflation === null ? '—' : `${fredRegime.latestInflation.toFixed(1)}%`,
       trend: fredRegime.inflationTrend === 'rising' ? 'up' : fredRegime.inflationTrend === 'falling' ? 'down' : 'flat',
       ...cpiSignal,
       signal: cpiAlignment,
@@ -414,7 +415,7 @@ export default function SectorsPage() {
       ? 'contradicts' : 'neutral' as const;
     leadingIndicators.push({
       name: 'Unemployment',
-      value: `${fredRegime.latestUnemployment.toFixed(1)}%`,
+      value: fredRegime.latestUnemployment === null ? '—' : `${fredRegime.latestUnemployment.toFixed(1)}%`,
       trend: fredRegime.growthTrend === 'decelerating' ? 'up' : fredRegime.growthTrend === 'accelerating' ? 'down' : 'flat',
       ...unempSignal,
       signal: unempAlignment,
@@ -710,8 +711,8 @@ export default function SectorsPage() {
                 </div>
                 <p className="text-xs text-black/55 mb-2">{fredRegime.description}</p>
                 <div className="flex gap-3 text-[11px] text-black/45">
-                  <span>CPI YoY: <span className="font-semibold text-black/70">{fredRegime.latestInflation.toFixed(1)}%</span></span>
-                  <span>Unemployment: <span className="font-semibold text-black/70">{fredRegime.latestUnemployment.toFixed(1)}%</span></span>
+                  <span>CPI YoY: <span className="font-semibold text-black/70">{fredRegime.latestInflation?.toFixed(1) ?? '—'}%</span></span>
+                  <span>Unemployment: <span className="font-semibold text-black/70">{fredRegime.latestUnemployment?.toFixed(1) ?? '—'}%</span></span>
                 </div>
                 <div className="flex gap-3 mt-1 text-[11px] text-black/40">
                   <span>Inflation: {fredRegime.inflationTrend}</span>
@@ -870,7 +871,7 @@ export default function SectorsPage() {
         <div className="flex items-center justify-between mb-1">
           <CardTitle>How to Monitor Regime Transitions</CardTitle>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-black/35 uppercase tracking-wider">Signal Confidence</span>
+            <span className="text-[10px] text-black/35 uppercase tracking-wider">Evidence Agreement</span>
             <span className={`text-lg font-bold tabular-nums ${confidenceColor}`}>{clampedConfidence}</span>
             <Badge variant={clampedConfidence >= 70 ? 'green' : clampedConfidence >= 40 ? 'orange' : 'red'}>
               {confidenceLabel}
@@ -1051,11 +1052,11 @@ export default function SectorsPage() {
             </div>
           </div>
 
-          {/* Step 4: Signal Confidence Breakdown */}
+          {/* Step 4: Evidence Agreement Breakdown */}
           <div className="border border-black/[0.06] rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs font-bold text-accent-blue bg-accent-blue/10 w-6 h-6 rounded-full flex items-center justify-center">4</span>
-              <p className="text-sm font-semibold text-black/75">Signal Confidence Breakdown</p>
+              <p className="text-sm font-semibold text-black/75">Evidence Agreement Breakdown</p>
             </div>
             <p className="text-xs text-black/50 mb-3">
               Automated checklist scoring whether the current sector signal is actionable or requires more confirmation.
@@ -1120,18 +1121,18 @@ export default function SectorsPage() {
               <p className="text-xs text-black/60 leading-relaxed">
                 {clampedConfidence >= 70 ? (
                   <>
-                    <span className="font-semibold text-accent-green">High confidence.</span> Multiple timeframes agree, leading indicators confirm, and the signal
-                    has strong breadth. This is actionable — consider positioning toward the {topRegime?.name} playbook above.
+                    <span className="font-semibold text-accent-green">High agreement.</span> Multiple timeframes agree, leading indicators confirm, and the signal
+                    has strong breadth under this heuristic. This is not a calibrated probability or a trade recommendation.
                   </>
                 ) : clampedConfidence >= 40 ? (
                   <>
-                    <span className="font-semibold text-accent-orange">Moderate confidence.</span> Some factors support the signal but others are mixed.
-                    Consider a partial tilt toward {topRegime?.name} positioning, but don&apos;t fully rotate until more factors align. Re-check in 1-2 weeks.
+                    <span className="font-semibold text-accent-orange">Moderate agreement.</span> Some factors support the signal but others are mixed.
+                    Compare the market signal with the economic assessment and portfolio stress tests. Overlapping timeframes are not independent evidence.
                   </>
                 ) : (
                   <>
-                    <span className="font-semibold text-accent-red">Low confidence.</span> Signals are conflicting — timeframes disagree, indicators contradict,
-                    or regime scores are clustered. The market hasn&apos;t committed to a direction. Hold current positioning and wait for clearer signals before acting.
+                    <span className="font-semibold text-accent-red">Low agreement.</span> Signals are conflicting — timeframes disagree, indicators contradict,
+                    or regime scores are clustered. This heuristic cannot establish a reliable direction. Review the conflicting evidence.
                   </>
                 )}
               </p>

@@ -54,13 +54,14 @@ export function RecommendedUpdates({
 }) {
   const plan = buildRebalancePlan(positions, portfolioValue);
   const trades = [...plan.sells, ...plan.buys];
+  if (plan.blockedReason) return <Card><CardTitle>Strategic suggestions withheld</CardTitle><p role="status" className="text-sm mt-2">{plan.blockedReason}</p></Card>;
 
   return (
     <Card>
       <div className="flex items-center gap-3 flex-wrap">
-        <CardTitle>Recommended Updates — Today</CardTitle>
+        <CardTitle>Strategic Rebalance Rules</CardTitle>
         {plan.allInRange ? (
-          <Badge variant="green">All in range</Badge>
+          <Badge variant="green">No mechanical trades</Badge>
         ) : plan.urgent ? (
           <Badge variant="red">Threshold trigger active</Badge>
         ) : (
@@ -68,14 +69,14 @@ export function RecommendedUpdates({
         )}
       </div>
       <p className="text-xs text-black/40 mt-1 leading-relaxed max-w-3xl">
-        Specific trades generated from today&apos;s live prices by mechanically applying your own rules — the <Term k="sleeve">sleeve</Term> target bands, the sell priority (high-conviction → compounders → core last), the buy priority (VTI first), the BTC no-forced-<Term k="rebalancing">rebalance</Term> buffer, the SPCX Conviction Core rules (new-money-only builds, trims only above the 15% ceiling), and the {formatCurrency(150, { decimals: 0 })} SGOV floor. Amounts shift daily as prices move. Suggestions, not orders — nothing here executes anything.
+        These rules use the base strategic bands. Regime overlays are illustrative and do not change these trade amounts. Specific trades generated from today&apos;s live prices by mechanically applying your own rules — the <Term k="sleeve">sleeve</Term> target bands, the sell priority (high-conviction → compounders → core last), the buy priority (VTI first), the BTC no-forced-<Term k="rebalancing">rebalance</Term> buffer, the SPCX Conviction Core rules (new-money-only builds, trims only above the 15% ceiling), and the {formatCurrency(150, { decimals: 0 })} SGOV floor. Amounts shift daily as prices move. Suggestions, not orders — nothing here executes anything.
       </p>
 
       {plan.allInRange ? (
         <div className="mt-4 flex items-start gap-2 text-sm text-black/55">
           <span className="inline-block w-2 h-2 rounded-full bg-accent-green mt-1.5 shrink-0" />
           <p className="leading-relaxed">
-            Every sleeve and sub-sleeve is inside its target band at today&apos;s prices — no trades suggested. Doing nothing is the correct move. Next scheduled checkpoint: the quarterly rebalance around <span className="font-medium text-black/70">{nextQuarterEnd()}</span>, or sooner if any sleeve drifts more than 5 points past its band.
+            No mechanical trades are suggested by the configured rules. Exceptions such as BTC buffers and conviction ceilings may leave positions outside their target bands. Next scheduled checkpoint: the quarterly rebalance around <span className="font-medium text-black/70">{nextQuarterEnd()}</span>, or sooner if any sleeve drifts more than 5 points past its band.
           </p>
         </div>
       ) : (
@@ -110,7 +111,7 @@ export function RecommendedUpdates({
 
       {!plan.allInRange && (
         <p className="text-xs text-black/35 italic leading-relaxed mt-4">
-          Execution habits from the plan: spread orders over 1–3 trading days rather than all at once, prefer down days for buys, and re-check this card after any fill — amounts recompute from live weights, so partial execution updates the remaining suggestions automatically.
+          Execution habits from the plan: spread orders over 1–3 trading days rather than all at once, prefer down days for buys, and re-check this card after any fill — update the manually maintained quantities after any fill; live prices alone cannot reflect a trade.
         </p>
       )}
     </Card>

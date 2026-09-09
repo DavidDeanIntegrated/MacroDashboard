@@ -3,6 +3,7 @@
 
 import { getSnapshot as getAlpacaSnapshot, getHistoricalBars } from './alpaca';
 import { getSnapshot as getPolygonSnapshot } from './polygon';
+import { config } from './config';
 import { fetchJson } from './fetcher';
 import { withCache, TTL } from './cache';
 
@@ -12,6 +13,9 @@ export interface Holding {
   category: string;
   costBasis?: number; // average cost per share, where known (for distance-from-cost)
 }
+
+// Date the quantities below were last reconciled against the brokerage. Update with every holdings change.
+export const HOLDINGS_AS_OF = '2026-09-02';
 
 export const HOLDINGS: Holding[] = [
   { symbol: 'BTC',  qty: 0.00716019, category: 'Crypto', costBasis: 93144.18 },
@@ -58,6 +62,8 @@ export interface HoldingPosition {
   high: number;
   low: number;
   volume: number;
+  priceAsOf?: string;
+  priceSource?: string;
   costBasis?: number;
 }
 
@@ -66,6 +72,9 @@ export interface HoldingsPortfolio {
   dayChange: number;
   dayChangePercent: number;
   positions: HoldingPosition[];
+  holdingsAsOf: string;
+  valuationAsOf: string;
+  source: string;
 }
 
 async function fetchBtcPrice(): Promise<{ price: number; prevClose: number }> {
@@ -130,18 +139,22 @@ interface PriceData {
   high: number;
   low: number;
   volume: number;
+  asOf?: string;
+  source?: string;
 }
 
 async function fetchPrice(symbol: string): Promise<PriceData> {
   const empty: PriceData = { price: 0, prevClose: 0, open: 0, high: 0, low: 0, volume: 0 };
   if (symbol === 'BTC') {
     const btc = await fetchBtcPrice();
-    return { ...empty, price: btc.price, prevClose: btc.prevClose };
+    return { ...empty, price: btc.price, prevClose: btc.prevClose, source: 'Coinbase / Polygon fallback' };
   }
   // Try Alpaca first (reliable for live prices), fall back to Polygon
   try {
     const snap = await getAlpacaSnapshot(symbol);
+    if (!validQuote(snap.latestTrade.p, snap.prevDailyBar.c, snap.latestTrade.t)) throw new Error('Invalid or stale Alpaca quote');
     return {
+      asOf: snap.latestTrade.t, source: 'Alpaca',
       price: snap.latestTrade.p,
       prevClose: snap.prevDailyBar.c,
       open: snap.dailyBar?.o || 0,
@@ -152,7 +165,9 @@ async function fetchPrice(symbol: string): Promise<PriceData> {
   } catch {
     try {
       const snap = await getPolygonSnapshot(symbol);
+      if (!validQuote(snap.price, snap.prevClose, snap.asOf)) throw new Error('Invalid or stale Polygon quote');
       return {
+        asOf: snap.asOf ?? undefined, source: 'Polygon',
         price: snap.price,
         prevClose: snap.prevClose,
         open: snap.open,
@@ -166,11 +181,22 @@ async function fetchPrice(symbol: string): Promise<PriceData> {
   }
 }
 
+export function validQuote(price: number, previous: number, asOf?: string | null): boolean {
+  if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(previous) || previous <= 0 || !asOf) return false;
+  const age = Date.now() - Date.parse(asOf);
+  return Number.isFinite(age) && age >= -60000 && age <= 5 * 86400000;
+}
+
 export async function getHoldingsPortfolio(): Promise<HoldingsPortfolio> {
+  if (process.env.HOLDINGS_SOURCE === 'alpaca') { const { getBrokerPortfolio } = await import('./broker-portfolio'); return getBrokerPortfolio(HOLDINGS); }
+  if (!(config.alpaca.apiKey && config.alpaca.apiSecret) && !config.polygon.apiKey) throw new Error('Portfolio unavailable: configure Alpaca or Polygon market-data credentials. No allocation suggestions are generated without verified prices.');
   // Fetch all prices in parallel
   const prices = await Promise.all(
     HOLDINGS.map((h) => fetchPrice(h.symbol))
   );
+
+  const missing = HOLDINGS.filter((h, i) => h.qty > 0 && (!Number.isFinite(prices[i].price) || prices[i].price <= 0 || !Number.isFinite(prices[i].prevClose) || prices[i].prevClose <= 0));
+  if (missing.length) throw new Error(`Portfolio valuation unavailable: missing, invalid, or stale prices for ${missing.map(h => h.symbol).join(', ')}. Allocation and trade suggestions are withheld.`);
 
   const positions: HoldingPosition[] = HOLDINGS.map((h, i) => {
     const { price, prevClose, open, high, low, volume } = prices[i];
@@ -193,6 +219,8 @@ export async function getHoldingsPortfolio(): Promise<HoldingsPortfolio> {
       low,
       volume,
       costBasis: h.costBasis,
+      priceAsOf: prices[i].asOf,
+      priceSource: prices[i].source,
     };
   });
 
@@ -210,6 +238,9 @@ export async function getHoldingsPortfolio(): Promise<HoldingsPortfolio> {
 
   return {
     portfolioValue,
+    holdingsAsOf: HOLDINGS_AS_OF,
+    valuationAsOf: new Date().toISOString(),
+    source: 'Manually maintained quantities; not broker-synchronized',
     dayChange,
     dayChangePercent: prevTotal > 0 ? (dayChange / prevTotal) * 100 : 0,
     positions,
@@ -449,6 +480,8 @@ async function fetchBtcIntradayBars(): Promise<Map<string, number>> {
 export async function getPortfolioChart(
   period: PortfolioChartPeriod = '1Y'
 ): Promise<Array<{ date: string; value: number }>> {
+  if (process.env.HOLDINGS_SOURCE === 'alpaca') return []; // No transaction history: do not show the manual-book reconstruction.
+
   const days = PERIOD_DAYS[period];
   const isIntraday = period === '1D';
 

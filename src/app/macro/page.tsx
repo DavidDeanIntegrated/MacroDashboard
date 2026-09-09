@@ -1,5 +1,9 @@
 'use client';
 
+import { EconomicAssessment } from '@/components/EconomicAssessment';
+import { percentChange } from '@/lib/time-series';
+import type { EconomicAssessment as Assessment } from '@/lib/economy';
+
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardTitle, MetricCard } from '@/components/ui/Card';
 import { LoadingPage, ErrorState } from '@/components/ui/Loading';
@@ -38,14 +42,15 @@ interface MacroDashboard {
   corePceYoY?: Array<{ date: string; value: number }>;
   breakeven10y?: Array<{ date: string; value: number }>;
   moveIndex: Array<{ date: string; value: number }>;
+  assessment?: Assessment;
   regime: {
     regime: string;
     label: string;
     description: string;
     inflationTrend: string;
     growthTrend: string;
-    latestInflation: number;
-    latestUnemployment: number;
+    latestInflation: number | null;
+    latestUnemployment: number | null;
   };
 }
 
@@ -76,13 +81,7 @@ const HIGHER_IS_BETTER: Record<string, boolean> = {
 
 // Convert a monthly level series into year-over-year % change (index offset of 12
 // works because these FRED series are strictly monthly with no gaps).
-function toYoY(series: Array<{ date: string; value: number }>): Array<{ date: string; value: number }> {
-  if (!series || series.length <= 12) return [];
-  return series.slice(12).map((d, i) => ({
-    date: d.date,
-    value: series[i].value !== 0 ? +(((d.value - series[i].value) / series[i].value) * 100).toFixed(2) : 0,
-  }));
-}
+function toYoY(series: Array<{ date: string; value: number }>) { return percentChange(series ?? [], 12); }
 
 function filterByPeriod(
   data: Array<{ date: string; value: number }>,
@@ -96,11 +95,11 @@ function filterByPeriod(
 }
 
 function getLatest(data: Array<{ date: string; value: number }>): number {
-  return data.length > 0 ? data[data.length - 1].value : 0;
+  return data.length > 0 ? data[data.length - 1].value : NaN;
 }
 
 function getChange(data: Array<{ date: string; value: number }>, periods = 1): number {
-  if (data.length < periods + 1) return 0;
+  if (data.length < periods + 1) return NaN;
   return data[data.length - 1].value - data[data.length - 1 - periods].value;
 }
 
@@ -621,18 +620,7 @@ export default function MacroPage() {
             </p>
             <div className="max-w-xl">
               <Explainer title="How is this regime determined?">
-                <p>
-                  The dashboard sorts the economy into one of four <Term k="regime">seasons</Term> using two questions, answered with the latest government data:
-                </p>
-                <p>
-                  <span className="font-medium text-black/70">1. Is inflation high?</span> — Is <Term k="cpi">CPI</Term> running above 3% year-over-year? (Currently {formatPercent(regime.latestInflation)}.)
-                </p>
-                <p>
-                  <span className="font-medium text-black/70">2. Is the job market weakening?</span> — Has the unemployment rate risen over the past ~3 months? (Currently {regime.latestUnemployment.toFixed(1)}%.)
-                </p>
-                <p>
-                  High inflation + weakening jobs = <Term k="stagflation">Stagflation</Term>. High inflation + solid jobs = <Term k="reflation">Reflation</Term>. Low inflation + solid jobs = <Term k="goldilocks">Goldilocks</Term>. Low inflation + weakening jobs = <Term k="deflation">Disinflation/Slowdown</Term>. It&apos;s deliberately simple — two of the most reliable macro inputs rather than a black box — so you always know <em>why</em> the label is what it is.
-                </p>
+                <p>Growth and inflation combine family-balanced evidence from demand, labor, production, housing, output, and prices. The financial-conditions axis separately tracks credit, lending, real yields, and the dollar. Levels and momentum are distinct; missing and stale inputs are excluded. See the evidence table for dates, coverage, and thresholds.</p>
               </Explainer>
             </div>
           </div>
@@ -640,30 +628,32 @@ export default function MacroPage() {
             <div>
               <p className="text-xxs text-black/35 uppercase">Inflation (YoY)</p>
               <p className="text-lg font-semibold tabular-nums text-black/85">
-                {formatPercent(regime.latestInflation)}
+                {(regime.latestInflation === null ? '—' : formatPercent(regime.latestInflation))}
               </p>
             </div>
             <div>
               <p className="text-xxs text-black/35 uppercase">Unemployment</p>
               <p className="text-lg font-semibold tabular-nums text-black/85">
-                {regime.latestUnemployment.toFixed(1)}%
+                {(regime.latestUnemployment?.toFixed(1) ?? '—')}%
               </p>
             </div>
           </div>
         </div>
       </Card>
 
+      <EconomicAssessment assessment={data.assessment} />
+
       {/* Key metrics row */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <MetricCard
           label="Fed Funds Rate"
-          value={`${getLatest(data.fedFunds).toFixed(2)}%`}
+          value={`${(Number.isFinite(getLatest(data.fedFunds)) ? getLatest(data.fedFunds).toFixed(2) : "—")}%`}
           change={formatPercent(getChange(data.fedFunds))}
           trend={getChange(data.fedFunds) > 0 ? 'up' : getChange(data.fedFunds) < 0 ? 'down' : 'neutral'}
         />
         <MetricCard
           label="10Y Treasury"
-          value={`${getLatest(data.t10y).toFixed(2)}%`}
+          value={`${(Number.isFinite(getLatest(data.t10y)) ? getLatest(data.t10y).toFixed(2) : "—")}%`}
           change={formatPercent(getChange(data.t10y))}
           trend={getChange(data.t10y) > 0 ? 'up' : 'down'}
         />
@@ -676,13 +666,13 @@ export default function MacroPage() {
         />
         <MetricCard
           label="HY Spread"
-          value={`${getLatest(data.highYieldSpread).toFixed(2)}%`}
+          value={`${(Number.isFinite(getLatest(data.highYieldSpread)) ? getLatest(data.highYieldSpread).toFixed(2) : "—")}%`}
           change={formatPercent(getChange(data.highYieldSpread))}
           trend={getChange(data.highYieldSpread) > 0 ? 'up' : 'down'}
         />
         <MetricCard
           label="VIX"
-          value={getLatest(data.vix).toFixed(1)}
+          value={(Number.isFinite(getLatest(data.vix)) ? getLatest(data.vix).toFixed(1) : "—")}
           change={formatNumber(getChange(data.vix), { decimals: 1 })}
           trend={getChange(data.vix) > 0 ? 'up' : 'down'}
         />
@@ -1249,7 +1239,7 @@ export default function MacroPage() {
             const latest = getLatest(indicator.data);
             const change = getChange(indicator.data);
             const isExpanded = expandedIndicator === indicator.info.key;
-            const signal = indicator.info.regimeSignal(latest);
+            const signal = Number.isFinite(latest) ? indicator.info.regimeSignal(latest) : { regime: 'Unavailable', badge: 'neutral' as const, explanation: 'No observations available.' };
             const higherIsBetter = HIGHER_IS_BETTER[indicator.info.key] ?? false;
             // A rising value (change > 0.1) is green when higherIsBetter,
             // otherwise red. Falling value flips. |change| <= 0.1 stays neutral.

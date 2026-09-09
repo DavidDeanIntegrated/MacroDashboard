@@ -20,8 +20,8 @@ interface MacroDashboard {
     description: string;
     inflationTrend: string;
     growthTrend: string;
-    latestInflation: number;
-    latestUnemployment: number;
+    latestInflation: number | null;
+    latestUnemployment: number | null;
   };
 }
 
@@ -107,20 +107,25 @@ export default function GuidePage() {
   const fedFunds = getLatest(data.fedFunds);
   const t10y = getLatest(data.t10y);
   const spread10y2y = getLatest(data.t10y2y);
-  const cpi = regime.latestInflation;
-  const unemp = regime.latestUnemployment;
+  // The assessment reports null when a series is unavailable; NaN keeps the
+  // comparisons below false and the formatters render '—' instead of crashing.
+  const cpi = regime.latestInflation ?? NaN;
+  const unemp = regime.latestUnemployment ?? NaN;
+  const pct1 = (v: number) => (Number.isFinite(v) ? `${v.toFixed(1)}%` : '—');
   const hySpread = getLatest(data.highYieldSpread);
 
   // Determine overall assessment
   const signals: Array<{ label: string; sentiment: 'bullish' | 'bearish' | 'neutral' }> = [];
 
   // CPI assessment
-  if (cpi < 2.5) signals.push({ label: 'Inflation contained', sentiment: 'bullish' });
+  if (!Number.isFinite(cpi)) { /* no CPI reading — no inflation signal */ }
+  else if (cpi < 2.5) signals.push({ label: 'Inflation contained', sentiment: 'bullish' });
   else if (cpi > 4.0) signals.push({ label: 'Inflation elevated', sentiment: 'bearish' });
   else signals.push({ label: 'Inflation moderate', sentiment: 'neutral' });
 
   // Unemployment
-  if (unemp < 4.5) signals.push({ label: 'Labor market strong', sentiment: 'bullish' });
+  if (!Number.isFinite(unemp)) { /* no unemployment reading — no labor signal */ }
+  else if (unemp < 4.5) signals.push({ label: 'Labor market strong', sentiment: 'bullish' });
   else if (unemp > 6.0) signals.push({ label: 'Labor market weak', sentiment: 'bearish' });
   else signals.push({ label: 'Labor market softening', sentiment: 'neutral' });
 
@@ -136,7 +141,8 @@ export default function GuidePage() {
 
   // Fed funds vs CPI
   const realRate = fedFunds - cpi;
-  if (realRate > 1.5) signals.push({ label: 'Policy restrictive', sentiment: 'bearish' });
+  if (!Number.isFinite(realRate)) { /* no policy signal without both readings */ }
+  else if (realRate > 1.5) signals.push({ label: 'Policy restrictive', sentiment: 'bearish' });
   else if (realRate < 0) signals.push({ label: 'Policy accommodative', sentiment: 'bullish' });
   else signals.push({ label: 'Policy neutral', sentiment: 'neutral' });
 
@@ -202,9 +208,11 @@ export default function GuidePage() {
             <div className="bg-accent-green/[0.06] rounded-xl p-4">
               <p className="text-sm font-semibold text-accent-green mb-2">Current Assessment</p>
               <p className="text-sm text-black/65">
-                With CPI at {formatPercent(cpi)}, unemployment at {unemp.toFixed(1)}%,
+                With CPI at {formatPercent(cpi)}, unemployment at {pct1(unemp)},
                 and the Fed Funds rate at {fedFunds.toFixed(2)}%,
-                {cpi < 3 && unemp < 5
+                {!Number.isFinite(cpi) || !Number.isFinite(unemp)
+                  ? ' a cycle-phase read is not possible until both the inflation and unemployment series are available.'
+                  : cpi < 3 && unemp < 5
                   ? ' the economy appears to be in a mid-to-late expansion phase. Growth is solid and inflation is manageable. This is historically favorable for equities, especially quality growth stocks.'
                   : cpi > 3 && unemp < 5
                     ? ' the economy is showing signs of overheating. Strong employment but elevated inflation creates pressure for tighter monetary policy. Commodities, TIPS, and value stocks tend to outperform.'
@@ -286,7 +294,7 @@ export default function GuidePage() {
           <Indicator
             name="Unemployment Rate"
 
-            format={`${unemp.toFixed(1)}%`}
+            format={pct1(unemp)}
             trend={getTrend(data.unemployment)}
             description="The percentage of the labor force that is jobless and actively seeking work. This is a lagging indicator — by the time unemployment rises meaningfully, recession has usually begun. The Sahm Rule states that recession starts when the 3-month moving average rises 0.5% above its 12-month low."
             bullish="Unemployment below 4.5% signals a tight labor market. Workers have bargaining power (wage growth), consumer spending stays strong. Businesses invest to compete for talent. Historically, equity returns are strong when unemployment is low and stable."

@@ -1,16 +1,17 @@
 'use client';
 
+import { datedCorrelation } from '@/lib/time-series';
+
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Card, CardTitle, MetricCard } from '@/components/ui/Card';
 import { LoadingPage } from '@/components/ui/Loading';
 import { Badge } from '@/components/ui/Badge';
 import { TimeSeriesChart, MultiSeriesChart } from '@/components/charts/TimeSeriesChart';
-import { useMultiAggregates, useApi } from '@/lib/hooks';
-import { HOLDINGS } from '@/lib/holdings';
+import { useMultiAggregates, useApi, usePortfolio } from '@/lib/hooks';
 import { Term } from '@/components/ui/Term';
 import {
-  computeReturns, stdDev, correlation, corrColor,
+  computeReturns, stdDev, corrColor,
   computeVolStats, getVolSignal, computeBottomScore,
   type Bar,
 } from '@/lib/vol-signals';
@@ -26,9 +27,11 @@ const PERIOD_DAYS: Record<AnalyticsPeriod, number> = {
 };
 
 // Get non-BTC, non-cash-like holdings
-const EQUITY_HOLDINGS = HOLDINGS.filter((h) => h.symbol !== 'BTC' && h.symbol !== 'SGOV');
+
 
 export default function AnalyticsPage() {
+  const { data: portfolio, loading: portfolioLoading, error: portfolioError } = usePortfolio();
+  const EQUITY_HOLDINGS = useMemo(() => portfolio?.positions.filter(p => p.symbol !== 'CASH') ?? [], [portfolio]);
   const [period, setPeriod] = useState<AnalyticsPeriod>('3M');
 
   const fromDate = useMemo(() => {
@@ -41,7 +44,7 @@ export default function AnalyticsPage() {
     const syms = EQUITY_HOLDINGS.map((h) => h.symbol);
     if (!syms.includes('SPY')) syms.push('SPY');
     return syms;
-  }, []);
+  }, [EQUITY_HOLDINGS]);
 
   const { data: aggData, loading } = useMultiAggregates(allSymbols, '1day', fromDate);
 
@@ -51,7 +54,8 @@ export default function AnalyticsPage() {
     highYieldSpread: Array<{ date: string; value: number }>;
   }>('/api/fred?action=dashboard');
 
-  if (loading) return <LoadingPage />;
+  if (loading || portfolioLoading) return <LoadingPage />;
+  if (portfolioError) return <Card><CardTitle>Portfolio unavailable</CardTitle><p>{portfolioError}</p></Card>;
 
   const days = PERIOD_DAYS[period];
 
@@ -118,17 +122,9 @@ export default function AnalyticsPage() {
 
   // ─── CORRELATION MATRIX ───
   const corrSymbols = EQUITY_HOLDINGS.map((h) => h.symbol);
-  const dailyReturns: Record<string, number[]> = {};
-  for (const sym of corrSymbols) {
-    dailyReturns[sym] = computeReturns(symbolData[sym]?.closes || []);
-  }
-  // Also include SPY
-  dailyReturns['SPY'] = spyReturns;
   const corrMatrixSymbols = [...corrSymbols, 'SPY'];
-
-  const corrMatrix: number[][] = corrMatrixSymbols.map((a) =>
-    corrMatrixSymbols.map((b) => correlation(dailyReturns[a] || [], dailyReturns[b] || []))
-  );
+  const closesFor = (symbol: string) => (symbolData[symbol]?.closes ?? []).map((close, i) => ({ close, date: symbolData[symbol].dates[i] }));
+  const corrMatrix = corrMatrixSymbols.map(a => corrMatrixSymbols.map(b => datedCorrelation(closesFor(a), closesFor(b)).value));
 
   // ─── VOLATILITY ───
   const volatility = EQUITY_HOLDINGS.map((h) => {
@@ -323,7 +319,7 @@ export default function AnalyticsPage() {
 
       <Card padding="none">
         <div className="px-6 pt-6 pb-3">
-          <CardTitle>Daily Return Correlations</CardTitle>
+          <CardTitle>Matched-Date Return Correlations</CardTitle><p className="text-xs text-black/45">At least 20 shared intervals per pair; — means unavailable. Prices are aligned before returns, including crypto weekends. Price returns exclude distributions.</p>
           <div className="flex items-center gap-4 mt-2">
             <div className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 rounded bg-accent-red/20" />
@@ -364,9 +360,9 @@ export default function AnalyticsPage() {
                     return (
                       <td key={colSym} className="px-1 py-1 text-center">
                         <span className={`inline-block w-full px-1 py-1 rounded text-[10px] font-semibold tabular-nums ${
-                          i === j ? 'bg-black/[0.06] text-black/30' : corrColor(val)
+                          val === null ? 'text-black/30' : i === j ? 'bg-black/[0.06] text-black/30' : corrColor(val)
                         }`}>
-                          {i === j ? '1.00' : val.toFixed(2)}
+                          {val === null ? '—' : val.toFixed(2)}
                         </span>
                       </td>
                     );
@@ -385,17 +381,18 @@ export default function AnalyticsPage() {
         let count = 0;
         for (let i = 0; i < corrSymbols.length; i++) {
           for (let j = i + 1; j < corrSymbols.length; j++) {
-            totalCorr += corrMatrix[i][j];
-            count++;
+            const value = corrMatrix[i][j];
+            if (value !== null) { totalCorr += value; count++; }
           }
         }
+        if (!count) return <Card><CardTitle>Correlation unavailable</CardTitle><p>At least 20 shared return intervals are required. Missing data is not zero correlation.</p></Card>;
         const avgCorr = count > 0 ? totalCorr / count : 0;
         const badge = avgCorr > 0.6 ? 'red' : avgCorr > 0.35 ? 'orange' : avgCorr > 0.1 ? 'green' : 'blue';
         const text = avgCorr > 0.6
           ? `Your holdings' daily moves are, on average, strongly linked (${avgCorr.toFixed(2)} on a 0-to-1 scale). In practice that means a bad day for one is usually a bad day for all — the portfolio has more concentrated risk than its position count suggests. Assets that march to different drummers (gold, T-bills, international, commodities) are what bring this down.`
           : avgCorr > 0.35
             ? `Your holdings move together moderately (average ${avgCorr.toFixed(2)}, where 0 = fully independent and 1 = lockstep) — typical for an equity-heavy book. Diversification is real but partial: in a sharp sell-off, correlations tend to rise toward 1, so the uncorrelated sleeves (gold, T-bills) are carrying the true protection.`
-            : `Your holdings are largely independent of each other (average ${avgCorr.toFixed(2)}) — strong diversification. Losses in one position are genuinely likely to be offset elsewhere, which smooths the portfolio's overall ride.`;
+            : `Observed pairwise correlations are low (average ${avgCorr.toFixed(2)}) over this sample. This is not a portfolio risk estimate or a guarantee of protection in a sell-off.`;
 
         return (
           <Card>
