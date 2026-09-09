@@ -9,6 +9,7 @@ import { timeAgo } from '@/lib/format';
 import { HOLDINGS, WATCHLIST, type HoldingPosition } from '@/lib/holdings';
 import { computeSleeveData, getSleeveStatus } from '@/lib/sleeves';
 import { Term } from '@/components/ui/Term';
+import { EconomicOutlook } from '@/components/EconomicAssessment';
 
 interface WatchlistItem {
   symbol: string;
@@ -119,7 +120,8 @@ export default function AlertsPage() {
               <h3 className="text-lg font-semibold text-black/85">{regime.label}</h3>
               <RegimeBadge regime={regime.regime} />
             </div>
-            <p className="text-sm text-black/55 mb-4">{regime.description}</p>
+            <p className="text-sm text-black/55">{regime.description}</p>
+            <div className="mb-4"><EconomicOutlook assessment={regime} compact /></div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="p-3 bg-black/[0.02] rounded-xl">

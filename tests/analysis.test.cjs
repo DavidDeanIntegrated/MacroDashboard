@@ -2,7 +2,7 @@ require('../scripts/register-ts.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { percentChange, alignedReturns, datedCorrelation } = require('../src/lib/time-series.ts');
-const { assessEconomy, ECONOMIC_INDICATORS } = require('../src/lib/economy.ts');
+const { assessEconomy, ECONOMIC_INDICATORS, curveRecessionProbability, normalCdf, isLeading } = require('../src/lib/economy.ts');
 const { portfolioRisk, factorSensitivity, stressPortfolio, lookThrough, parseResearchInputs, researchChanges } = require('../src/lib/portfolio-risk.ts');
 const { computeYoYChange, getFredSeries } = require('../src/lib/fred.ts');
 const { validateRegimes } = require('../src/lib/regime-validation.ts');
@@ -53,10 +53,42 @@ test('Economic narrative and trend agree; inflation level does not determine mom
   data.coreCpi=data.cpi; data.corePce=data.cpi; data.pce=data.cpi;
   const a=assessEconomy(data,'2026-08-31'); assert.equal(a.inflationTrend,'rising'); assert.match(a.description,/inflation is [a-z' ]+ and building/); assert.ok(!a.description.includes('easing'));
 });
+test('Outlook reads only leading inputs, and a leading downturn does not move the coincident regime', () => {
+  const data=economicData(); data.unemployment=monthly(32,()=>4);
+  const base=assessEconomy(data,'2026-08-31');
+  assert.equal(base.regime,'reflation'); assert.equal(base.outlook.heading,'continuing'); assert.equal(base.outlook.warningLevel,'low');
+  assert.ok(base.outlook.axis.families>=3); assert.match(base.outlook.description,/^Looking ahead: the expansion looks set to continue/);
+  for(const s of ECONOMIC_INDICATORS.filter(isLeading)) data[s.key]=monthly(32,i=>s.transform==='level'? s.center-3*s.scale : s.direction<0?100*(1.02**i):100*(.985**i));
+  const turned=assessEconomy(data,'2026-08-31');
+  assert.equal(turned.regime,base.regime,'coincident regime keeps its own inputs');
+  assert.equal(turned.outlook.heading,'slowing'); assert.ok(turned.outlook.axis.score<-.3);
+  assert.equal(turned.outlook.warningLevel,'high'); assert.ok(turned.outlook.triggered>=4);
+  assert.ok(turned.outlook.warnings.find(w=>w.key==='curveInversion').triggered);
+  assert.ok(turned.outlook.curveModel.probability>.5);
+});
+test('Sahm rule and curve-inversion memory follow their definitions', () => {
+  const data=economicData();
+  data.unemployment=monthly(32,i=>i<26?3.8:4.4);
+  data.curve10y3m=monthly(32,i=>i<22?-.5:1.2);
+  const o=assessEconomy(data,'2026-08-31').outlook;
+  const sahm=o.warnings.find(w=>w.key==='sahm'); assert.equal(sahm.triggered,true); assert.match(sahm.reading,/^\+0\.60 pt/);
+  const curve=o.warnings.find(w=>w.key==='curveInversion'); assert.equal(curve.triggered,true); assert.match(curve.reading,/last inverted 2025-10/);
+  data.curve10y3m=monthly(32,()=>1.2);
+  assert.equal(assessEconomy(data,'2026-08-31').outlook.warnings.find(w=>w.key==='curveInversion').triggered,false);
+  assert.equal(assessEconomy({},'2026-08-31').outlook.warningLevel,'unknown');
+});
+test('Curve model reproduces the published probit', () => {
+  almost(normalCdf(0),.5); assert.ok(Math.abs(normalCdf(1.96)-.975)<1e-4);
+  assert.ok(Math.abs(curveRecessionProbability(0)-.297)<.002);
+  assert.ok(Math.abs(curveRecessionProbability(-1)-.540)<.002);
+  assert.ok(Math.abs(curveRecessionProbability(2)-.036)<.002);
+  assert.equal(curveRecessionProbability(null),null);
+});
 test('Future observations cannot influence an as-of assessment', () => {
   const data=economicData(), base=assessEconomy(data,'2026-08-31');
   for(const key of Object.keys(data)) data[key].push({date:'2027-01-01',value:100000});
   assert.deepEqual(assessEconomy(data,'2026-08-31').axes,base.axes);
+  assert.deepEqual(assessEconomy(data,'2026-08-31').outlook,base.outlook);
 });
 test('Short position history withholds full portfolio risk instead of renormalizing', () => {
   const result=portfolioRisk([position('A',80),position('B',20)],{A:prices(90,i=>100+i+Math.sin(i)),B:prices(10,i=>100+i)});

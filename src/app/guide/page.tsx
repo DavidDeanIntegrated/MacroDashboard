@@ -3,10 +3,11 @@
 import { Card, CardTitle } from '@/components/ui/Card';
 import { Badge, RegimeBadge } from '@/components/ui/Badge';
 import { LoadingPage, ErrorState } from '@/components/ui/Loading';
+import { Term } from '@/components/ui/Term';
 import { useApi } from '@/lib/hooks';
 import { formatPercent } from '@/lib/format';
 import { INDICATOR_ZONES, trendOverDays, changeTone, type Zone, type Trend } from '@/lib/indicator-zones';
-import { describeLevel, describeMomentum, type EconomicAssessment } from '@/lib/economy';
+import { describeLevel, describeMomentum, describeOutlook, describeOutlookMomentum, type EconomicAssessment } from '@/lib/economy';
 
 interface MacroDashboard {
   fedFunds: Array<{ date: string; value: number }>;
@@ -146,6 +147,7 @@ export default function GuidePage() {
   // Cycle phase comes from the economic assessment's growth axis (level + trend),
   // never from a second set of CPI/unemployment rules.
   const growth = data.assessment?.axes.growth;
+  const outlook = data.assessment?.outlook;
   const gLevel = growth ? describeLevel('growth', growth.score) : 'not enough data';
   const gTrend = growth ? describeMomentum('growth', growth.momentum) : 'trend unavailable';
   const phase = !growth || growth.score === null
@@ -224,8 +226,14 @@ export default function GuidePage() {
               <p className="text-sm text-black/65">
                 The growth axis reads <span className="font-medium text-black/75">{gLevel}</span> and <span className="font-medium text-black/75">{gTrend}</span>. {phase.text}
               </p>
+              {outlook && (
+                <p className="text-sm text-black/65 mt-2">
+                  <span className="font-medium text-black/75">Next phase, per the <Term k="outlook">leading indicators</Term>:</span> {outlook.label.toLowerCase()} — they are {describeOutlook(outlook.axis.score)} (trend: {describeOutlookMomentum(outlook.axis.momentum)}), with {outlook.triggered} of {outlook.evaluable} recession warning signs on
+                  {outlook.curveModel.probability !== null ? ` and the yield-curve model at ${Math.round(outlook.curveModel.probability * 100)}% odds of a recession within 12 months` : ''}.
+                </p>
+              )}
               <p className="text-xs text-black/45 mt-2">
-                Same growth reading as the regime card above — CPI {formatPercent(cpi)}, unemployment {pct1(unemp)}, and Fed Funds {fedFunds.toFixed(2)}% are context, not the rule.
+                Same growth reading and outlook as the regime card on the Briefing page — CPI {formatPercent(cpi)}, unemployment {pct1(unemp)}, and Fed Funds {fedFunds.toFixed(2)}% are context, not the rule.
               </p>
             </div>
             <div className="bg-accent-blue/[0.06] rounded-xl p-4">

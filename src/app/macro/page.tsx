@@ -1,6 +1,6 @@
 'use client';
 
-import { EconomicEvidence } from '@/components/EconomicAssessment';
+import { EconomicEvidence, EconomicOutlook } from '@/components/EconomicAssessment';
 import { percentChange } from '@/lib/time-series';
 import { zoneSignal, HIGHER_IS_BETTER, changeTone } from '@/lib/indicator-zones';
 import type { EconomicAssessment as Assessment } from '@/lib/economy';
@@ -548,6 +548,7 @@ export default function MacroPage() {
               <Explainer title="How is this regime determined — and what's the evidence?">
                 <EconomicEvidence assessment={data.assessment} />
               </Explainer>
+              <EconomicOutlook assessment={data.assessment} />
             </div>
           </div>
           <div className="text-left sm:text-right space-y-2 shrink-0 sm:ml-8">
