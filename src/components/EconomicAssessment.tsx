@@ -102,8 +102,9 @@ export function EconomicEvidence({ assessment }: { assessment?: Assessment }) {
       <details>
         <summary className="cursor-pointer font-medium text-accent-blue">What this can and can&apos;t tell you</summary>
         <p className="mt-2">
-          It describes the present, not the future, and its thresholds are sensible rules of thumb rather than a model that has been
-          tested against history. Markets often move before the data do. Where each group reads, in detail:
+          It describes the present, not the future. Its thresholds are rules of thumb that were checked against 2005–2024 with
+          point-in-time data (weak-growth label: 61% precision, 5% false alarms, but it flickers and missed March 2020 like any monthly read)
+          and were not tuned to that history. Markets often move before the data do. Where each group reads, in detail:
         </p>
         <ul className="list-disc pl-5 mt-1 space-y-1">
           {(['growth', 'inflation', 'financial'] as const).map((k) => <li key={k}><strong>{AXIS_META[k].title}:</strong> {AXIS_META[k].inputs}.</li>)}
@@ -239,7 +240,7 @@ export function EconomicOutlook({ assessment, compact = false }: { assessment?: 
               <li>Leading indicators give <em>direction</em>, not timing. Historically they turn 6–18 months ahead, with a wide spread and occasional false alarms (2022–23 is the recent example).</li>
               <li>The checklist is a count of rules of thumb. Four signs on is a serious warning; it is not a 4-in-8 probability.</li>
               <li>The curve model is a single-variable probit published by the New York Fed (Estrella &amp; Trubin, 2006). Its record is good for recessions since 1968 but it has nothing to say about how deep or how long.</li>
-              <li>None of these thresholds have been checked against history on this dashboard yet — <code>npm run validate:regimes</code> exists for exactly that and has not been run.</li>
+              <li>Checked against 2005–2024 with point-in-time data (see <code>docs/regime-validation.md</code>): the checklist and the heading caught both recessions 3–11 months early with ~90% recall, but also called a slowdown for most of Sept 2022 – Oct 2024 that never came. Expect roughly one false alarm in four.</li>
               <li>Markets usually move before the leading data do; this is a read on the economy, not a return forecast.</li>
             </ul>
           </details>

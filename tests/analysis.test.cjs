@@ -66,6 +66,18 @@ test('Outlook reads only leading inputs, and a leading downturn does not move th
   assert.ok(turned.outlook.warnings.find(w=>w.key==='curveInversion').triggered);
   assert.ok(turned.outlook.curveModel.probability>.5);
 });
+test('Outlook flips borrowing-axis signs and reads the curve with a 12-month lag', () => {
+  const data=economicData(); data.unemployment=monthly(32,()=>4);
+  const base=assessEconomy(data,'2026-08-31');
+  data.lendingStandards=monthly(32,()=>60); // most banks tightening
+  const tight=assessEconomy(data,'2026-08-31');
+  assert.ok(tight.axes.financial.score>base.axes.financial.score,'tighter = more restrictive on the borrowing axis');
+  assert.ok(tight.outlook.axis.score<base.outlook.axis.score,'tighter = worse outlook');
+  data.curve10y3m=monthly(32,i=>i<20?-1:2); data.curveSlope=data.curve10y3m; // inverted until Aug 2025, steep since
+  const curve=assessEconomy(data,'2026-08-31').evidence.find(e=>e.key==='curve10y3m');
+  assert.ok(curve.value<0,'outlook reads the slope from a year ago, not today');
+  assert.equal(curve.date,'2026-08-01','staleness still judged on the latest observation');
+});
 test('Sahm rule and curve-inversion memory follow their definitions', () => {
   const data=economicData();
   data.unemployment=monthly(32,i=>i<26?3.8:4.4);
@@ -133,6 +145,7 @@ test('Estimate revisions only compare the same fiscal period and units', () => {
 test('Validation excludes unknown calls and incomplete forward labels', () => {
   const base=assessEconomy({},'2025-01-31');
   const report=validateRegimes([{asOf:base.asOf,assessment:base}],monthly(20,()=>0));
+  assert.deepEqual(Object.keys(report.signals),['regime','outlook','checklist','curve']); assert.equal(report.signals.curve.twelveMonth.horizonMonths,12);
   assert.equal(report.evaluated,0);assert.equal(report.abstentions,1);assert.equal(report.precision,null);
 });
 test('FRED vintage requests use real-time dates, not only observation cutoffs', async () => {
