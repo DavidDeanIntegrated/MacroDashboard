@@ -177,11 +177,11 @@ export function assessEconomy(data: Record<string, Observation[]>, asOf = new Da
   const inflationTrend = (axes.inflation.momentum ?? 0) > .1 ? 'rising' : (axes.inflation.momentum ?? 0) < -.1 ? 'falling' : 'stable';
   const growthTrend = (axes.growth.momentum ?? 0) > .1 ? 'accelerating' : (axes.growth.momentum ?? 0) < -.1 ? 'decelerating' : 'stable';
   const credit = axes.financial.score === null ? 'unavailable' : axes.financial.score > .15 ? 'restrictive' : axes.financial.score < -.15 ? 'supportive' : 'mixed';
-  const caveats = ['Rule-based assessment; scores are not probabilities. Thresholds have not been calibrated out of sample.',
+  const caveats = ['Rule-based assessment; scores are not probabilities. Thresholds were checked against 2005–2024 point-in-time data (docs/regime-validation.md) but not tuned to it.',
     'Observation dates differ from publication dates. Daily/weekly monthly averages include the latest partial month; quarterly data are slower.',
     'The Fed’s 2% goal refers to headline PCE. CPI and breakevens are complementary measures, not equivalent targets.',
     'Markets can anticipate or contradict economic releases. This model does not forecast returns.',
-    'The outlook reads leading indicators, which have historically turned 6–18 months before the economy; they give direction, not timing, and have false alarms.'];
+    'The outlook reads leading indicators, which have historically turned 6–18 months before the economy; they give direction, not timing. In the 2005–2024 check they caught both recessions early and also called a slowdown in 2022–24 that never came.'];
   if (Object.values(axes).some(a => a.disagreement)) caveats.push('Indicators disagree within at least one axis; inspect the opposing evidence before interpreting the aggregate.');
   if (evidence.some(e => e.status !== 'available')) caveats.push('Stale, missing, and insufficient series are excluded from the axes; coverage shows what remains.');
   const latestInflation = percentChange(data.cpi ?? []).filter(p => p.date <= asOf).at(-1)?.value ?? null;

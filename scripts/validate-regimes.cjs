@@ -19,6 +19,9 @@ async function main() {
   const inputs = ECONOMIC_INDICATORS.filter(s => s.axis !== 'context' || s.key === 'unemployment');
   // FRED only archives vintages from the day a series was added (T10Y2Y: 2014, HY spread: 2023). Before that
   // date the latest vintage truncated to the decision date is the only option; the report records where it was used.
+  // Market series are never revised, so their latest vintage truncated to the decision date IS the
+  // point-in-time value; skipping the vintage request also avoids FRED's slow/timing-out daily vintages.
+  const NEVER_REVISED = new Set(['T10Y2Y', 'T10Y3M', 'T10YIE', 'DFII10', 'BAMLH0A0HYM2', 'BAMLC0A0CM', 'DRTSCILM']);
   const firstVintage = {};
   for (const s of inputs) {
     const url = `https://api.stlouisfed.org/fred/series/vintagedates?series_id=${s.id}&api_key=${process.env.FRED_API_KEY}&file_type=json&limit=1`;
@@ -33,7 +36,7 @@ async function main() {
     // ~80 requests/minute, below FRED's documented 120/minute ceiling.
     for (const s of inputs) {
       const start = new Date(`${asOf}T00:00:00Z`); start.setUTCFullYear(start.getUTCFullYear() - 3);
-      const archived = firstVintage[s.id] && firstVintage[s.id] <= asOf;
+      const archived = !NEVER_REVISED.has(s.id) && firstVintage[s.id] && firstVintage[s.id] <= asOf;
       try { data[s.key] = await getFredSeries(s.id, start.toISOString().slice(0, 10), asOf, undefined, archived ? asOf : undefined); if (!archived) fallbackVintage.push(s.id); }
       catch { data[s.key] = []; unavailable.push(s.id); }
       requests++; await pause(750);
