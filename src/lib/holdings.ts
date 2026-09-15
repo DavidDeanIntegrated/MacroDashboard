@@ -15,7 +15,7 @@ export interface Holding {
 }
 
 // Date the quantities below were last reconciled against the brokerage. Update with every holdings change.
-export const HOLDINGS_AS_OF = '2026-09-02';
+export const HOLDINGS_AS_OF = '2026-09-15';
 
 export const HOLDINGS: Holding[] = [
   { symbol: 'BTC',  qty: 0.00716019, category: 'Crypto', costBasis: 93144.18 },
@@ -32,7 +32,7 @@ export const HOLDINGS: Holding[] = [
   // RKLB sold in full 2026-08-11 @ $77.61 (realized +$40.91)
   // RVI sold in full 2026-08-14 @ $28.51 (realized -$11.50)
   { symbol: 'VST',  qty: 1.26874,    category: 'High Conviction', costBasis: 136.99 },
-  { symbol: 'SPCX', qty: 2.679045,   category: 'Conviction Core', costBasis: 133.63 },
+  { symbol: 'SPCX', qty: 2.873563,   category: 'Conviction Core', costBasis: 134.33 },
 ];
 
 // Category display order and badge variants
