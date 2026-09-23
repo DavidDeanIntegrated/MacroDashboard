@@ -15,24 +15,24 @@ export interface Holding {
 }
 
 // Date the quantities below were last reconciled against the brokerage. Update with every holdings change.
-export const HOLDINGS_AS_OF = '2026-09-15';
+export const HOLDINGS_AS_OF = '2026-09-23';
 
 export const HOLDINGS: Holding[] = [
   { symbol: 'BTC',  qty: 0.00716019, category: 'Crypto', costBasis: 93144.18 },
-  { symbol: 'VTI',  qty: 3.09717,    category: 'Broad Market', costBasis: 349.59 },
-  { symbol: 'SGOV', qty: 8.296427,   category: 'Dry Powder', costBasis: 100.47 },
+  { symbol: 'VTI',  qty: 3.209102,   category: 'Broad Market', costBasis: 350.48 },
+  { symbol: 'SGOV', qty: 8.321805,   category: 'Dry Powder', costBasis: 100.47 },
   { symbol: 'GLD',  qty: 1.409832,   category: 'Gold', costBasis: 450.70 },
   { symbol: 'VTV',  qty: 1.790589,   category: 'Value', costBasis: 207.74 },
-  { symbol: 'VXUS', qty: 3.751388,   category: 'International', costBasis: 83.01 },
-  { symbol: 'NVDA', qty: 0.859053,   category: 'Quality Compounder', costBasis: 190.43 },
+  { symbol: 'VXUS', qty: 3.758219,   category: 'International', costBasis: 83.02 },
+  { symbol: 'NVDA', qty: 0.860036,   category: 'Quality Compounder', costBasis: 190.46 },
   { symbol: 'TSM',  qty: 0.339705,   category: 'Quality Compounder', costBasis: 311.06 },
-  { symbol: 'MSFT', qty: 0.516974,   category: 'Quality Compounder', costBasis: 388.76 },
+  { symbol: 'MSFT', qty: 0.517933,   category: 'Quality Compounder', costBasis: 388.95 },
   { symbol: 'PLTR', qty: 1.212096,   category: 'Quality Compounder', costBasis: 135.02 },
   { symbol: 'BCI',  qty: 10.460264,  category: 'Commodity', costBasis: 22.15 },
   // RKLB sold in full 2026-08-11 @ $77.61 (realized +$40.91)
   // RVI sold in full 2026-08-14 @ $28.51 (realized -$11.50)
   { symbol: 'VST',  qty: 1.26874,    category: 'High Conviction', costBasis: 136.99 },
-  { symbol: 'SPCX', qty: 2.873563,   category: 'Conviction Core', costBasis: 134.33 },
+  { symbol: 'SPCX', qty: 3.005733,   category: 'Conviction Core', costBasis: 135.08 },
 ];
 
 // Category display order and badge variants
