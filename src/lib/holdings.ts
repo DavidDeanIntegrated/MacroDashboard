@@ -19,20 +19,20 @@ export const HOLDINGS_AS_OF = '2026-09-23';
 
 export const HOLDINGS: Holding[] = [
   { symbol: 'BTC',  qty: 0.00716019, category: 'Crypto', costBasis: 93144.18 },
-  { symbol: 'VTI',  qty: 3.209102,   category: 'Broad Market', costBasis: 350.48 },
-  { symbol: 'SGOV', qty: 8.321805,   category: 'Dry Powder', costBasis: 100.47 },
+  { symbol: 'VTI',  qty: 3.28839,    category: 'Broad Market', costBasis: 351.15 },
+  { symbol: 'SGOV', qty: 7.824895,   category: 'Dry Powder', costBasis: 100.47 },
   { symbol: 'GLD',  qty: 1.409832,   category: 'Gold', costBasis: 450.70 },
-  { symbol: 'VTV',  qty: 1.790589,   category: 'Value', costBasis: 207.74 },
+  { symbol: 'VTV',  qty: 2.017205,   category: 'Value', costBasis: 209.19 },
   { symbol: 'VXUS', qty: 3.758219,   category: 'International', costBasis: 83.02 },
   { symbol: 'NVDA', qty: 0.860036,   category: 'Quality Compounder', costBasis: 190.46 },
   { symbol: 'TSM',  qty: 0.339705,   category: 'Quality Compounder', costBasis: 311.06 },
   { symbol: 'MSFT', qty: 0.517933,   category: 'Quality Compounder', costBasis: 388.95 },
   { symbol: 'PLTR', qty: 1.212096,   category: 'Quality Compounder', costBasis: 135.02 },
-  { symbol: 'BCI',  qty: 10.460264,  category: 'Commodity', costBasis: 22.15 },
+  { symbol: 'BCI',  qty: 8.189264,   category: 'Commodity', costBasis: 22.32 },
   // RKLB sold in full 2026-08-11 @ $77.61 (realized +$40.91)
   // RVI sold in full 2026-08-14 @ $28.51 (realized -$11.50)
   { symbol: 'VST',  qty: 1.26874,    category: 'High Conviction', costBasis: 136.99 },
-  { symbol: 'SPCX', qty: 3.005733,   category: 'Conviction Core', costBasis: 135.08 },
+  { symbol: 'SPCX', qty: 3.2074,     category: 'Conviction Core', costBasis: 135.94 },
 ];
 
 // Category display order and badge variants

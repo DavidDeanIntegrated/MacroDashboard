@@ -260,9 +260,11 @@ const fmtParts = (parts: ExamplePart[]) =>
 function RebalanceSimulator({
   sleeves,
   portfolioValue,
+  regimeKey = 'unknown',
 }: {
   sleeves: ReturnType<typeof computeSleeveData>;
   portfolioValue: number;
+  regimeKey?: RegimeKey;
 }) {
   const [deltas, setDeltas] = useState<Record<string, number>>({});
   const netCash = Object.values(deltas).reduce((s, v) => s + (v || 0), 0);
@@ -274,7 +276,7 @@ function RebalanceSimulator({
       <div className="flex items-start justify-between gap-2 flex-wrap">
         <div>
           <CardTitle>Rebalance Simulator</CardTitle>
-          <p className="text-xs text-black/40 mt-1">Model buys (+) and sells (−) per sleeve and preview the resulting weights vs target</p>
+          <p className="text-xs text-black/40 mt-1">Model buys (+) and sells (−) per sleeve and preview the resulting weights vs the baseline target and the regime-adjusted target</p>
         </div>
         {anyChange && (
           <button onClick={() => setDeltas({})} className="text-xs font-medium text-accent-blue hover:text-accent-blue/80">Reset</button>
@@ -288,6 +290,8 @@ function RebalanceSimulator({
           const curWeight = portfolioValue > 0 ? (s.value / portfolioValue) * 100 : 0;
           const projWeight = projTotal > 0 ? (projValue / projTotal) * 100 : 0;
           const status = getSleeveStatus(projWeight, s.targetMin, s.targetMax);
+          const adj = regimeAdjustedBand(s.name, s.targetMin, s.targetMax, regimeKey);
+          const adjStatus = getSleeveStatus(projWeight, adj.min, adj.max);
           return (
             <div key={s.name} className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-2 w-32 shrink-0">
@@ -311,7 +315,20 @@ function RebalanceSimulator({
               <div className="text-sm tabular-nums text-black/60">
                 {curWeight.toFixed(1)}% <span className="text-black/30">→</span>{' '}
                 <span className="font-semibold text-black/85">{projWeight.toFixed(1)}%</span>
-                <span className="text-black/35"> / {s.targetMin}–{s.targetMax}%</span>
+              </div>
+              <div className="text-xs tabular-nums text-black/45 flex flex-wrap gap-x-3">
+                <span>Baseline <span className="text-black/65">{s.targetMin}–{s.targetMax}%</span></span>
+                {regimeKey !== 'unknown' && (
+                  <span>
+                    Regime{' '}
+                    <span className={adjStatus === 'in-range' ? 'text-accent-green font-medium' : 'text-black/65'}>
+                      {adj.min.toFixed(0)}–{adj.max.toFixed(0)}%
+                    </span>
+                    {adj.delta !== 0
+                      ? <span className={adj.delta > 0 ? 'text-accent-green' : 'text-accent-red'}> ({adj.delta > 0 ? '▲ +' : '▼ '}{adj.delta}pp)</span>
+                      : <span className="text-black/35"> (no tilt)</span>}
+                  </span>
+                )}
               </div>
               {statusBadge(status)}
             </div>
@@ -329,6 +346,13 @@ function RebalanceSimulator({
         </span>
         <span>Projected total: <span className="font-medium text-black/70">{formatCurrency(projTotal)}</span></span>
       </div>
+      <p className="mt-2 text-[11px] text-black/40">
+        {regimeKey === 'unknown'
+          ? 'The regime read is unclear right now, so no regime tilt applies — the baseline target is the only target.'
+          : <>Status badges grade against the baseline target (what the Recommended Updates engine uses). The{' '}
+              <Term def="The baseline band nudged up or down for the current macro regime — e.g., stagflation shifts weight from equities toward real assets and cash. Tilts across sleeves sum to roughly zero. A green regime band means the projected weight lands inside it.">regime-adjusted target</Term>{' '}
+              is the same band nudged for the current economic season; green means the projected weight lands inside it.</>}
+      </p>
     </Card>
   );
 }
@@ -656,7 +680,7 @@ export function AllWeatherSection({
       </CollapsibleSection>
 
       {/* ─── Rebalance Simulator ─── */}
-      <RebalanceSimulator sleeves={sleeves} portfolioValue={portfolioValue} />
+      <RebalanceSimulator sleeves={sleeves} portfolioValue={portfolioValue} regimeKey={regimeKey} />
 
       {/* ─── Investment Thesis ─── */}
       <CollapsibleSection
