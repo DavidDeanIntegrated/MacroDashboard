@@ -192,3 +192,69 @@ test('Indicator value color: level verdict, not the latest move', () => {
   assert.equal(valueTone('neutral'), 'neutral');
   assert.equal(valueTone(INDICATOR_ZONES.DGS10(5.29).badge), 'bad'); // 10Y at 5.29% is restrictive → red, even on a flat day
 });
+
+// ─── Regime-aligned rebalance (2026-10-01) ───
+const { buildRebalancePlan } = require('../src/lib/rebalance.ts');
+const { computeSleeveData } = require('../src/lib/sleeves.ts');
+const CATEGORY = { VTI:'Broad Market', VTV:'Value', VXUS:'International', NVDA:'Quality Compounder', MSFT:'Quality Compounder', TSM:'Quality Compounder', PLTR:'Quality Compounder', SPCX:'Conviction Core', GLD:'Gold', BCI:'Commodity', SGOV:'Dry Powder', BTC:'Crypto' };
+// Every sleeve sits inside its baseline band: equities 50, SPCX 9, real assets 15, dry powder 16, crypto 10.
+const BOOK = { VTI:21, VTV:8, VXUS:6, NVDA:4, MSFT:4, TSM:4, PLTR:3, SPCX:9, GLD:11, BCI:4, SGOV:16, BTC:10 };
+const book = (w = BOOK) => Object.entries(w).map(([symbol, weight]) => ({ symbol, weight, marketValue: weight * 100, qty: 1, currentPrice: weight * 100, category: CATEGORY[symbol] }));
+const trades = (plan) => [...plan.sells, ...plan.buys].map((r) => `${r.kind} ${r.symbol}`).sort();
+
+test('Rebalance: no regime / unknown regime trade to the baseline bands', () => {
+  const base = buildRebalancePlan(book(), 10000);
+  assert.deepEqual(buildRebalancePlan(book(), 10000, 'unknown'), base);
+  assert.equal(base.allInRange, true);
+  assert.equal(computeSleeveData(book(), 'unknown').every((s) => s.tilt === 0 && s.targetMin === s.baseMin), true);
+});
+test('Rebalance: stagflation tilt moves equities to real assets and cash, as a quarterly move', () => {
+  const plan = buildRebalancePlan(book(), 10000, 'stagflation');
+  assert.ok(plan.sells.length > 0 && plan.sells.every((r) => ['NVDA','MSFT','TSM','PLTR','VTI','VTV'].includes(r.symbol)));
+  assert.ok(trades(plan).includes('buy GLD') && trades(plan).includes('buy SGOV'));
+  almost(plan.sells.reduce((s, r) => s + r.amount, 0), 200); // equities 50% vs 43–48% → $200 over on $10k
+  assert.ok([...plan.sells, ...plan.buys].every((r) => r.urgency === 'quarterly'), 'a regime flip alone is never "act now"');
+  assert.match(plan.sells[0].reason, /43–48% regime band \(baseline 48–53%, Stagflation tilt −5pp\)/);
+});
+test('Rebalance: goldilocks tilt adds to equities', () => {
+  const plan = buildRebalancePlan(book(), 10000, 'goldilocks');
+  assert.ok(trades(plan).includes('buy VTI'));
+  assert.ok(!plan.sells.some((r) => ['VTI','VTV','VXUS'].includes(r.symbol)));
+});
+test('Rebalance: drift beyond the baseline band is still urgent under any regime', () => {
+  const plan = buildRebalancePlan(book({ ...BOOK, VTI:29, SGOV:8 }), 10000, 'goldilocks');
+  assert.ok(plan.buys.some((r) => r.symbol === 'SGOV' && r.urgency === 'now'));
+});
+test('Rebalance: Conviction Core (SPCX) rules ignore the regime', () => {
+  const spcx = (k) => buildRebalancePlan(book({ ...BOOK, SPCX:6, BTC:13 }), 10000, k).notes.filter((n) => n.symbol === 'SPCX');
+  for (const k of ['goldilocks','reflation','stagflation','deflation']) assert.deepEqual(spcx(k), spcx('unknown'));
+});
+
+// ─── Regime history / last change (2026-10-01) ───
+const { buildRegimeHistory, sleeveShifts } = require('../src/lib/regime-history.ts');
+
+test('Regime history: finds the last change and narrows it to the day', () => {
+  const at = (d) => (d >= '2026-07-14' ? 'goldilocks' : d >= '2025-01-01' ? 'reflation' : 'deflation');
+  const h = buildRegimeHistory({}, 'goldilocks', '2026-10-01', 36, at);
+  assert.equal(h.points.length, 37);
+  assert.equal(h.points.at(-1).asOf, '2026-10-01');
+  assert.deepEqual(h.change, { date: '2026-07-14', from: 'reflation', to: 'goldilocks' });
+});
+test('Regime history: no change inside the window reports none', () => {
+  const h = buildRegimeHistory({}, 'reflation', '2026-10-01', 36, () => 'reflation');
+  assert.equal(h.change, null);
+  assert.equal(h.windowStart, '2023-10-31');
+});
+test('Regime history: a brief flicker still counts as the latest change', () => {
+  const at = (d) => (d >= '2026-09-10' ? 'goldilocks' : d >= '2026-08-01' ? 'unknown' : 'goldilocks');
+  const h = buildRegimeHistory({}, 'goldilocks', '2026-10-01', 12, at);
+  assert.deepEqual(h.change, { date: '2026-09-10', from: 'unknown', to: 'goldilocks' });
+});
+test('Sleeve shifts: deltas are new tilt minus old tilt and sum to ~0', () => {
+  const s = Object.fromEntries(sleeveShifts('reflation', 'goldilocks').map((x) => [x.name, x]));
+  assert.equal(s['Equities'].delta, 5);
+  assert.equal(s['Real Assets'].delta, -5);
+  assert.deepEqual([s['Equities'].fromMin, s['Equities'].toMin], [47, 52]);
+  assert.equal(s['Conviction Core'].delta, 0);
+  assert.equal(sleeveShifts('stagflation', 'goldilocks').reduce((a, x) => a + x.delta, 0), 0);
+});
