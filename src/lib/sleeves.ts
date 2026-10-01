@@ -27,14 +27,27 @@ export interface SleeveData extends SleeveConfig {
   weight: number;
   value: number;
   positions: HoldingPosition[];
+  /** Strategic (pre-regime) band. targetMin/targetMax are the ACTIVE band = base + regime tilt. */
+  baseMin: number;
+  baseMax: number;
+  /** Regime tilt applied to the base band, in percentage points (0 when the regime is unknown). */
+  tilt: number;
 }
 
-export function computeSleeveData(positions: HoldingPosition[]): SleeveData[] {
+// targetMin/targetMax come back regime-adjusted so every status badge and the
+// rebalance engine grade against the same band. With no regime (or 'unknown')
+// the active band IS the base band.
+export function computeSleeveData(positions: HoldingPosition[], regimeKey: RegimeKey = 'unknown'): SleeveData[] {
   return SLEEVE_CONFIG.map((sleeve) => {
     const sleevePositions = positions.filter((p) => sleeve.categories.includes(p.category));
     const weight = sleevePositions.reduce((sum, p) => sum + p.weight, 0);
     const value = sleevePositions.reduce((sum, p) => sum + p.marketValue, 0);
-    return { ...sleeve, weight, value, positions: sleevePositions };
+    const adj = regimeAdjustedBand(sleeve.name, sleeve.targetMin, sleeve.targetMax, regimeKey);
+    return {
+      ...sleeve, weight, value, positions: sleevePositions,
+      targetMin: adj.min, targetMax: adj.max,
+      baseMin: sleeve.targetMin, baseMax: sleeve.targetMax, tilt: adj.delta,
+    };
   });
 }
 
@@ -147,7 +160,8 @@ export const REGIME_SLEEVE_GUIDANCE: Record<RegimeKey, Record<string, SleeveGuid
 
 // Regime tilt — percentage-point nudge applied to each sleeve's target band for the
 // current economic season. Each regime's tilts sum to ~0 so the book stays fully
-// invested. Used to draw a "regime-adjusted target" overlay on the sleeve graph.
+// invested. Since 2026-10-01 this is the band the rebalance engine trades to
+// (computeSleeveData applies it); the base band in SLEEVE_CONFIG is the reference.
 // Conviction Core is deliberately tilted 0 in every regime: it's a 5-year thesis
 // position managed by its own build/ceiling rules, not a macro trading vehicle.
 export const REGIME_SLEEVE_TILT: Record<RegimeKey, Record<string, number>> = {

@@ -95,9 +95,10 @@ function SleeveComparisonBars({
   return (
     <div className="space-y-4">
       {sleeves.map((sleeve) => {
-        const status = getSleeveStatus(sleeve.weight, sleeve.targetMin, sleeve.targetMax);
         const maxBar = 70; // max percentage width
         const adj = regimeAdjustedBand(sleeve.name, sleeve.targetMin, sleeve.targetMax, regimeKey);
+        // Badge grades the regime-adjusted band — the one Strategic Rebalance Rules trades to.
+        const status = getSleeveStatus(sleeve.weight, adj.min, adj.max);
         return (
           <div key={sleeve.name}>
             <div className="flex items-center justify-between mb-1.5">
@@ -171,8 +172,8 @@ function SleeveComparisonBars({
             {adj.delta !== 0 && (
               <p className="text-[11px] text-black/40 mt-1">
                 <span className="inline-block w-3 border-t border-dashed align-middle mr-1" style={{ borderColor: sleeve.color }} />
-                <Term def="The dashed markers nudge this sleeve's target band up or down for the current macro regime — e.g., stagflation shifts weight from equities toward real assets and cash. The tilts across all sleeves sum to roughly zero, so the portfolio stays fully invested; only the mix shifts.">
-                  Regime-adjusted target
+                <Term def="The dashed markers nudge this sleeve's target band up or down for the current macro regime — e.g., stagflation shifts weight from equities toward real assets and cash. The tilts across all sleeves sum to roughly zero, so the portfolio stays fully invested; only the mix shifts. This is the band the status badge and the rebalance rules use; the shaded band is the baseline.">
+                  Regime-adjusted target (active)
                 </Term>{' '}{adj.min.toFixed(0)}–{adj.max.toFixed(0)}%
                 <span className={adj.delta > 0 ? 'text-accent-green' : 'text-accent-red'}> ({adj.delta > 0 ? '▲ +' : '▼ '}{adj.delta}pp)</span>
               </p>
@@ -190,23 +191,23 @@ function SleeveComparisonBars({
 
 const HOLDING_RATIONALES: { symbol: string; title: string; rationale: string; sellWhen: string }[] = [
   { symbol: 'GLD', title: 'Gold — Safest Money in a Devaluation Cycle', rationale: 'Dalio\'s "safest money" in high-debt/devaluation cycles. $38T US debt, central bank buying, and de-dollarization tailwinds. Target: 10–12% of portfolio (core of the 14–16% Real Assets sleeve).',
-    sellWhen: 'Trim only when Real Assets exceed 16% of portfolio AND GLD is above its 12% sub-band — sell just enough to bring GLD back inside 10–12%, proceeds to whichever sleeve is under target (SGOV by default). Never sold on price weakness — it\'s the insurance, not the trade.' },
+    sellWhen: 'Trim only when Real Assets exceed the top of their regime-adjusted band (baseline 16%) AND GLD is above its 12% sub-band — sell just enough to bring GLD back inside 10–12%, proceeds to whichever sleeve is under target (SGOV by default). Never sold on price weakness — it\'s the insurance, not the trade.' },
   { symbol: 'BCI', title: 'Commodities — Buy Stuff That Beats Inflation', rationale: 'Broadest commodity exposure (Bloomberg Commodity Index). Purest expression of Dalio\'s "buy stuff that beats inflation" principle. No K-1 tax complexity, 0.26% ER. Target: ~4% (3.5–5% sub-band).',
-    sellWhen: 'Trim when Real Assets exceed 16% AND BCI is above its 5% sub-band — sell back to ~4%. Also the first Real-Assets trim candidate if both GLD and BCI are over, since GLD is the core hedge.' },
+    sellWhen: 'Trim when Real Assets exceed the top of their regime-adjusted band (baseline 16%) AND BCI is above its 5% sub-band — sell back to ~4%. Also the first Real-Assets trim candidate if both GLD and BCI are over, since GLD is the core hedge.' },
   { symbol: 'VTI', title: 'Broad US Core — The Growth Engine Anchor', rationale: 'Total US stock market index. Anchor of the equities sleeve — provides broad, low-cost exposure to the full US market as the first buy priority in every rebalance. Target: 20–22% of portfolio.',
-    sellWhen: 'Last resort only. Sold solely when equities exceed 53% and trimming High Conviction then Quality Compounders can\'t cover the full overweight — and then only the residual amount needed to bring equities back inside 48–53%.' },
+    sellWhen: 'Last resort only. Sold solely when equities exceed the top of their regime-adjusted band (baseline 53%) and trimming High Conviction then Quality Compounders can\'t cover the full overweight — and then only the residual amount needed to bring equities back inside that band.' },
   { symbol: 'VTV', title: 'Value Tilt — Margin of Safety', rationale: 'Value stocks historically outperform in inflationary periods and provide a margin of safety through lower valuations and higher dividend yields. Target: 7–9% of portfolio.',
-    sellWhen: 'Same last-resort rule as VTI — only trimmed (proportionally alongside VTI) when equities are over 53% and the higher-priority trims can\'t cover it.' },
+    sellWhen: 'Same last-resort rule as VTI — only trimmed (proportionally alongside VTI) when equities are over their regime-adjusted band (baseline 53%) and the higher-priority trims can\'t cover it.' },
   { symbol: 'VXUS', title: 'International — Against US Survivorship Bias', rationale: 'International diversification hedges against US exceptionalism fading. Vanguard projects 4.9–6.9% annual returns for non-US equities next decade. Target: 5.5–6.5% of portfolio.',
     sellWhen: 'No scheduled sell — the plan never trims VXUS. If it drifts overweight, it dilutes naturally as contributions go elsewhere; if equities as a whole are over, the sell priority (High Conviction → Compounders → VTI/VTV) handles it.' },
   { symbol: 'SGOV', title: 'Dry Powder — Tactical Cash Earning Yield', rationale: '0–3 month T-bill ETF earning ~4.5–5% yield. Tactical, not permanent — deploy on dips per the drawdown ladder below. Target: 14–17% of portfolio. Never let this fall below ~$150 (emergency floor).',
     sellWhen: 'SGOV is spent, not sold: deploy per the drawdown ladder (SPY −10% / −15% / −25%), always keeping the $150 floor. Above 17% of portfolio, the excess is the first funding source for rebalance buys. Refill rule: if it falls below 12% after a deployment and SPY recovers +10%, sell 40% of the deployed tranche back to SGOV.' },
   { symbol: 'NVDA+TSM+MSFT+PLTR', title: 'Quality Compounders — Secular Growth at Scale', rationale: 'NVDA (AI compute monopoly), TSM (foundry monopoly), MSFT (enterprise cloud + AI), and PLTR (AI/data analytics platform with government + commercial adoption). Quality compounders with durable moats. Combined 14–16% target.',
-    sellWhen: 'Sell when the group exceeds 17% combined — trim proportionally (bigger positions absorb bigger trims) back to ~15.5%, recycling proceeds into VTI so total equity exposure is unchanged. Second in the sell-priority order when equities as a whole breach 53%. Buy only below 13% or on dips, with new money.' },
+    sellWhen: 'Sell when the group exceeds 17% combined — trim proportionally (bigger positions absorb bigger trims) back to ~15.5%, recycling proceeds into VTI so total equity exposure is unchanged. Second in the sell-priority order when equities as a whole breach their regime-adjusted band (baseline 53%). Buy only below 13% or on dips, with new money.' },
   { symbol: 'SPCX', title: 'Conviction Core — The 5-Year Thesis Bet', rationale: 'The one position sized to matter: an 8–10% dedicated sleeve built on the thesis that SPCX is a much more valuable company in 5 years. Sized from the loss side (a wipeout costs ~10% of portfolio — painful, survivable), built with new money only. Full rules in the Conviction Core section above.',
     sellWhen: 'Three sell triggers, none of them price volatility: (1) above the 15% hard ceiling — trim to ~12%, proceeds to SGOV; (2) at 2× average cost — optionally sell your original principal and let the rest ride as house money; (3) thesis break at quarterly review — exit the position entirely. Drawdowns alone are never a sell signal.' },
   { symbol: 'VST', title: 'High Conviction — Asymmetric Bets', rationale: 'VST (Vistra) — independent power producer levered to AI/datacenter electricity demand; an asymmetric, high-volatility bet held as a hold-and-dilute position. Never bought during rebalancing; only add with new money on 20%+ dips from cost basis, capped at ~4% for the bucket. (RKLB sold 2026-08-11 +$40.91; RVI sold 2026-08-14 −$11.50 — re-entries follow the same bucket rules.)',
-    sellWhen: 'First in line for every trim: sold first (before compounders or index funds) whenever equities exceed 53%, and trimmed back to ~3% whenever the High Conviction bucket breaches its 4% cap even with equities in range — proceeds recycled into VTI. Also exit on thesis break, not on drawdown.' },
+    sellWhen: 'First in line for every trim: sold first (before compounders or index funds) whenever equities exceed their regime-adjusted band (baseline 53%), and trimmed back to ~3% whenever the High Conviction bucket breaches its 4% cap even with equities in range — proceeds recycled into VTI. Also exit on thesis break, not on drawdown.' },
   { symbol: 'BTC', title: 'Bitcoin — Digital Hard-Money Complement', rationale: 'Modern hard-asset hedge complementing gold. Combined with GLD forms the "real money" allocation. Will dilute naturally toward 8–12% target as the portfolio grows — no forced rebalance needed.',
     sellWhen: 'No-touch buffer: hold and let contributions dilute it, even above the 12% band. A forced trim fires only if BTC exceeds 17% of portfolio (5pp beyond the band) — then sell back to the mid-buffer. Never bought to chase the band floor.' },
 ];
@@ -289,9 +290,9 @@ function RebalanceSimulator({
           const projValue = s.value + delta;
           const curWeight = portfolioValue > 0 ? (s.value / portfolioValue) * 100 : 0;
           const projWeight = projTotal > 0 ? (projValue / projTotal) * 100 : 0;
-          const status = getSleeveStatus(projWeight, s.targetMin, s.targetMax);
           const adj = regimeAdjustedBand(s.name, s.targetMin, s.targetMax, regimeKey);
           const adjStatus = getSleeveStatus(projWeight, adj.min, adj.max);
+          const status = adjStatus;
           return (
             <div key={s.name} className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-2 w-32 shrink-0">
@@ -349,9 +350,9 @@ function RebalanceSimulator({
       <p className="mt-2 text-[11px] text-black/40">
         {regimeKey === 'unknown'
           ? 'The regime read is unclear right now, so no regime tilt applies — the baseline target is the only target.'
-          : <>Status badges grade against the baseline target (what the Recommended Updates engine uses). The{' '}
+          : <>Status badges grade against the{' '}
               <Term def="The baseline band nudged up or down for the current macro regime — e.g., stagflation shifts weight from equities toward real assets and cash. Tilts across sleeves sum to roughly zero. A green regime band means the projected weight lands inside it.">regime-adjusted target</Term>{' '}
-              is the same band nudged for the current economic season; green means the projected weight lands inside it.</>}
+              — the same band the Strategic Rebalance Rules trade to. Baseline is shown for reference; green means the projected weight lands inside the regime band.</>}
       </p>
     </Card>
   );
@@ -594,7 +595,7 @@ export function AllWeatherSection({
       </Card>
 
       {/* ─── Recommended Updates (live rebalance suggestions) ─── */}
-      <RecommendedUpdates positions={positions} portfolioValue={portfolioValue} />
+      <RecommendedUpdates positions={positions} portfolioValue={portfolioValue} regimeKey={regimeKey} />
 
       {/* ─── Sub-Sleeve Equity Breakdown ─── */}
       <SubSleeveBreakdownCard
