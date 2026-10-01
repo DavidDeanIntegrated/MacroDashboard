@@ -516,6 +516,8 @@ export function AllWeatherSection({
   regimeKey?: RegimeKey;
   scores?: FundamentalsScoreLite[];
 }) {
+  // Must stay BASELINE (no regimeKey): the bars and Simulator apply the regime tilt
+  // themselves via regimeAdjustedBand, and the Worked Examples illustrate baseline bands.
   const sleeves = computeSleeveData(positions);
   const subSleeves = computeSubSleeveData(positions);
   const realAssetSubSleeves = computeSubSleeveData(positions, REAL_ASSET_SUB_SLEEVE_TARGETS);
