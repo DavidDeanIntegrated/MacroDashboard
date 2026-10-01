@@ -11,6 +11,7 @@ import { Term } from '@/components/ui/Term';
 import { formatCurrency } from '@/lib/format';
 import type { HoldingPosition } from '@/lib/holdings';
 import { buildRebalancePlan, nextQuarterEnd, type RebalanceRec } from '@/lib/rebalance';
+import { computeSleeveData, type RegimeKey } from '@/lib/sleeves';
 
 const fmtUsd = (v: number) => formatCurrency(v, { decimals: 0 });
 
@@ -21,7 +22,7 @@ function fmtShares(rec: RebalanceRec): string | null {
 }
 
 function UrgencyBadge({ urgency }: { urgency: RebalanceRec['urgency'] }) {
-  if (urgency === 'now') return <Badge variant="red">Act now — &gt;5pp drift</Badge>;
+  if (urgency === 'now') return <Badge variant="red">Act now — &gt;5pp past baseline</Badge>;
   if (urgency === 'quarterly') return <Badge variant="neutral">Quarterly window</Badge>;
   return null;
 }
@@ -45,14 +46,21 @@ function RecRow({ rec }: { rec: RebalanceRec }) {
   );
 }
 
+const REGIME_LABEL: Record<RegimeKey, string> = {
+  goldilocks: 'Goldilocks', reflation: 'Reflation', stagflation: 'Stagflation', deflation: 'Deflation', unknown: 'Unclear',
+};
+
 export function RecommendedUpdates({
   positions,
   portfolioValue,
+  regimeKey = 'unknown',
 }: {
   positions: HoldingPosition[];
   portfolioValue: number;
+  regimeKey?: RegimeKey;
 }) {
-  const plan = buildRebalancePlan(positions, portfolioValue);
+  const plan = buildRebalancePlan(positions, portfolioValue, regimeKey);
+  const tilted = computeSleeveData(positions, regimeKey).filter((s) => s.tilt !== 0);
   const trades = [...plan.sells, ...plan.buys];
   if (plan.blockedReason) return <Card><CardTitle>Strategic suggestions withheld</CardTitle><p role="status" className="text-sm mt-2">{plan.blockedReason}</p></Card>;
 
@@ -67,9 +75,17 @@ export function RecommendedUpdates({
         ) : (
           <Badge variant="orange">{trades.length} suggested trade{trades.length === 1 ? '' : 's'}</Badge>
         )}
+        {regimeKey === 'unknown'
+          ? <Badge variant="neutral">Baseline bands — regime unclear</Badge>
+          : <Badge variant="blue">{REGIME_LABEL[regimeKey]} bands</Badge>}
       </div>
+      {tilted.length > 0 && (
+        <p className="text-xs text-black/55 mt-2 tabular-nums">
+          Trading to: {tilted.map((s) => `${s.name} ${s.targetMin}–${s.targetMax}% (${s.tilt > 0 ? '+' : '−'}${Math.abs(s.tilt)})`).join(' · ')}
+        </p>
+      )}
       <p className="text-xs text-black/40 mt-1 leading-relaxed max-w-3xl">
-        These rules use the base strategic bands. Regime overlays are illustrative and do not change these trade amounts. Specific trades generated from today&apos;s live prices by mechanically applying your own rules — the <Term k="sleeve">sleeve</Term> target bands, the sell priority (high-conviction → compounders → core last), the buy priority (VTI first), the BTC no-forced-<Term k="rebalancing">rebalance</Term> buffer, the SPCX Conviction Core rules (new-money-only builds, trims only above the 15% ceiling), and the {formatCurrency(150, { decimals: 0 })} SGOV floor. Amounts shift daily as prices move. Suggestions, not orders — nothing here executes anything.
+        Targets are the <Term k="sleeve">sleeve</Term> bands adjusted for the current economic regime (baseline band + regime tilt; baseline only when the regime is unclear). A regime change alone is never flagged &ldquo;act now&rdquo; — tilt-driven moves wait for the quarterly window. Specific trades generated from today&apos;s live prices by mechanically applying your own rules — the regime-adjusted target bands, the sell priority (high-conviction → compounders → core last), the buy priority (VTI first), the BTC no-forced-<Term k="rebalancing">rebalance</Term> buffer, the SPCX Conviction Core rules (new-money-only builds, trims only above the 15% ceiling), and the {formatCurrency(150, { decimals: 0 })} SGOV floor. Amounts shift daily as prices move. Suggestions, not orders — nothing here executes anything.
       </p>
 
       {plan.allInRange ? (

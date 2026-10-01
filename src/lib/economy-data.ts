@@ -4,6 +4,7 @@ import { assessEconomy, ECONOMIC_INDICATORS } from './economy';
 import type { Observation } from './time-series';
 import { withCache, TTL } from './cache';
 import { getYahooSeries } from './yahoo';
+import { buildRegimeHistory } from './regime-history';
 
 export async function getEconomicDashboard(asOf?: string) {
   return withCache(`fred:dashboard:${asOf ?? 'latest'}`, TTL.MACRO, async () => {
@@ -37,8 +38,11 @@ export async function getEconomicDashboard(asOf?: string) {
     // as a request error (pages show a retry state) rather than an all-empty dashboard.
     if (Object.keys(errors).length === entries.length) throw new Error('FRED data unavailable: every series request failed. Check FRED_API_KEY and connectivity.');
     const assessment = assessEconomy(data, asOf);
+    // Live call only: the vintage (asOf) path is the validation harness and doesn't need it.
+    let regimeHistory = null;
+    if (!asOf) { try { regimeHistory = buildRegimeHistory(data, assessment.regime, assessment.asOf); } catch { regimeHistory = null; } }
     const moveIndex = asOf || !config.fred.apiKey ? [] : await getYahooSeries('^MOVE', '5y', '1d').catch(() => []);
     return { ...data, cpiYoY: computeYoYChange(data.cpi ?? []), corePceYoY: computeYoYChange(data.corePce ?? []),
-      moveIndex, assessment, regime: assessment, errors, fetchedAt: new Date().toISOString(), vintage: asOf ?? null };
+      moveIndex, assessment, regime: assessment, regimeHistory, errors, fetchedAt: new Date().toISOString(), vintage: asOf ?? null };
   });
 }

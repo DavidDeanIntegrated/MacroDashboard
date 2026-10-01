@@ -11,6 +11,8 @@ import {
   getSleeveStatus,
   SUB_SLEEVE_TARGETS,
   REAL_ASSET_SUB_SLEEVE_TARGETS,
+  type RegimeKey,
+  type SleeveData,
 } from './sleeves';
 
 // Rules encoded here (kept in one place so tuning is a one-line change):
@@ -20,6 +22,11 @@ const QC_TRIM_TO = 15.5;     // ...back to mid-band
 const BTC_FORCED_DRIFT = 5;  // BTC is only force-rebalanced when >5pp beyond its band
 export const SGOV_FLOOR = 150; // never let SGOV fall below this (emergency cash), in dollars
 const URGENT_DRIFT = 5;      // >5pp outside a band = act now, else quarterly window
+// Sleeve bands are regime-adjusted (REGIME_SLEEVE_TILT in lib/sleeves.ts): the
+// engine trades to base band + the current season's tilt. 'unknown' = no tilt.
+// Urgency is graded against the base band, so a regime flip by itself (tilts are
+// up to ±5pp) lands in the quarterly window — it never shows as "act now".
+// Sub-sleeve bands and the hard caps (HC 4%, QC 17%, CC 15%) are not tilted.
 
 // Conviction Core (SPCX) — sized from the loss side: a total loss at the 8–10%
 // target costs ~10% of the portfolio (recoverable), while a 5x adds ~+40pp.
@@ -63,7 +70,11 @@ function sharesFor(amount: number, price?: number): number | undefined {
   return amount / price;
 }
 
-export function buildRebalancePlan(positions: HoldingPosition[], portfolioValue: number): RebalancePlan {
+const REGIME_NAME: Record<RegimeKey, string> = {
+  goldilocks: 'Goldilocks', reflation: 'Reflation', stagflation: 'Stagflation', deflation: 'Deflation', unknown: 'Unclear',
+};
+
+export function buildRebalancePlan(positions: HoldingPosition[], portfolioValue: number, regimeKey: RegimeKey = 'unknown'): RebalancePlan {
   const V = portfolioValue;
   const sells: RebalanceRec[] = [];
   const buys: RebalanceRec[] = [];
@@ -78,7 +89,7 @@ export function buildRebalancePlan(positions: HoldingPosition[], portfolioValue:
   if (positions.some(p => !supported.has(p.symbol) || p.category === 'Unclassified')) return { ...empty, allInRange: false, blockedReason: 'This account contains holdings outside the configured strategy. Define their categories and target rules before generating trades.' };
   const sold = new Map<string, number>();
 
-  const sleeves = computeSleeveData(positions);
+  const sleeves = computeSleeveData(positions, regimeKey);
   const eqSubs = computeSubSleeveData(positions, SUB_SLEEVE_TARGETS);
   const raSubs = computeSubSleeveData(positions, REAL_ASSET_SUB_SLEEVE_TARGETS);
   const sleeve = (name: string) => sleeves.find((s) => s.name === name);
@@ -87,6 +98,14 @@ export function buildRebalancePlan(positions: HoldingPosition[], portfolioValue:
 
   const pctToUsd = (pp: number) => (pp / 100) * V;
   const urgencyFor = (driftPp: number): 'now' | 'quarterly' => (driftPp > URGENT_DRIFT ? 'now' : 'quarterly');
+  // Sleeve urgency: distance outside the base band, not the tilted one.
+  const sleeveUrgency = (s: SleeveData): 'now' | 'quarterly' =>
+    urgencyFor(Math.max(s.weight - s.baseMax, s.baseMin - s.weight, 0));
+  // "the 43–48% band (baseline 48–53%, Stagflation tilt −5pp)" — every reason names the band it used.
+  const band = (s: SleeveData) =>
+    s.tilt === 0
+      ? `${s.targetMin}–${s.targetMax}%`
+      : `${s.targetMin}–${s.targetMax}% regime band (baseline ${s.baseMin}–${s.baseMax}%, ${REGIME_NAME[regimeKey]} tilt ${s.tilt > 0 ? '+' : '−'}${Math.abs(s.tilt)}pp)`;
 
   // Sell a dollar total across a set of positions proportionally to their sizes.
   // Returns the amount actually placed (capped by what the positions hold).
@@ -142,8 +161,8 @@ export function buildRebalancePlan(positions: HoldingPosition[], portfolioValue:
       const deficit = pctToUsd(dp.targetMin - dp.weight);
       buyOne(
         'SGOV', deficit,
-        `Dry Powder is ${dp.weight.toFixed(1)}% vs its ${dp.targetMin}–${dp.targetMax}% target. Per the contribution rules, replenishing SGOV comes first — the drawdown ladder only works if the cash reserve is stocked.`,
-        urgencyFor(dp.targetMin - dp.weight)
+        `Dry Powder is ${dp.weight.toFixed(1)}% vs its ${band(dp)} target. Per the contribution rules, replenishing SGOV comes first — the drawdown ladder only works if the cash reserve is stocked.`,
+        sleeveUrgency(dp)
       );
     }
   }
@@ -151,11 +170,11 @@ export function buildRebalancePlan(positions: HoldingPosition[], portfolioValue:
   // Equities over → sell per priority (High Conviction → Compounders → VTI/VTV)
   if (eq && getSleeveStatus(eq.weight, eq.targetMin, eq.targetMax) === 'over') {
     const driftPp = eq.weight - eq.targetMax;
-    const urg = urgencyFor(driftPp);
+    const urg = sleeveUrgency(eq);
     let need = pctToUsd(driftPp);
     const hc = eqSub('High Conviction');
     const qc = eqSub('Quality Compounders');
-    const baseReason = `Equities are ${eq.weight.toFixed(1)}% vs the ${eq.targetMin}–${eq.targetMax}% band (${usd(need)} over).`;
+    const baseReason = `Equities are ${eq.weight.toFixed(1)}% vs the ${band(eq)} (${usd(need)} over).`;
     need -= sellAcross(hc?.members ?? [], need, `${baseReason} High-conviction names are sold first — most volatile, highest valuation risk.`, urg);
     if (need >= 1 && qc) {
       need -= sellAcross(qc.members, need, `${baseReason} High conviction couldn't cover the full trim, so quality compounders are trimmed proportionally next.`, urg);
@@ -168,9 +187,9 @@ export function buildRebalancePlan(positions: HoldingPosition[], portfolioValue:
   // Equities under → buy per priority (VTI first, then VXUS/VTV to their sub-bands)
   if (eq && getSleeveStatus(eq.weight, eq.targetMin, eq.targetMax) === 'under') {
     const driftPp = eq.targetMin - eq.weight;
-    const urg = urgencyFor(driftPp);
+    const urg = sleeveUrgency(eq);
     const need = pctToUsd(driftPp);
-    const baseReason = `Equities are ${eq.weight.toFixed(1)}% vs the ${eq.targetMin}–${eq.targetMax}% band (${usd(need)} short).`;
+    const baseReason = `Equities are ${eq.weight.toFixed(1)}% vs the ${band(eq)} (${usd(need)} short).`;
     const vxus = eqSubs.find((s) => s.symbols.includes('VXUS'));
     const vtv = eqSubs.find((s) => s.symbols.includes('VTV'));
     const vxusDeficit = vxus && vxus.weight < vxus.targetMin ? Math.min(need, pctToUsd(vxus.targetMin - vxus.weight)) : 0;
@@ -186,23 +205,23 @@ export function buildRebalancePlan(positions: HoldingPosition[], portfolioValue:
     const status = getSleeveStatus(ra.weight, ra.targetMin, ra.targetMax);
     if (status === 'over') {
       const driftPp = ra.weight - ra.targetMax;
-      const urg = urgencyFor(driftPp);
+      const urg = sleeveUrgency(ra);
       let need = pctToUsd(driftPp);
       // Trim whichever sub-sleeve is above its own band first
       for (const sub of raSubs) {
         if (need < 1) break;
         if (sub.weight > sub.targetMax) {
           need -= sellAcross(sub.members, Math.min(need, pctToUsd(sub.weight - sub.targetMax)),
-            `Real Assets are ${ra.weight.toFixed(1)}% vs ${ra.targetMin}–${ra.targetMax}%, and ${sub.label} is above its own ${sub.targetMin}–${sub.targetMax}% sub-band.`, urg);
+            `Real Assets are ${ra.weight.toFixed(1)}% vs ${band(ra)}, and ${sub.label} is above its own ${sub.targetMin}–${sub.targetMax}% sub-band.`, urg);
         }
       }
       if (need >= 1) {
         sellAcross(raSubs.flatMap((s) => s.members), need,
-          `Real Assets are ${ra.weight.toFixed(1)}% vs ${ra.targetMin}–${ra.targetMax}% — remaining trim split proportionally across GLD/BCI.`, urg);
+          `Real Assets are ${ra.weight.toFixed(1)}% vs ${band(ra)} — remaining trim split proportionally across GLD/BCI.`, urg);
       }
     } else if (status === 'under') {
       const driftPp = ra.targetMin - ra.weight;
-      const urg = urgencyFor(driftPp);
+      const urg = sleeveUrgency(ra);
       let need = pctToUsd(driftPp);
       // Fill sub-sleeve deficits in order (GLD is the core hedge, BCI the top-up)
       for (const sub of raSubs) {
@@ -210,11 +229,11 @@ export function buildRebalancePlan(positions: HoldingPosition[], portfolioValue:
         if (sub.weight < sub.targetMin) {
           const amt = Math.min(need, pctToUsd(sub.targetMin - sub.weight));
           buyOne(sub.symbols[0], amt,
-            `Real Assets are ${ra.weight.toFixed(1)}% vs ${ra.targetMin}–${ra.targetMax}%, and ${sub.label} is below its own ${sub.targetMin}–${sub.targetMax}% sub-band — this is the sleeve that protects purchasing power when inflation runs.`, urg);
+            `Real Assets are ${ra.weight.toFixed(1)}% vs ${band(ra)}, and ${sub.label} is below its own ${sub.targetMin}–${sub.targetMax}% sub-band — this is the sleeve that protects purchasing power when inflation runs.`, urg);
           need -= amt;
         }
       }
-      if (need >= 1) buyOne('GLD', need, `Real Assets are ${ra.weight.toFixed(1)}% vs ${ra.targetMin}–${ra.targetMax}% — remainder goes to GLD, the core hedge.`, urg);
+      if (need >= 1) buyOne('GLD', need, `Real Assets are ${ra.weight.toFixed(1)}% vs ${band(ra)} — remainder goes to GLD, the core hedge.`, urg);
     }
   }
 
@@ -272,12 +291,12 @@ export function buildRebalancePlan(positions: HoldingPosition[], portfolioValue:
       const driftPp = crypto.weight - crypto.targetMax;
       if (driftPp > BTC_FORCED_DRIFT) {
         sellAcross(crypto.positions, pctToUsd(driftPp - BTC_FORCED_DRIFT + (BTC_FORCED_DRIFT / 2)),
-          `BTC is ${crypto.weight.toFixed(1)}% vs its ${crypto.targetMin}–${crypto.targetMax}% band — beyond the ${BTC_FORCED_DRIFT}pp no-touch buffer, so the drift trigger fires and a partial trim applies.`, 'now');
+          `BTC is ${crypto.weight.toFixed(1)}% vs its ${band(crypto)} — beyond the ${BTC_FORCED_DRIFT}pp no-touch buffer, so the drift trigger fires and a partial trim applies.`, sleeveUrgency(crypto));
       } else {
         notes.push({
           kind: 'note', symbol: 'BTC',
           action: 'Hold BTC — no forced trim',
-          reason: `BTC is ${crypto.weight.toFixed(1)}%, above its ${crypto.targetMin}–${crypto.targetMax}% band but within the ${BTC_FORCED_DRIFT}pp no-touch buffer. The plan's rule: let new contributions dilute it back toward target naturally rather than selling.`,
+          reason: `BTC is ${crypto.weight.toFixed(1)}%, above its ${band(crypto)} but within the ${BTC_FORCED_DRIFT}pp no-touch buffer. The plan's rule: let new contributions dilute it back toward target naturally rather than selling.`,
           urgency: 'info',
         });
       }
@@ -285,7 +304,7 @@ export function buildRebalancePlan(positions: HoldingPosition[], portfolioValue:
       notes.push({
         kind: 'note', symbol: 'BTC',
         action: 'BTC under target — no action required',
-        reason: `BTC is ${crypto.weight.toFixed(1)}% vs its ${crypto.targetMin}–${crypto.targetMax}% band. The plan doesn't force crypto buys; the band is a ceiling on risk, not a floor to chase.`,
+        reason: `BTC is ${crypto.weight.toFixed(1)}% vs its ${band(crypto)}. The plan doesn't force crypto buys; the band is a ceiling on risk, not a floor to chase.`,
         urgency: 'info',
       });
     }

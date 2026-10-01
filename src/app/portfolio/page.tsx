@@ -11,6 +11,7 @@ import { FundamentalsScoreSection } from '@/components/FundamentalsScoreCard';
 import { AllWeatherSection } from '@/components/AllWeatherSection';
 import { usePortfolio, usePortfolioChart, usePolygonAggregates, usePolygonRSI, usePortfolioDividends, useWatchlist, useFundamentalsScores, useWma200, useApi } from '@/lib/hooks';
 import type { RegimeKey } from '@/lib/sleeves';
+import type { RegimeHistory } from '@/lib/regime-history';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/format';
 import { Term } from '@/components/ui/Term';
 import { CATEGORY_CONFIG, WATCHLIST, WATCHLIST_CATEGORY_CONFIG } from '@/lib/holdings';
@@ -82,7 +83,7 @@ export default function PortfolioPage() {
   );
 
   // Macro regime — drives the regime-adjusted target overlay on the sleeve graph
-  const { data: macroDash } = useApi<{ regime?: { regime?: string } }>('/api/fred?action=dashboard');
+  const { data: macroDash } = useApi<{ regime?: { regime?: string }; regimeHistory?: RegimeHistory | null }>('/api/fred?action=dashboard');
   const regimeKey = (macroDash?.regime?.regime as RegimeKey) ?? 'unknown';
 
   // Watchlist
@@ -375,6 +376,7 @@ export default function PortfolioPage() {
         positions={portfolio.positions}
         portfolioValue={portfolio.portfolioValue}
         regimeKey={regimeKey}
+        regimeHistory={macroDash?.regimeHistory}
         scores={portfolioScores ?? undefined}
       />
 

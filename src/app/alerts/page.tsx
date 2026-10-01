@@ -7,7 +7,7 @@ import { Badge, RegimeBadge } from '@/components/ui/Badge';
 import { useMacroRegime, useMarketNews, useApi, usePortfolio } from '@/lib/hooks';
 import { timeAgo } from '@/lib/format';
 import { HOLDINGS, WATCHLIST, type HoldingPosition } from '@/lib/holdings';
-import { computeSleeveData, getSleeveStatus } from '@/lib/sleeves';
+import { computeSleeveData, getSleeveStatus, type RegimeKey } from '@/lib/sleeves';
 import { Term } from '@/components/ui/Term';
 import { EconomicOutlook } from '@/components/EconomicAssessment';
 
@@ -413,7 +413,7 @@ function getCompoundAlerts(
 ): CompoundAlert[] {
   if (!regime || !positions || positions.length === 0) return [];
 
-  const sleeves = computeSleeveData(positions);
+  const sleeves = computeSleeveData(positions, regime.regime as RegimeKey);
   const statusOf = (name: string) => {
     const s = sleeves.find((sl) => sl.name === name);
     return s ? getSleeveStatus(s.weight, s.targetMin, s.targetMax) : 'in-range';

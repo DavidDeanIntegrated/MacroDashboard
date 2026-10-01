@@ -74,9 +74,11 @@ export default function BriefingPage() {
   const refreshWarning = portfolioRefreshError || macroRefreshError;
   const { data: spyDaily } = usePolygonAggregates('SPY', '1day');
 
+  // Sleeve bands are regime-adjusted — the same bands the rebalance engine trades to.
+  const sleeveRegime: RegimeKey = dashboard?.regime?.regime ?? 'unknown';
   const sleeves = useMemo(
-    () => (portfolio ? computeSleeveData(portfolio.positions) : []),
-    [portfolio]
+    () => (portfolio ? computeSleeveData(portfolio.positions, sleeveRegime) : []),
+    [portfolio, sleeveRegime]
   );
 
   // SPY drawdown from rolling 3-month peak — drives the dry-powder deployment cue.
@@ -107,7 +109,7 @@ export default function BriefingPage() {
   // Build the action queue: off-target sleeves + drawdown ladder cue.
   // Each action carries a `why` so the reasoning is visible, not just the instruction.
   const actions: Array<{ tone: 'sell' | 'buy' | 'info'; text: string; why: string }> = [];
-  const plan = portfolio ? buildRebalancePlan(portfolio.positions, portfolio.portfolioValue) : null;
+  const plan = portfolio ? buildRebalancePlan(portfolio.positions, portfolio.portfolioValue, regimeKey) : null;
   if (plan?.blockedReason) actions.push({ tone: 'info', text: 'Strategic suggestions withheld', why: plan.blockedReason });
   else if (plan) for (const recommendation of [...plan.sells, ...plan.buys, ...plan.notes]) actions.push({ tone: recommendation.kind === 'note' ? 'info' : recommendation.kind, text: recommendation.action, why: recommendation.reason });
   if (portfolio && !plan?.blockedReason && drawdown && drawdown.pct <= -10) {
@@ -239,7 +241,7 @@ export default function BriefingPage() {
           <div>
             <CardTitle>Sleeve Scorecard — Current vs Target</CardTitle>
             <p className="text-xs text-black/40 mt-1">
-              Each <Term k="sleeve">sleeve</Term> is a bucket of holdings with one job — growth, inflation protection, ready cash, or asymmetric upside. The shaded band on each bar is its target range; the solid bar is where it sits today. Chips show how the {regime?.label ?? 'current'} regime tilts each sleeve.
+              Each <Term k="sleeve">sleeve</Term> is a bucket of holdings with one job — growth, inflation protection, ready cash, or asymmetric upside. The shaded band on each bar is its target range for the current regime (the baseline band shifted by the regime tilt, shown in brackets when it differs); the solid bar is where it sits today. Chips show how the {regime?.label ?? 'current'} regime tilts each sleeve.
             </p>
           </div>
           <Link href="/portfolio" className="text-sm font-medium text-accent-blue hover:text-accent-blue/80">
@@ -261,7 +263,10 @@ export default function BriefingPage() {
                     <Badge variant={lean.badge}>{lean.label}</Badge>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-sm tabular-nums text-black/60">{s.weight.toFixed(1)}% / {s.targetMin}–{s.targetMax}%</span>
+                    <span className="text-sm tabular-nums text-black/60">
+                      {s.weight.toFixed(1)}% / {s.targetMin}–{s.targetMax}%
+                      {s.tilt !== 0 && <span className="text-black/35"> (baseline {s.baseMin}–{s.baseMax}%)</span>}
+                    </span>
                     <Badge variant={status === 'in-range' ? 'green' : status === 'over' ? 'orange' : 'blue'}>
                       {status === 'in-range' ? 'In Range' : status === 'over' ? 'Over' : 'Under'}
                     </Badge>
