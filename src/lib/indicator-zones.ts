@@ -65,6 +65,17 @@ export function zoneSignal(key: string) {
   return (v: number): Zone => INDICATOR_ZONES[key](v);
 }
 
+// Color for a reading's VALUE, from its level verdict (the zone badge) — never from
+// the latest move: green = good, orange = caution, red = bad, black = neutral. Blue zones are extremes that cut both ways (a housing boom, a very
+// steep curve, complacent VIX), so they stay neutral; the badge text carries the nuance.
+export type ValueTone = 'good' | 'caution' | 'bad' | 'neutral';
+export function valueTone(badge: ZoneBadge): ValueTone {
+  if (badge === 'green') return 'good';
+  if (badge === 'orange') return 'caution';
+  if (badge === 'red') return 'bad';
+  return 'neutral';
+}
+
 // Which direction is "good news" for a rising reading. Anything not listed is
 // treated as "rising = worse" (rates, inflation, spreads, volatility, unemployment).
 export const HIGHER_IS_BETTER: Record<string, boolean> = {

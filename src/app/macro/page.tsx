@@ -2,7 +2,7 @@
 
 import { EconomicEvidence, EconomicOutlook } from '@/components/EconomicAssessment';
 import { percentChange } from '@/lib/time-series';
-import { zoneSignal, HIGHER_IS_BETTER, changeTone } from '@/lib/indicator-zones';
+import { zoneSignal, changeTone, valueTone } from '@/lib/indicator-zones';
 import type { EconomicAssessment as Assessment } from '@/lib/economy';
 
 import { useState, useEffect, useRef } from 'react';
@@ -1157,7 +1157,7 @@ export default function MacroPage() {
       <Card>
         <CardTitle>Key Indicators Summary</CardTitle>
         <p className="text-xs text-black/40 mt-1 mb-2">
-          Click any indicator for a plain-English explanation of what it measures and what its current reading historically implies. Green/red on the value shows whether the latest move is helping or hurting. (Manufacturing Jobs and M2 are scored as year-over-year growth rates, since their trends carry the signal, not their levels.)
+          Click any indicator for a plain-English explanation of what it measures and what its current reading historically implies. The value&apos;s color is the verdict on today&apos;s level — green good, orange caution, red unfavorable, black neutral — and the small gray arrow shows which way the last reading moved. (Manufacturing Jobs and M2 are scored as year-over-year growth rates, since their trends carry the signal, not their levels.)
         </p>
         <div>
           {indicators.map((indicator) => {
@@ -1165,19 +1165,11 @@ export default function MacroPage() {
             const change = getChange(indicator.data);
             const isExpanded = expandedIndicator === indicator.info.key;
             const signal = Number.isFinite(latest) ? indicator.info.regimeSignal(latest) : { regime: 'Unavailable', badge: 'neutral' as const, explanation: 'No observations available.' };
-            const higherIsBetter = HIGHER_IS_BETTER[indicator.info.key] ?? false;
-            // A rising value (change > 0.1) is green when higherIsBetter,
-            // otherwise red. Falling value flips. |change| <= 0.1 stays neutral.
-            const changeColor =
-              change > 0.1
-                ? higherIsBetter
-                  ? 'text-accent-green'
-                  : 'text-accent-red'
-                : change < -0.1
-                  ? higherIsBetter
-                    ? 'text-accent-red'
-                    : 'text-accent-green'
-                  : 'text-black/85';
+            // Value color = level verdict (same as the badge), not the latest move.
+            const tone = valueTone(signal.badge);
+            const valueColor = tone === 'good' ? 'text-accent-green' : tone === 'caution' ? 'text-accent-orange' : tone === 'bad' ? 'text-accent-red' : 'text-black/85';
+            // Direction of the last reading, shown as a neutral arrow (no good/bad color).
+            const arrow = !Number.isFinite(change) || change === 0 ? '→' : change > 0 ? '↑' : '↓';
 
             return (
               <div key={indicator.info.key}>
@@ -1201,10 +1193,16 @@ export default function MacroPage() {
                   </div>
                   <div className="flex items-center gap-3">
                     <Badge variant={signal.badge}>{signal.regime}</Badge>
-                    <span
-                      className={`text-sm font-semibold tabular-nums ${changeColor}`}
-                    >
-                      {latest.toFixed(2)}{indicator.suffix}
+                    <span className="flex items-center gap-1">
+                      <span className={`text-sm font-semibold tabular-nums ${valueColor}`}>
+                        {latest.toFixed(2)}{indicator.suffix}
+                      </span>
+                      <span
+                        className="text-xs text-black/30 w-3 text-center"
+                        title={Number.isFinite(change) ? `Last move: ${change > 0 ? '+' : ''}${change.toFixed(2)}${indicator.suffix}` : undefined}
+                      >
+                        {arrow}
+                      </span>
                     </span>
                   </div>
                 </button>
