@@ -181,3 +181,14 @@ test('One-month trend uses the calendar, not the last three points', () => {
   assert.equal(trendOverDays(monthly, 30, 0.15).trend, 'flat');
   assert.equal(trendOverDays([{ date: '2026-07-01', value: 1 }], 30).from, null);
 });
+
+// ─── Key Indicators value colors follow the level verdict (2026-10-01) ───
+const { valueTone } = require('../src/lib/indicator-zones.ts');
+test('Indicator value color: level verdict, not the latest move', () => {
+  assert.equal(valueTone('green'), 'good');
+  assert.equal(valueTone('red'), 'bad');
+  assert.equal(valueTone('orange'), 'bad');
+  assert.equal(valueTone('blue'), 'neutral');
+  assert.equal(valueTone('neutral'), 'neutral');
+  assert.equal(valueTone(INDICATOR_ZONES.DGS10(5.29).badge), 'bad'); // 10Y at 5.29% is restrictive → red, even on a flat day
+});
