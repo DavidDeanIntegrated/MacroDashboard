@@ -187,7 +187,7 @@ const { valueTone } = require('../src/lib/indicator-zones.ts');
 test('Indicator value color: level verdict, not the latest move', () => {
   assert.equal(valueTone('green'), 'good');
   assert.equal(valueTone('red'), 'bad');
-  assert.equal(valueTone('orange'), 'bad');
+  assert.equal(valueTone('orange'), 'caution');
   assert.equal(valueTone('blue'), 'neutral');
   assert.equal(valueTone('neutral'), 'neutral');
   assert.equal(valueTone(INDICATOR_ZONES.DGS10(5.29).badge), 'bad'); // 10Y at 5.29% is restrictive → red, even on a flat day

@@ -66,13 +66,13 @@ export function zoneSignal(key: string) {
 }
 
 // Color for a reading's VALUE, from its level verdict (the zone badge) — never from
-// the latest move: green = good, red = bad (orange "caution" zones count as bad),
-// black = neutral. Blue zones are extremes that cut both ways (a housing boom, a very
+// the latest move: green = good, orange = caution, red = bad, black = neutral. Blue zones are extremes that cut both ways (a housing boom, a very
 // steep curve, complacent VIX), so they stay neutral; the badge text carries the nuance.
-export type ValueTone = 'good' | 'bad' | 'neutral';
+export type ValueTone = 'good' | 'caution' | 'bad' | 'neutral';
 export function valueTone(badge: ZoneBadge): ValueTone {
   if (badge === 'green') return 'good';
-  if (badge === 'red' || badge === 'orange') return 'bad';
+  if (badge === 'orange') return 'caution';
+  if (badge === 'red') return 'bad';
   return 'neutral';
 }
 

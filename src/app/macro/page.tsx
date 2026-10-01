@@ -1157,7 +1157,7 @@ export default function MacroPage() {
       <Card>
         <CardTitle>Key Indicators Summary</CardTitle>
         <p className="text-xs text-black/40 mt-1 mb-2">
-          Click any indicator for a plain-English explanation of what it measures and what its current reading historically implies. The value&apos;s color is the verdict on today&apos;s level — green good, red unfavorable, black neutral — and the small gray arrow shows which way the last reading moved. (Manufacturing Jobs and M2 are scored as year-over-year growth rates, since their trends carry the signal, not their levels.)
+          Click any indicator for a plain-English explanation of what it measures and what its current reading historically implies. The value&apos;s color is the verdict on today&apos;s level — green good, orange caution, red unfavorable, black neutral — and the small gray arrow shows which way the last reading moved. (Manufacturing Jobs and M2 are scored as year-over-year growth rates, since their trends carry the signal, not their levels.)
         </p>
         <div>
           {indicators.map((indicator) => {
@@ -1167,7 +1167,7 @@ export default function MacroPage() {
             const signal = Number.isFinite(latest) ? indicator.info.regimeSignal(latest) : { regime: 'Unavailable', badge: 'neutral' as const, explanation: 'No observations available.' };
             // Value color = level verdict (same as the badge), not the latest move.
             const tone = valueTone(signal.badge);
-            const valueColor = tone === 'good' ? 'text-accent-green' : tone === 'bad' ? 'text-accent-red' : 'text-black/85';
+            const valueColor = tone === 'good' ? 'text-accent-green' : tone === 'caution' ? 'text-accent-orange' : tone === 'bad' ? 'text-accent-red' : 'text-black/85';
             // Direction of the last reading, shown as a neutral arrow (no good/bad color).
             const arrow = !Number.isFinite(change) || change === 0 ? '→' : change > 0 ? '↑' : '↓';
 
