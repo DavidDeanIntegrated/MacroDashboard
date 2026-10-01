@@ -19,6 +19,8 @@ import { macroSensitivity } from '@/lib/macro-sensitivity';
 import { SGOV_FLOOR } from '@/lib/rebalance';
 import { Term } from '@/components/ui/Term';
 import { RecommendedUpdates } from '@/components/RecommendedUpdates';
+import { RegimeShiftCard } from '@/components/RegimeShift';
+import type { RegimeHistory } from '@/lib/regime-history';
 
 export interface FundamentalsScoreLite {
   symbol: string;
@@ -509,11 +511,13 @@ export function AllWeatherSection({
   positions,
   portfolioValue,
   regimeKey = 'unknown',
+  regimeHistory,
   scores,
 }: {
   positions: HoldingPosition[];
   portfolioValue: number;
   regimeKey?: RegimeKey;
+  regimeHistory?: RegimeHistory | null;
   scores?: FundamentalsScoreLite[];
 }) {
   // Must stay BASELINE (no regimeKey): the bars and Simulator apply the regime tilt
@@ -595,6 +599,9 @@ export function AllWeatherSection({
           </div>
         </div>
       </Card>
+
+      {/* ─── Regime shift: last change date + how far each target moved ─── */}
+      <RegimeShiftCard history={regimeHistory} portfolioValue={portfolioValue} />
 
       {/* ─── Recommended Updates (live rebalance suggestions) ─── */}
       <RecommendedUpdates positions={positions} portfolioValue={portfolioValue} regimeKey={regimeKey} />

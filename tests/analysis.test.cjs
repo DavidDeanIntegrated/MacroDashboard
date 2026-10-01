@@ -218,3 +218,32 @@ test('Rebalance: Conviction Core (SPCX) rules ignore the regime', () => {
   const spcx = (k) => buildRebalancePlan(book({ ...BOOK, SPCX:6, BTC:13 }), 10000, k).notes.filter((n) => n.symbol === 'SPCX');
   for (const k of ['goldilocks','reflation','stagflation','deflation']) assert.deepEqual(spcx(k), spcx('unknown'));
 });
+
+// ─── Regime history / last change (2026-10-01) ───
+const { buildRegimeHistory, sleeveShifts } = require('../src/lib/regime-history.ts');
+
+test('Regime history: finds the last change and narrows it to the day', () => {
+  const at = (d) => (d >= '2026-07-14' ? 'goldilocks' : d >= '2025-01-01' ? 'reflation' : 'deflation');
+  const h = buildRegimeHistory({}, 'goldilocks', '2026-10-01', 36, at);
+  assert.equal(h.points.length, 37);
+  assert.equal(h.points.at(-1).asOf, '2026-10-01');
+  assert.deepEqual(h.change, { date: '2026-07-14', from: 'reflation', to: 'goldilocks' });
+});
+test('Regime history: no change inside the window reports none', () => {
+  const h = buildRegimeHistory({}, 'reflation', '2026-10-01', 36, () => 'reflation');
+  assert.equal(h.change, null);
+  assert.equal(h.windowStart, '2023-10-31');
+});
+test('Regime history: a brief flicker still counts as the latest change', () => {
+  const at = (d) => (d >= '2026-09-10' ? 'goldilocks' : d >= '2026-08-01' ? 'unknown' : 'goldilocks');
+  const h = buildRegimeHistory({}, 'goldilocks', '2026-10-01', 12, at);
+  assert.deepEqual(h.change, { date: '2026-09-10', from: 'unknown', to: 'goldilocks' });
+});
+test('Sleeve shifts: deltas are new tilt minus old tilt and sum to ~0', () => {
+  const s = Object.fromEntries(sleeveShifts('reflation', 'goldilocks').map((x) => [x.name, x]));
+  assert.equal(s['Equities'].delta, 5);
+  assert.equal(s['Real Assets'].delta, -5);
+  assert.deepEqual([s['Equities'].fromMin, s['Equities'].toMin], [47, 52]);
+  assert.equal(s['Conviction Core'].delta, 0);
+  assert.equal(sleeveShifts('stagflation', 'goldilocks').reduce((a, x) => a + x.delta, 0), 0);
+});
