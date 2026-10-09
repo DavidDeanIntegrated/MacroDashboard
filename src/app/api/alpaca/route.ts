@@ -1,29 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  getAccount,
-  getPositions,
-  getHistoricalBars,
-  getSnapshot,
-} from '@/lib/alpaca';
+import { getHistoricalBars, getSnapshot } from '@/lib/alpaca';
+import { isPublicAlpacaAction, PUBLIC_ALPACA_ACTIONS } from '@/lib/alpaca-actions';
 import { getHoldingsPortfolio, getPortfolioChart, getWatchlistData } from '@/lib/holdings';
 import type { PortfolioChartPeriod } from '@/lib/holdings';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action');
+  if (!isPublicAlpacaAction(action)) {
+    return NextResponse.json(
+      { error: `Invalid action. Use: ${PUBLIC_ALPACA_ACTIONS.join(', ')}` },
+      { status: 400 }
+    );
+  }
 
   try {
     switch (action) {
-      case 'account': {
-        const account = await getAccount();
-        return NextResponse.json(account);
-      }
-
-      case 'positions': {
-        const positions = await getPositions();
-        return NextResponse.json(positions);
-      }
-
       case 'portfolio': {
         const summary = await getHoldingsPortfolio();
         return NextResponse.json(summary);
@@ -64,7 +56,7 @@ export async function GET(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Invalid action. Use: account, positions, portfolio, portfolio-chart, bars, snapshot' },
+          { error: `Invalid action. Use: ${PUBLIC_ALPACA_ACTIONS.join(', ')}` },
           { status: 400 }
         );
     }
