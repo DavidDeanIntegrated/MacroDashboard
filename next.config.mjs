@@ -1,17 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Allow external images from Finnhub company logos
+  // The app does not use next/image. Disable the image optimizer so its endpoint
+  // (subject of Next.js 14.x advisories, e.g. GHSA-2xp9-vwfh-vxw4) is not served.
   images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'static.finnhub.io',
-      },
-      {
-        protocol: 'https',
-        hostname: 'static2.finnhub.io',
-      },
-    ],
+    unoptimized: true,
   },
 
   // Security headers
