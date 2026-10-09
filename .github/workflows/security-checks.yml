@@ -1,0 +1,86 @@
+# Security checks for a repository: new secrets, vulnerable dependencies, workflow hazards.
+# Prepared by the 2026-10-09 security audit. Copy to .github/workflows/security-checks.yml
+# (D-AUTO-3, public-repo pilot 2026-10-09). Uses no repository secrets; never runs on a self-hosted runner.
+#
+# Pull requests and pushes: scan only the new commits for secrets, plus a full dependency and
+# workflow pass (both are fast). Weekly: full-history secret scan. Stagger the cron minute and
+# weekday per repository (see AUTOMATION-DESIGN.md) so private-repo minutes do not spike together.
+name: security-checks
+
+on:
+  pull_request:
+  push:
+    branches: [claude/macro-investing-dashboard-dauge]
+  schedule:
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+  OSV_VERSION: "2.6.0"
+  OSV_SHA256: "ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108"
+  ZIZMOR_VERSION: "1.30.1"
+  ZIZMOR_SHA256: "e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a"
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pinned scanners (checksum-verified)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"; cd "$RUNNER_TEMP"
+          curl -fsSLo gl.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gl.tgz" | sha256sum -c -
+          tar -xzf gl.tgz -C bin gitleaks
+          curl -fsSLo bin/osv-scanner "https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SHA256}  bin/osv-scanner" | sha256sum -c -
+          curl -fsSLo zz.tgz "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${ZIZMOR_SHA256}  zz.tgz" | sha256sum -c -
+          tar -xzf zz.tgz -C bin zizmor
+          chmod +x bin/*
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Secrets (new commits; full history on schedule/manual)
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            pull_request) range="${BASE_SHA}..HEAD" ;;
+            push) if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then range="HEAD~1..HEAD"; else range="${BEFORE_SHA}..HEAD"; fi ;;
+            *) range="--all" ;;
+          esac
+          # --redact keeps secret values out of the job log; no report artifact is uploaded.
+          gitleaks git . --redact --no-banner --log-opts="$range" --exit-code 1
+
+      - name: Dependencies (lockfiles and manifests)
+        if: always()
+        run: |
+          set -uo pipefail
+          # Offline database: package names from private repos are not sent to osv.dev.
+          rc=0
+          osv-scanner scan source -r --offline-vulnerabilities --download-offline-databases --format table . || rc=$?
+          # 0 = clean, 1 = vulnerabilities found, 128 = no package sources (not a failure)
+          if [ "$rc" = 128 ]; then echo "no package manifests"; exit 0; fi
+          exit "$rc"
+
+      - name: Workflow hazards
+        if: always() && hashFiles('.github/workflows/*') != ''
+        run: zizmor --offline --min-severity medium .github/workflows
