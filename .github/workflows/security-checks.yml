@@ -71,14 +71,16 @@ jobs:
           gitleaks git . --redact --no-banner --log-opts="$range" --exit-code 1
 
       - name: Dependencies (lockfiles and manifests)
+        if: always()
         run: |
           set -uo pipefail
           # Offline database: package names from private repos are not sent to osv.dev.
-          osv-scanner scan source -r --offline-vulnerabilities --download-offline-databases --format table . ; rc=$?
+          rc=0
+          osv-scanner scan source -r --offline-vulnerabilities --download-offline-databases --format table . || rc=$?
           # 0 = clean, 1 = vulnerabilities found, 128 = no package sources (not a failure)
           if [ "$rc" = 128 ]; then echo "no package manifests"; exit 0; fi
           exit "$rc"
 
       - name: Workflow hazards
-        if: hashFiles('.github/workflows/*') != ''
+        if: always() && hashFiles('.github/workflows/*') != ''
         run: zizmor --offline --min-severity medium .github/workflows
