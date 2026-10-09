@@ -2,7 +2,7 @@
 // Update quantities here when rebalancing
 
 import { getSnapshot as getAlpacaSnapshot, getHistoricalBars } from './alpaca';
-import { getSnapshot as getPolygonSnapshot } from './polygon';
+import { getAggregates, getSnapshot as getPolygonSnapshot } from './polygon';
 import { config } from './config';
 import { fetchJson } from './fetcher';
 import { withCache, TTL } from './cache';
@@ -143,42 +143,58 @@ interface PriceData {
   source?: string;
 }
 
-async function fetchPrice(symbol: string): Promise<PriceData> {
+export async function fetchPrice(symbol: string): Promise<PriceData> {
   const empty: PriceData = { price: 0, prevClose: 0, open: 0, high: 0, low: 0, volume: 0 };
   if (symbol === 'BTC') {
     const btc = await fetchBtcPrice();
     return { ...empty, price: btc.price, prevClose: btc.prevClose, source: 'Coinbase / Polygon fallback' };
   }
-  // Try Alpaca first (reliable for live prices), fall back to Polygon
+  // Massive (formerly Polygon) is the primary source; Alpaca is the fallback.
   try {
-    const snap = await getAlpacaSnapshot(symbol);
-    if (!validQuote(snap.latestTrade.p, snap.prevDailyBar.c, snap.latestTrade.t)) throw new Error('Invalid or stale Alpaca quote');
+    const snap = await getPolygonSnapshot(symbol);
+    if (!validQuote(snap.price, snap.prevClose, snap.asOf)) throw new Error('Invalid or stale Massive quote');
     return {
-      asOf: snap.latestTrade.t, source: 'Alpaca',
-      price: snap.latestTrade.p,
-      prevClose: snap.prevDailyBar.c,
-      open: snap.dailyBar?.o || 0,
-      high: snap.dailyBar?.h || 0,
-      low: snap.dailyBar?.l || 0,
-      volume: snap.dailyBar?.v || 0,
+      asOf: snap.asOf ?? undefined, source: 'Massive',
+      price: snap.price,
+      prevClose: snap.prevClose,
+      open: snap.open,
+      high: snap.high,
+      low: snap.low,
+      volume: snap.volume,
     };
   } catch {
     try {
-      const snap = await getPolygonSnapshot(symbol);
-      if (!validQuote(snap.price, snap.prevClose, snap.asOf)) throw new Error('Invalid or stale Polygon quote');
+      const snap = await getAlpacaSnapshot(symbol);
+      if (!validQuote(snap.latestTrade.p, snap.prevDailyBar.c, snap.latestTrade.t)) throw new Error('Invalid or stale Alpaca quote');
       return {
-        asOf: snap.asOf ?? undefined, source: 'Polygon',
-        price: snap.price,
-        prevClose: snap.prevClose,
-        open: snap.open,
-        high: snap.high,
-        low: snap.low,
-        volume: snap.volume,
+        asOf: snap.latestTrade.t, source: 'Alpaca',
+        price: snap.latestTrade.p,
+        prevClose: snap.prevDailyBar.c,
+        open: snap.dailyBar?.o || 0,
+        high: snap.dailyBar?.h || 0,
+        low: snap.dailyBar?.l || 0,
+        volume: snap.dailyBar?.v || 0,
       };
     } catch {
       return empty;
     }
   }
+}
+
+/** Price bars from Massive, falling back to Alpaca when Massive errors or returns nothing. */
+export async function fetchBars(
+  symbol: string,
+  timeframe: '5Min' | '1Day',
+  start: string,
+  limit: number
+): Promise<Array<{ date: string; close: number }>> {
+  try {
+    const bars = await getAggregates(symbol, timeframe === '5Min' ? '5min' : '1day', start, undefined, limit);
+    if (bars.length > 0) return bars;
+  } catch {
+    // fall through to Alpaca
+  }
+  return getHistoricalBars(symbol, timeframe, start, undefined, limit);
 }
 
 export function validQuote(price: number, previous: number, asOf?: string | null): boolean {
@@ -501,7 +517,7 @@ export async function getPortfolioChart(
     const [stockBars, btcBars, prevCloses] = await Promise.all([
       Promise.all(
         stockSymbols.map((h) =>
-          getHistoricalBars(h.symbol, '5Min', barDateStr, undefined, 200)
+          fetchBars(h.symbol, '5Min', barDateStr, 200)
             .then((bars) => ({ symbol: h.symbol, bars }))
             .catch(() => ({ symbol: h.symbol, bars: [] as Array<{ date: string; close: number }> }))
         )
@@ -599,7 +615,7 @@ export async function getPortfolioChart(
   const [stockBars, btcBars] = await Promise.all([
     Promise.all(
       stockSymbols.map((h) =>
-        getHistoricalBars(h.symbol, '1Day', startStr, undefined, days + 10)
+        fetchBars(h.symbol, '1Day', startStr, days + 10)
           .then((bars) => ({ symbol: h.symbol, bars }))
           .catch(() => ({ symbol: h.symbol, bars: [] as Array<{ date: string; close: number }> }))
       )

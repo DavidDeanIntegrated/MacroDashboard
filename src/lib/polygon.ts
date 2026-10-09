@@ -111,9 +111,12 @@ interface PolygonTickerSnapshot {
   todaysChangePerc: number;
   day: { o: number; h: number; l: number; c: number; v: number; vw: number };
   prevDay: { o: number; h: number; l: number; c: number; v: number; vw: number };
-  lastTrade: { p: number; s: number; t: number };
-  lastQuote: { P: number; S: number; p: number; s: number; t: number };
-  min: { o: number; h: number; l: number; c: number; v: number; vw: number; t: number };
+  // lastTrade/lastQuote need the trades/quotes entitlement (Developer/Advanced);
+  // the Starter plan omits them, so price and time fall back to the minute bar.
+  lastTrade?: { p: number; s: number; t: number };
+  lastQuote?: { P: number; S: number; p: number; s: number; t: number };
+  min?: { o: number; h: number; l: number; c: number; v: number; vw: number; t: number };
+  updated?: number; // nanoseconds
 }
 
 interface PolygonSnapshotResponse {
@@ -137,10 +140,15 @@ export async function getSnapshot(symbol: string): Promise<PolygonSnapshot> {
   return withCache(`polygon:snapshot:${symbol}`, TTL.QUOTES, async () => {
     const url = polygonUrl(`/v2/snapshot/locale/us/markets/stocks/tickers/${symbol}`);
     const data = await fetchJson<PolygonSnapshotResponse>(url, { provider: 'Polygon' });
-    const t = data.ticker;
-    return {
-      price: t.lastTrade?.p || t.day?.c || 0,
-      asOf: t.lastTrade?.t ? new Date(t.lastTrade.t / 1e6).toISOString() : null,
+    return snapshotFromTicker(data.ticker);
+  });
+}
+
+export function snapshotFromTicker(t: PolygonTickerSnapshot): PolygonSnapshot {
+  const asOfMs = t.lastTrade?.t ? t.lastTrade.t / 1e6 : t.min?.t || (t.updated ? t.updated / 1e6 : 0);
+  return {
+      price: t.lastTrade?.p || t.min?.c || t.day?.c || 0,
+      asOf: asOfMs ? new Date(asOfMs).toISOString() : null,
       change: t.todaysChange || 0,
       changePercent: t.todaysChangePerc || 0,
       open: t.day?.o || 0,
@@ -148,8 +156,7 @@ export async function getSnapshot(symbol: string): Promise<PolygonSnapshot> {
       low: t.day?.l || 0,
       prevClose: t.prevDay?.c || 0,
       volume: t.day?.v || 0,
-    };
-  });
+  };
 }
 
 // ─── Technical Indicators ───
