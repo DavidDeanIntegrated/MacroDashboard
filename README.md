@@ -31,7 +31,6 @@ Edit `.env.local` with your actual API keys:
 FRED_API_KEY=your_fred_api_key
 ALPACA_API_KEY=your_alpaca_key
 ALPACA_API_SECRET=your_alpaca_secret
-ALPACA_PAPER=true
 FINNHUB_API_KEY=your_finnhub_key
 EDGAR_USER_AGENT=YourName macro-dashboard your@email.com
 ```

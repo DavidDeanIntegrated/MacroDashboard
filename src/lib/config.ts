@@ -9,12 +9,6 @@ export const config = {
   alpaca: {
     apiKey: process.env.ALPACA_API_KEY || '',
     apiSecret: process.env.ALPACA_API_SECRET || '',
-    paper: process.env.ALPACA_PAPER === 'true',
-    get baseUrl() {
-      return this.paper
-        ? 'https://paper-api.alpaca.markets'
-        : 'https://api.alpaca.markets';
-    },
     get dataUrl() {
       return 'https://data.alpaca.markets';
     },
