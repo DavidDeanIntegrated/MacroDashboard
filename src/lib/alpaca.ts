@@ -1,4 +1,5 @@
-// Alpaca API client — Brokerage + Market Data
+// Alpaca API client — market data only (prices, bars, news).
+// No brokerage account, position or order endpoints: this dashboard is public.
 // Docs: https://docs.alpaca.markets/
 
 import { config } from './config';
@@ -13,66 +14,9 @@ function alpacaHeaders() {
   };
 }
 
-// ─── Account & Positions ───
-
-export interface AlpacaAccount {
-  id: string;
-  account_number: string;
-  status: string;
-  currency: string;
-  buying_power: string;
-  cash: string;
-  portfolio_value: string;
-  equity: string;
-  last_equity: string;
-  long_market_value: string;
-  short_market_value: string;
-  initial_margin: string;
-  maintenance_margin: string;
-  daytrade_count: number;
-  pattern_day_trader: boolean;
-}
-
-export interface AlpacaPosition {
-  asset_id: string;
-  symbol: string;
-  exchange: string;
-  asset_class: string;
-  qty: string;
-  avg_entry_price: string;
-  side: string;
-  market_value: string;
-  cost_basis: string;
-  unrealized_pl: string;
-  unrealized_plpc: string;
-  unrealized_intraday_pl: string;
-  unrealized_intraday_plpc: string;
-  current_price: string;
-  lastday_price: string;
-  change_today: string;
-}
-
-export async function getAccount(): Promise<AlpacaAccount> {
-  return withCache('alpaca:account', TTL.PORTFOLIO, () =>
-    fetchJson<AlpacaAccount>(`${config.alpaca.baseUrl}/v2/account`, {
-      headers: alpacaHeaders(),
-      provider: 'Alpaca',
-    })
-  );
-}
-
-export async function getPositions(): Promise<AlpacaPosition[]> {
-  return withCache('alpaca:positions', TTL.PORTFOLIO, () =>
-    fetchJson<AlpacaPosition[]>(`${config.alpaca.baseUrl}/v2/positions`, {
-      headers: alpacaHeaders(),
-      provider: 'Alpaca',
-    })
-  );
-}
-
-// NOTE: order submission/cancel/list endpoints were removed 2026-08-11 — the app
-// is a read-only dashboard (holdings tracked in lib/holdings.ts), and exposing
-// live trading through a public API route was unused risk surface.
+// NOTE: order endpoints were removed 2026-08-11 and account/position reads on
+// 2026-10-09 — the app is a public read-only dashboard (holdings tracked in
+// lib/holdings.ts), so brokerage data and actions are unused risk surface.
 
 // ─── Market Data (Alpaca Data API) ───
 
@@ -185,77 +129,4 @@ export async function getNews(
       { headers: alpacaHeaders(), provider: 'Alpaca' }
     ).then((res) => res.news)
   );
-}
-
-// ─── Portfolio Analytics ───
-
-export interface PortfolioSummary {
-  equity: number;
-  cash: number;
-  buyingPower: number;
-  portfolioValue: number;
-  dayChange: number;
-  dayChangePercent: number;
-  positions: PositionSummary[];
-  totalUnrealizedPL: number;
-  totalUnrealizedPLPercent: number;
-}
-
-export interface PositionSummary {
-  symbol: string;
-  qty: number;
-  avgEntry: number;
-  currentPrice: number;
-  marketValue: number;
-  costBasis: number;
-  unrealizedPL: number;
-  unrealizedPLPercent: number;
-  intradayPL: number;
-  intradayPLPercent: number;
-  weight: number;
-  side: string;
-}
-
-export async function getPortfolioSummary(): Promise<PortfolioSummary> {
-  const [account, positions] = await Promise.all([
-    getAccount(),
-    getPositions(),
-  ]);
-
-  const equity = parseFloat(account.equity);
-  const portfolioValue = parseFloat(account.portfolio_value);
-
-  const positionSummaries: PositionSummary[] = positions.map((p) => ({
-    symbol: p.symbol,
-    qty: parseFloat(p.qty),
-    avgEntry: parseFloat(p.avg_entry_price),
-    currentPrice: parseFloat(p.current_price),
-    marketValue: parseFloat(p.market_value),
-    costBasis: parseFloat(p.cost_basis),
-    unrealizedPL: parseFloat(p.unrealized_pl),
-    unrealizedPLPercent: parseFloat(p.unrealized_plpc) * 100,
-    intradayPL: parseFloat(p.unrealized_intraday_pl),
-    intradayPLPercent: parseFloat(p.unrealized_intraday_plpc) * 100,
-    weight: portfolioValue > 0 ? (parseFloat(p.market_value) / portfolioValue) * 100 : 0,
-    side: p.side,
-  }));
-
-  const totalUnrealizedPL = positionSummaries.reduce((sum, p) => sum + p.unrealizedPL, 0);
-  const totalCostBasis = positionSummaries.reduce((sum, p) => sum + p.costBasis, 0);
-
-  return {
-    equity,
-    cash: parseFloat(account.cash),
-    buyingPower: parseFloat(account.buying_power),
-    portfolioValue,
-    dayChange: equity - parseFloat(account.last_equity),
-    dayChangePercent:
-      parseFloat(account.last_equity) > 0
-        ? ((equity - parseFloat(account.last_equity)) / parseFloat(account.last_equity)) * 100
-        : 0,
-    positions: positionSummaries.sort((a, b) => b.marketValue - a.marketValue),
-    totalUnrealizedPL,
-    totalUnrealizedPLPercent:
-      totalCostBasis > 0 ? (totalUnrealizedPL / totalCostBasis) * 100 : 0,
-  };
 }

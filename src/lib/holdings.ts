@@ -204,7 +204,6 @@ export function validQuote(price: number, previous: number, asOf?: string | null
 }
 
 export async function getHoldingsPortfolio(): Promise<HoldingsPortfolio> {
-  if (process.env.HOLDINGS_SOURCE === 'alpaca') { const { getBrokerPortfolio } = await import('./broker-portfolio'); return getBrokerPortfolio(HOLDINGS); }
   if (!(config.alpaca.apiKey && config.alpaca.apiSecret) && !config.polygon.apiKey) throw new Error('Portfolio unavailable: configure Alpaca or Polygon market-data credentials. No allocation suggestions are generated without verified prices.');
   // Fetch all prices in parallel
   const prices = await Promise.all(
@@ -496,8 +495,6 @@ async function fetchBtcIntradayBars(): Promise<Map<string, number>> {
 export async function getPortfolioChart(
   period: PortfolioChartPeriod = '1Y'
 ): Promise<Array<{ date: string; value: number }>> {
-  if (process.env.HOLDINGS_SOURCE === 'alpaca') return []; // No transaction history: do not show the manual-book reconstruction.
-
   const days = PERIOD_DAYS[period];
   const isIntraday = period === '1D';
 
