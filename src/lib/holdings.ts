@@ -15,17 +15,17 @@ export interface Holding {
 }
 
 // Date the quantities below were last reconciled against the brokerage. Update with every holdings change.
-export const HOLDINGS_AS_OF = '2026-09-23';
+export const HOLDINGS_AS_OF = '2026-10-23';
 
 export const HOLDINGS: Holding[] = [
   { symbol: 'BTC',  qty: 0.00716019, category: 'Crypto', costBasis: 93144.18 },
-  { symbol: 'VTI',  qty: 3.28839,    category: 'Broad Market', costBasis: 351.15 },
-  { symbol: 'SGOV', qty: 7.824895,   category: 'Dry Powder', costBasis: 100.47 },
-  { symbol: 'GLD',  qty: 1.409832,   category: 'Gold', costBasis: 450.70 },
-  { symbol: 'VTV',  qty: 2.017205,   category: 'Value', costBasis: 209.19 },
+  { symbol: 'VTI',  qty: 3.1556,     category: 'Broad Market', costBasis: 351.61 },
+  { symbol: 'SGOV', qty: 7.848285,   category: 'Dry Powder', costBasis: 100.47 },
+  { symbol: 'GLD',  qty: 1.542888,   category: 'Gold', costBasis: 444.24 },
+  { symbol: 'VTV',  qty: 2.026699,   category: 'Value', costBasis: 209.22 },
   { symbol: 'VXUS', qty: 3.758219,   category: 'International', costBasis: 83.02 },
   { symbol: 'NVDA', qty: 0.860036,   category: 'Quality Compounder', costBasis: 190.46 },
-  { symbol: 'TSM',  qty: 0.339705,   category: 'Quality Compounder', costBasis: 311.06 },
+  { symbol: 'TSM',  qty: 0.34034,    category: 'Quality Compounder', costBasis: 311.34 },
   { symbol: 'MSFT', qty: 0.517933,   category: 'Quality Compounder', costBasis: 388.95 },
   { symbol: 'PLTR', qty: 1.212096,   category: 'Quality Compounder', costBasis: 135.02 },
   { symbol: 'BCI',  qty: 8.189264,   category: 'Commodity', costBasis: 22.32 },
