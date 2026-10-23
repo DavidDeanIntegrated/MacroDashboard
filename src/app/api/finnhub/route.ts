@@ -11,6 +11,27 @@ import {
 } from '@/lib/finnhub';
 import { getNews as getAlpacaNews } from '@/lib/alpaca';
 import { computeFundamentalsScore, computeAllScores } from '@/lib/fundamentals-score';
+import { failedRequest, invalidRequest, logUpstreamError } from '@/lib/api-errors';
+import {
+  CANDLE_RESOLUTIONS,
+  NEWS_CATEGORIES,
+  NEWS_DAYS,
+  parseAllowlist,
+  parseBoundedInt,
+  parseTicker,
+  parseTickerList,
+  parseUnixSeconds,
+} from '@/lib/polygon-bounds';
+
+function missingSymbol() {
+  return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
+}
+
+function readSymbol(raw: string | null): string | NextResponse {
+  const parsed = parseTicker(raw);
+  if (!parsed.ok) return parsed.reason === 'missing' ? missingSymbol() : invalidRequest();
+  return parsed.value;
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -19,40 +40,46 @@ export async function GET(request: NextRequest) {
   try {
     switch (action) {
       case 'quote': {
-        const symbol = searchParams.get('symbol');
-        if (!symbol) return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
+        const symbol = readSymbol(searchParams.get('symbol'));
+        if (symbol instanceof NextResponse) return symbol;
         const quote = await getQuote(symbol);
         return NextResponse.json(quote);
       }
 
       case 'profile': {
-        const symbol = searchParams.get('symbol');
-        if (!symbol) return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
+        const symbol = readSymbol(searchParams.get('symbol'));
+        if (symbol instanceof NextResponse) return symbol;
         const profile = await getCompanyProfile(symbol);
         return NextResponse.json(profile);
       }
 
       case 'news': {
-        const symbol = searchParams.get('symbol');
-        // Try Finnhub first, fall back to Alpaca news
-        try {
-          if (symbol) {
-            const days = parseInt(searchParams.get('days') || '7');
-            const finnhubNews = await getCompanyNews(symbol, days);
-            if (finnhubNews && finnhubNews.length > 0) {
-              return NextResponse.json(finnhubNews);
-            }
-          } else {
-            const category = (searchParams.get('category') || 'general') as 'general' | 'forex' | 'crypto';
-            const finnhubNews = await getMarketNews(category);
-            if (finnhubNews && finnhubNews.length > 0) {
-              return NextResponse.json(finnhubNews);
-            }
-          }
-        } catch {
-          // Finnhub failed, fall through to Alpaca
+        const rawSymbol = searchParams.get('symbol');
+        let symbol: string | undefined;
+        if (rawSymbol != null && rawSymbol.trim() !== '') {
+          const parsed = parseTicker(rawSymbol);
+          if (!parsed.ok) return invalidRequest();
+          symbol = parsed.value;
         }
-        // Alpaca news fallback
+        if (symbol) {
+          const days = parseBoundedInt(searchParams.get('days'), NEWS_DAYS.fallback, NEWS_DAYS.min, NEWS_DAYS.max);
+          if (days == null) return invalidRequest();
+          try {
+            const finnhubNews = await getCompanyNews(symbol, days);
+            if (finnhubNews && finnhubNews.length > 0) return NextResponse.json(finnhubNews);
+          } catch {
+            // Finnhub failed, fall through to Alpaca
+          }
+        } else {
+          const category = parseAllowlist(searchParams.get('category'), NEWS_CATEGORIES, 'general');
+          if (!category) return invalidRequest();
+          try {
+            const finnhubNews = await getMarketNews(category);
+            if (finnhubNews && finnhubNews.length > 0) return NextResponse.json(finnhubNews);
+          } catch {
+            // Finnhub failed, fall through to Alpaca
+          }
+        }
         const alpacaNews = await getAlpacaNews(symbol ? [symbol] : undefined, 20);
         const normalized = alpacaNews.map((item) => ({
           headline: item.headline,
@@ -66,48 +93,52 @@ export async function GET(request: NextRequest) {
       }
 
       case 'candles': {
-        const symbol = searchParams.get('symbol');
-        if (!symbol) return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
-        const resolution = (searchParams.get('resolution') || 'D') as 'D' | '60' | '15';
-        const from = searchParams.get('from') ? parseInt(searchParams.get('from')!) : undefined;
-        const to = searchParams.get('to') ? parseInt(searchParams.get('to')!) : undefined;
+        const symbol = readSymbol(searchParams.get('symbol'));
+        if (symbol instanceof NextResponse) return symbol;
+        const resolution = parseAllowlist(searchParams.get('resolution'), CANDLE_RESOLUTIONS, 'D');
+        const from = parseUnixSeconds(searchParams.get('from'));
+        const to = parseUnixSeconds(searchParams.get('to'));
+        if (!resolution || from === null || to === null || (from != null && to != null && from > to)) return invalidRequest();
         const candles = await getCandles(symbol, resolution, from, to);
         return NextResponse.json(candles);
       }
 
       case 'earnings': {
-        const symbol = searchParams.get('symbol');
-        if (!symbol) return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
+        const symbol = readSymbol(searchParams.get('symbol'));
+        if (symbol instanceof NextResponse) return symbol;
         const earnings = await getEarnings(symbol);
         return NextResponse.json(earnings);
       }
 
       case 'insider': {
-        const symbol = searchParams.get('symbol');
-        if (!symbol) return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
+        const symbol = readSymbol(searchParams.get('symbol'));
+        if (symbol instanceof NextResponse) return symbol;
         const transactions = await getInsiderTransactions(symbol);
         return NextResponse.json(transactions);
       }
 
       case 'metrics': {
-        const symbol = searchParams.get('symbol');
-        if (!symbol) return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
+        const symbol = readSymbol(searchParams.get('symbol'));
+        if (symbol instanceof NextResponse) return symbol;
         const metrics = await getBasicFinancials(symbol);
         return NextResponse.json(metrics);
       }
 
       case 'fundamentals-score': {
-        const symbol = searchParams.get('symbol');
-        if (symbol) {
-          const score = await computeFundamentalsScore(symbol);
+        const rawSymbol = searchParams.get('symbol');
+        if (rawSymbol != null && rawSymbol.trim() !== '') {
+          const parsed = parseTicker(rawSymbol);
+          if (!parsed.ok) return invalidRequest();
+          const score = await computeFundamentalsScore(parsed.value);
           return NextResponse.json(score);
         }
-        // Batch: pass comma-separated symbols
-        const symbols = searchParams.get('symbols')?.split(',') || [];
-        if (symbols.length === 0) {
-          return NextResponse.json({ error: 'Missing symbol or symbols' }, { status: 400 });
+        const parsed = parseTickerList(searchParams.get('symbols'));
+        if (!parsed.ok) {
+          return parsed.reason === 'missing'
+            ? NextResponse.json({ error: 'Missing symbol or symbols' }, { status: 400 })
+            : invalidRequest();
         }
-        const scores = await computeAllScores(symbols);
+        const scores = await computeAllScores(parsed.value);
         return NextResponse.json(scores);
       }
 
@@ -118,10 +149,7 @@ export async function GET(request: NextRequest) {
         );
     }
   } catch (error) {
-    console.error('Finnhub API error:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Finnhub API error' },
-      { status: 500 }
-    );
+    logUpstreamError('Finnhub API error', error);
+    return failedRequest();
   }
 }

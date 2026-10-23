@@ -4,12 +4,25 @@ import {
   getFredSeries,
   getFredSeriesInfo,
   getUpcomingReleaseDates,
+  knownFredSeriesIds,
   FRED_SERIES,
 } from '@/lib/fred';
 import { invalidatePrefix } from '@/lib/cache';
+import { failedRequest, invalidRequest, logUpstreamError } from '@/lib/api-errors';
+import { FRED_FREQUENCIES, parseAllowlist, parseFredSeriesId, parseIsoDate } from '@/lib/polygon-bounds';
 
 // The dashboard action fans out to ~45 FRED series on a cold cache.
 export const maxDuration = 60;
+
+function readSeriesId(raw: string | null): string | NextResponse {
+  const parsed = parseFredSeriesId(raw, knownFredSeriesIds());
+  if (!parsed.ok) {
+    return parsed.reason === 'missing'
+      ? NextResponse.json({ error: 'Missing series id' }, { status: 400 })
+      : invalidRequest();
+  }
+  return parsed.value;
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -18,22 +31,21 @@ export async function GET(request: NextRequest) {
   try {
     switch (action) {
       case 'series': {
-        const seriesId = searchParams.get('id');
-        if (!seriesId) {
-          return NextResponse.json({ error: 'Missing series id' }, { status: 400 });
-        }
-        const start = searchParams.get('start') || undefined;
-        const end = searchParams.get('end') || undefined;
-        const frequency = searchParams.get('frequency') || undefined;
-        const data = await getFredSeries(seriesId, start, end, frequency);
+        const seriesId = readSeriesId(searchParams.get('id'));
+        if (seriesId instanceof NextResponse) return seriesId;
+        const start = parseIsoDate(searchParams.get('start'));
+        const end = parseIsoDate(searchParams.get('end'));
+        const frequency = parseAllowlist(searchParams.get('frequency'), FRED_FREQUENCIES, 'd');
+        const frequencyRaw = searchParams.get('frequency');
+        if (start === null || end === null || (start && end && start > end)) return invalidRequest();
+        if (frequencyRaw != null && frequencyRaw !== '' && !frequency) return invalidRequest();
+        const data = await getFredSeries(seriesId, start, end, frequencyRaw ? frequency ?? undefined : undefined);
         return NextResponse.json(data);
       }
 
       case 'info': {
-        const seriesId = searchParams.get('id');
-        if (!seriesId) {
-          return NextResponse.json({ error: 'Missing series id' }, { status: 400 });
-        }
+        const seriesId = readSeriesId(searchParams.get('id'));
+        if (seriesId instanceof NextResponse) return seriesId;
         const info = await getFredSeriesInfo(seriesId);
         return NextResponse.json(info);
       }
@@ -77,10 +89,7 @@ export async function GET(request: NextRequest) {
         );
     }
   } catch (error) {
-    console.error('FRED API error:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'FRED API error' },
-      { status: 500 }
-    );
+    logUpstreamError('FRED API error', error);
+    return failedRequest();
   }
 }

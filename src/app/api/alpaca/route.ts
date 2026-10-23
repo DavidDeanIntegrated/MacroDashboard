@@ -2,7 +2,26 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getHistoricalBars, getSnapshot } from '@/lib/alpaca';
 import { isPublicAlpacaAction, PUBLIC_ALPACA_ACTIONS } from '@/lib/alpaca-actions';
 import { getHoldingsPortfolio, getPortfolioChart, getWatchlistData } from '@/lib/holdings';
-import type { PortfolioChartPeriod } from '@/lib/holdings';
+import { failedRequest, invalidRequest, logUpstreamError } from '@/lib/api-errors';
+import {
+  ALPACA_PERIODS,
+  ALPACA_TIMEFRAMES,
+  BARS_LIMIT,
+  parseAllowlist,
+  parseBoundedInt,
+  parseIsoDate,
+  parseTicker,
+} from '@/lib/polygon-bounds';
+
+function readSymbol(raw: string | null): string | NextResponse {
+  const parsed = parseTicker(raw);
+  if (!parsed.ok) {
+    return parsed.reason === 'missing'
+      ? NextResponse.json({ error: 'Missing symbol' }, { status: 400 })
+      : invalidRequest();
+  }
+  return parsed.value;
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -22,20 +41,20 @@ export async function GET(request: NextRequest) {
       }
 
       case 'bars': {
-        const symbol = searchParams.get('symbol');
-        if (!symbol) {
-          return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
-        }
-        const timeframe = (searchParams.get('timeframe') || '1Day') as '1Day' | '1Hour' | '15Min';
-        const start = searchParams.get('start') || undefined;
-        const end = searchParams.get('end') || undefined;
-        const limit = parseInt(searchParams.get('limit') || '252');
+        const symbol = readSymbol(searchParams.get('symbol'));
+        if (symbol instanceof NextResponse) return symbol;
+        const timeframe = parseAllowlist(searchParams.get('timeframe'), ALPACA_TIMEFRAMES, '1Day');
+        const start = parseIsoDate(searchParams.get('start'));
+        const end = parseIsoDate(searchParams.get('end'));
+        const limit = parseBoundedInt(searchParams.get('limit'), BARS_LIMIT.fallback, BARS_LIMIT.min, BARS_LIMIT.max);
+        if (!timeframe || start === null || end === null || limit == null || (start && end && start > end)) return invalidRequest();
         const bars = await getHistoricalBars(symbol, timeframe, start, end, limit);
         return NextResponse.json(bars);
       }
 
       case 'portfolio-chart': {
-        const period = (searchParams.get('period') || '1Y') as PortfolioChartPeriod;
+        const period = parseAllowlist(searchParams.get('period'), ALPACA_PERIODS, '1Y');
+        if (!period) return invalidRequest();
         const chart = await getPortfolioChart(period);
         return NextResponse.json(chart);
       }
@@ -46,10 +65,8 @@ export async function GET(request: NextRequest) {
       }
 
       case 'snapshot': {
-        const symbol = searchParams.get('symbol');
-        if (!symbol) {
-          return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
-        }
+        const symbol = readSymbol(searchParams.get('symbol'));
+        if (symbol instanceof NextResponse) return symbol;
         const snapshot = await getSnapshot(symbol);
         return NextResponse.json(snapshot);
       }
@@ -61,10 +78,7 @@ export async function GET(request: NextRequest) {
         );
     }
   } catch (error) {
-    console.error('Alpaca API error:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Alpaca API error' },
-      { status: 500 }
-    );
+    logUpstreamError('Alpaca API error', error);
+    return failedRequest();
   }
 }

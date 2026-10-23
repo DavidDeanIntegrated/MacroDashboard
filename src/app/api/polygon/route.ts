@@ -22,10 +22,7 @@ import {
   parseTimeframe,
   parseTimespan,
 } from '@/lib/polygon-bounds';
-
-function invalidRequest() {
-  return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
-}
+import { failedRequest, invalidRequest, logUpstreamError } from '@/lib/api-errors';
 
 function missingField(field: 'symbol' | 'symbols') {
   return NextResponse.json(
@@ -217,10 +214,7 @@ export async function GET(request: NextRequest) {
         );
     }
   } catch (error) {
-    console.error('Polygon API error:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Polygon API error' },
-      { status: 500 }
-    );
+    logUpstreamError('Polygon API error', error);
+    return failedRequest();
   }
 }

@@ -2,8 +2,14 @@
 // Docs: https://www.sec.gov/edgar/sec-api-documentation
 
 import { config } from './config';
-import { fetchJson } from './fetcher';
+import { encodeUpstreamRelative, fetchJson } from './fetcher';
 import { withCache, TTL } from './cache';
+
+function cikSegment(cik: number): string {
+  const padded = String(Math.trunc(cik)).padStart(10, '0');
+  if (!/^\d{10}$/.test(padded)) throw new Error('Invalid CIK');
+  return encodeURIComponent(padded);
+}
 
 const edgarHeaders = () => ({
   'User-Agent': config.edgar.userAgent,
@@ -214,7 +220,7 @@ export async function getCompanyFundamentals(
 
   return withCache(cacheKey, TTL.FUNDAMENTALS, async () => {
     const data = await fetchJson<CompanyFactsResponse>(
-      `${config.edgar.baseUrl}/api/xbrl/companyfacts/CIK${String(cik).padStart(10, '0')}.json`,
+      `${config.edgar.baseUrl}/api/xbrl/companyfacts/CIK${cikSegment(cik)}.json`,
       { headers: edgarHeaders(), provider: 'EDGAR', retries: 1 }
     );
 
@@ -277,7 +283,7 @@ export async function getRecentFilings(
 
   return withCache(cacheKey, TTL.FILINGS, async () => {
     const data = await fetchJson<SubmissionsResponse>(
-      `${config.edgar.baseUrl}/submissions/CIK${String(cik).padStart(10, '0')}.json`,
+      `${config.edgar.baseUrl}/submissions/CIK${cikSegment(cik)}.json`,
       { headers: edgarHeaders(), provider: 'EDGAR' }
     );
 
@@ -287,7 +293,9 @@ export async function getRecentFilings(
     for (let i = 0; i < recent.accessionNumber.length && filings.length < count; i++) {
       if (formTypes && !formTypes.includes(recent.form[i])) continue;
 
-      const accession = recent.accessionNumber[i].replace(/-/g, '');
+      const accession = encodeUpstreamRelative(recent.accessionNumber[i].replace(/-/g, ''));
+      const document = encodeUpstreamRelative(recent.primaryDocument[i]);
+      if (!accession || !document) continue;
       filings.push({
         accessionNumber: recent.accessionNumber[i],
         form: recent.form[i],
@@ -295,7 +303,7 @@ export async function getRecentFilings(
         reportDate: recent.reportDate[i],
         primaryDocument: recent.primaryDocument[i],
         primaryDocDescription: recent.primaryDocDescription[i],
-        fileUrl: `https://www.sec.gov/Archives/edgar/data/${cik}/${accession}/${recent.primaryDocument[i]}`,
+        fileUrl: `https://www.sec.gov/Archives/edgar/data/${cikSegment(cik)}/${accession}/${document}`,
       });
     }
 

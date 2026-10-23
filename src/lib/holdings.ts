@@ -4,7 +4,7 @@
 import { getSnapshot as getAlpacaSnapshot, getHistoricalBars } from './alpaca';
 import { getAggregates, getSnapshot as getPolygonSnapshot } from './polygon';
 import { config } from './config';
-import { fetchJson } from './fetcher';
+import { fetchJson, redactSecrets } from './fetcher';
 import { withCache, TTL } from './cache';
 
 export interface Holding {
@@ -100,7 +100,7 @@ async function fetchBtcPrice(): Promise<{ price: number; prevClose: number }> {
       const prevClose = parseFloat(prevRes.data.amount);
       if (price > 0) return { price, prevClose };
     } catch (err) {
-      console.warn('Coinbase BTC price failed, trying Polygon:', err instanceof Error ? err.message : err);
+      console.warn('Coinbase BTC price failed, trying Polygon:', err instanceof Error ? redactSecrets(err.message) : err);
     }
 
     // Fallback: Polygon crypto aggregates (X:BTCUSD)
@@ -125,7 +125,7 @@ async function fetchBtcPrice(): Promise<{ price: number; prevClose: number }> {
         };
       }
     } catch (err) {
-      console.warn('Polygon BTC price also failed:', err instanceof Error ? err.message : err);
+      console.warn('Polygon BTC price also failed:', err instanceof Error ? redactSecrets(err.message) : err);
     }
 
     return { price: 0, prevClose: 0 };
@@ -402,7 +402,7 @@ async function fetchBtcDailyBars(days: number): Promise<Map<string, number>> {
     await Promise.all(fetches);
     if (map.size > 0) return map;
   } catch (err) {
-    console.warn('Coinbase BTC bars failed, trying Polygon:', err instanceof Error ? err.message : err);
+    console.warn('Coinbase BTC bars failed, trying Polygon:', err instanceof Error ? redactSecrets(err.message) : err);
   }
 
   // Fallback: Polygon crypto aggregates
@@ -419,7 +419,7 @@ async function fetchBtcDailyBars(days: number): Promise<Map<string, number>> {
       map.set(date, bar.close);
     }
   } catch (err) {
-    console.warn('Polygon BTC bars also failed:', err instanceof Error ? err.message : err);
+    console.warn('Polygon BTC bars also failed:', err instanceof Error ? redactSecrets(err.message) : err);
   }
 
   return map;
@@ -469,7 +469,7 @@ async function fetchBtcIntradayBars(): Promise<Map<string, number>> {
     }
     if (map.size > 0) return map;
   } catch (err) {
-    console.warn('Coinbase BTC intraday failed, trying Polygon:', err instanceof Error ? err.message : err);
+    console.warn('Coinbase BTC intraday failed, trying Polygon:', err instanceof Error ? redactSecrets(err.message) : err);
   }
 
   // Fallback: Polygon crypto 5-min bars
@@ -486,7 +486,7 @@ async function fetchBtcIntradayBars(): Promise<Map<string, number>> {
       map.set(bar.date, bar.close);
     }
   } catch (err) {
-    console.warn('Polygon BTC intraday also failed:', err instanceof Error ? err.message : err);
+    console.warn('Polygon BTC intraday also failed:', err instanceof Error ? redactSecrets(err.message) : err);
   }
 
   return map;
