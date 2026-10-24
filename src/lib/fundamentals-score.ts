@@ -1038,12 +1038,14 @@ function scoreWithTimeout(sym: string, timeoutMs = 30000): Promise<FundamentalsS
     unavailableReason: 'Data fetch failed',
   };
 
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<FundamentalsScore>((resolve) => {
+    timer = setTimeout(() => resolve({ ...fallback, unavailableReason: 'Timed out' }), timeoutMs);
+  });
   return Promise.race([
     computeFundamentalsScore(sym).catch(() => fallback),
-    new Promise<FundamentalsScore>((resolve) =>
-      setTimeout(() => resolve({ ...fallback, unavailableReason: 'Timed out' }), timeoutMs)
-    ),
-  ]);
+    timeout,
+  ]).finally(() => clearTimeout(timer));
 }
 
 export async function computeAllScores(symbols: string[]): Promise<FundamentalsScore[]> {

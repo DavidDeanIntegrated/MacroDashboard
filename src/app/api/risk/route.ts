@@ -5,6 +5,8 @@ import { getFredSeries } from '@/lib/fred';
 import { portfolioRisk, factorSensitivity } from '@/lib/portfolio-risk';
 import type { Observation } from '@/lib/time-series';
 import { config } from '@/lib/config';
+import { failedRequest, invalidRequest, logUpstreamError } from '@/lib/api-errors';
+import { boundedTickers } from '@/lib/polygon-bounds';
 
 // Two years of daily history for every holding plus three FRED factor series.
 export const maxDuration = 60;
@@ -17,7 +19,8 @@ export async function GET() {
     const start = from.toISOString().slice(0, 10);
     const histories: Record<string, Awaited<ReturnType<typeof getAggregates>>> = {};
     const errors: string[] = [];
-    const symbols = Array.from(new Set([...portfolio.positions.filter(p => p.symbol !== 'CASH').map(p => p.symbol), 'SPY']));
+    const symbols = boundedTickers(Array.from(new Set([...portfolio.positions.filter(p => p.symbol !== 'CASH').map(p => p.symbol), 'SPY'])));
+    if (!symbols) return invalidRequest();
     for (let i = 0; i < symbols.length; i += 4) await Promise.all(symbols.slice(i, i + 4).map(async symbol => {
       try { histories[symbol] = await getAggregates(symbol, '1day', start, undefined, 5000); }
       catch { histories[symbol] = []; errors.push(`${symbol}: historical prices unavailable`); }
@@ -40,6 +43,7 @@ export async function GET() {
     return NextResponse.json({ portfolio, risk, sensitivities, errors, fetchedAt: new Date().toISOString(),
       methodology: 'Two-year lookback; at least 60 shared intervals. Current constant weights applied to historical split-adjusted price returns. Distributions are excluded, including SGOV payouts; this is price risk, not total-return performance. Factor fits are separate univariate associations, not causal or additive. Standard errors assume independent residuals and may understate uncertainty.' });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Risk data unavailable' }, { status: 503 });
+    logUpstreamError('Risk API error', error);
+    return failedRequest(503);
   }
 }

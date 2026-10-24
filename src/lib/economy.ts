@@ -154,7 +154,7 @@ export function assessEconomy(data: Record<string, Observation[]>, asOf = new Da
     return { ...s, date: last?.date ?? null, raw: last?.value ?? null, value, previous: previous?.value ?? null, change,
       score: status === 'available' && value !== null ? clamp((value - s.center) / s.scale * s.direction) : null,
       momentum: status === 'available' && change !== null ? clamp(change / s.scale * s.direction) : null,
-      status, source: `https://fred.stlouisfed.org/series/${s.id}` };
+      status, source: `https://fred.stlouisfed.org/series/${encodeURIComponent(s.id)}` };
   });
   const summarize = (axis: Axis | 'leading'): AxisSummary => {
     // On the borrowing axis a positive score means "tight"; as a leading signal for growth that is bad news, so it enters the outlook with its sign flipped.

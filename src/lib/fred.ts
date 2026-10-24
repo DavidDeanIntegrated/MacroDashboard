@@ -3,8 +3,9 @@
 
 import { percentChange } from './time-series';
 import { config } from './config';
-import { fetchJson } from './fetcher';
+import { fetchJson, redactSecrets } from './fetcher';
 import { withCache, TTL } from './cache';
+import { ECONOMIC_INDICATORS } from './economy';
 
 // Pre-wired series IDs for the macro dashboard
 export const FRED_SERIES = {
@@ -63,6 +64,19 @@ export const FRED_SERIES = {
 } as const;
 
 export type FredSeriesId = (typeof FRED_SERIES)[keyof typeof FRED_SERIES];
+
+const KNOWN_FRED_SERIES: ReadonlySet<string> = new Set([
+  ...Object.values(FRED_SERIES),
+  ...ECONOMIC_INDICATORS.map((series) => series.id),
+]);
+
+export function isKnownFredSeries(id: string): boolean {
+  return KNOWN_FRED_SERIES.has(id);
+}
+
+export function knownFredSeriesIds(): ReadonlySet<string> {
+  return KNOWN_FRED_SERIES;
+}
 
 // Friendly names for display
 export const FRED_SERIES_NAMES: Record<string, string> = {
@@ -300,7 +314,7 @@ export async function getUpcomingReleaseDates(): Promise<ReleaseDate[]> {
           });
         }
       } catch (err) {
-        console.warn(`Failed to fetch release dates for release ${rel.releaseId}:`, err);
+        console.warn(`Failed to fetch release dates for release ${rel.releaseId}:`, err instanceof Error ? redactSecrets(err.message) : err);
       }
     })
   );

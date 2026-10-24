@@ -1,9 +1,47 @@
 // Resilient fetch wrapper with retry, backoff, and error handling
 
+import { config } from './config';
+
 interface FetchOptions extends RequestInit {
   retries?: number;
   backoffMs?: number;
   timeoutMs?: number;
+}
+
+// Strip provider credentials from a URL or error string before it is logged.
+export function redactSecrets(value: string): string {
+  let out = value.replace(/([?&#](?:api_key|apikey|token|access_token)=)[^&#\s]*/gi, '$1REDACTED');
+  const secrets = [
+    config.polygon.apiKey,
+    config.fred.apiKey,
+    config.finnhub.apiKey,
+    config.alpaca.apiKey,
+    config.alpaca.apiSecret,
+  ];
+  for (const secret of secrets) {
+    if (secret && secret.length >= 8) out = out.split(secret).join('REDACTED');
+  }
+  return out;
+}
+
+// Encode one relative or absolute path so caller-supplied text cannot add segments.
+export function encodeUpstreamPath(path: string): string {
+  if (!path.startsWith('/')) throw new Error('Invalid path');
+  const parts = path.split('/');
+  return parts.map((part, index) => {
+    if (index === 0) return '';
+    if (part === '' || part === '.' || part === '..') throw new Error('Invalid path segment');
+    return encodeURIComponent(part);
+  }).join('/');
+}
+
+// Encode a relative path that may contain subdirectories (EDGAR primary documents).
+// Returns null when a segment would escape the directory.
+export function encodeUpstreamRelative(value: string): string | null {
+  if (!value || /[\\?#]/.test(value)) return null;
+  const parts = value.split('/').filter((part) => part.length > 0);
+  if (parts.length === 0 || parts.some((part) => part === '.' || part === '..')) return null;
+  return parts.map((part) => encodeURIComponent(part)).join('/');
 }
 
 export class ApiError extends Error {
@@ -44,12 +82,15 @@ export async function resilientFetch(
 
       return response;
     } catch (error) {
-      if (attempt === retries) throw error;
+      if (attempt === retries) {
+        const detail = error instanceof Error ? redactSecrets(error.message) : 'request failed';
+        throw new Error(`Failed after ${retries + 1} attempts: ${redactSecrets(url)} (${detail})`);
+      }
       await new Promise((r) => setTimeout(r, backoffMs * Math.pow(2, attempt)));
     }
   }
 
-  throw new Error(`Failed after ${retries + 1} attempts: ${url}`);
+  throw new Error(`Failed after ${retries + 1} attempts: ${redactSecrets(url)}`);
 }
 
 export async function fetchJson<T>(

@@ -1,0 +1,12 @@
+[extend]
+# Keep the built-in rules. This file only adds an allowlist.
+useDefault = true
+
+# PR commits still contain synthetic generic-api-key fixtures in
+# tests/api-bounds.test.cjs. Allow that path for that rule so the range scan
+# passes without rewriting history. Other rules still apply to the file, and
+# generic-api-key still applies to every other path.
+[[allowlists]]
+description = "Synthetic generic-api-key fixtures in the API bounds test"
+targetRules = ["generic-api-key"]
+paths = ['''(^|/)tests/api-bounds\.test\.cjs$''']

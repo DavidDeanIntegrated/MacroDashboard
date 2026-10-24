@@ -14,6 +14,14 @@ function alpacaHeaders() {
   };
 }
 
+// Snapshot symbols sit in the URL path. Query-string calls already go through
+// URLSearchParams, which encodes on its own. "." and ".." stay special after
+// encodeURIComponent, so they are refused before the path is built.
+function pathSegment(value: string): string {
+  if (value === '.' || value === '..') throw new Error('Invalid path segment');
+  return encodeURIComponent(value);
+}
+
 // NOTE: order endpoints were removed 2026-08-11 and account/position reads on
 // 2026-10-09 — the app is a public read-only dashboard (holdings tracked in
 // lib/holdings.ts), so brokerage data and actions are unused risk surface.
@@ -93,7 +101,7 @@ export interface AlpacaSnapshot {
 export async function getSnapshot(symbol: string): Promise<AlpacaSnapshot> {
   return withCache(`alpaca:snapshot:${symbol}`, TTL.QUOTES, () =>
     fetchJson<AlpacaSnapshot>(
-      `${config.alpaca.dataUrl}/v2/stocks/${symbol}/snapshot?feed=iex`,
+      `${config.alpaca.dataUrl}/v2/stocks/${pathSegment(symbol)}/snapshot?feed=iex`,
       { headers: alpacaHeaders(), provider: 'Alpaca' }
     )
   );

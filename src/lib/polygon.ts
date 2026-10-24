@@ -16,6 +16,14 @@ function polygonUrl(path: string, params?: Record<string, string>): string {
   return url.toString();
 }
 
+// One path segment. Tickers such as X:BTCUSD, and caller-supplied dates, must
+// not be able to insert "/" or "?" into the upstream path. "." and ".." are
+// special to URL parsers and are not encoded by encodeURIComponent.
+function pathSegment(value: string): string {
+  if (value === '.' || value === '..') throw new Error('Invalid path segment');
+  return encodeURIComponent(value);
+}
+
 // ─── Aggregates (Bars) ───
 
 interface PolygonAggResult {
@@ -84,8 +92,9 @@ export async function getAggregates(
   const ttl = timeframe === '1day' ? TTL.MACRO : TTL.QUOTES;
 
   return withCache(cacheKey, ttl, async () => {
+    const ticker = pathSegment(symbol === 'BTC' ? 'X:BTCUSD' : symbol);
     const url = polygonUrl(
-      `/v2/aggs/ticker/${symbol === 'BTC' ? 'X:BTCUSD' : symbol}/range/${tf.multiplier}/${tf.timespan}/${defaultFrom}/${defaultTo}`,
+      `/v2/aggs/ticker/${ticker}/range/${tf.multiplier}/${tf.timespan}/${pathSegment(defaultFrom)}/${pathSegment(defaultTo)}`,
       { adjusted: 'true', sort: 'asc', limit: limit.toString() }
     );
 
@@ -138,7 +147,7 @@ export interface PolygonSnapshot {
 
 export async function getSnapshot(symbol: string): Promise<PolygonSnapshot> {
   return withCache(`polygon:snapshot:${symbol}`, TTL.QUOTES, async () => {
-    const url = polygonUrl(`/v2/snapshot/locale/us/markets/stocks/tickers/${symbol}`);
+    const url = polygonUrl(`/v2/snapshot/locale/us/markets/stocks/tickers/${pathSegment(symbol)}`);
     const data = await fetchJson<PolygonSnapshotResponse>(url, { provider: 'Polygon' });
     return snapshotFromTicker(data.ticker);
   });
@@ -199,7 +208,7 @@ export async function getSMA(
   limit = 120
 ): Promise<TechnicalIndicatorPoint[]> {
   return withCache(`polygon:sma:${symbol}:${window}:${timespan}:${limit}`, TTL.QUOTES, async () => {
-    const url = polygonUrl(`/v1/indicators/sma/${symbol}`, {
+    const url = polygonUrl(`/v1/indicators/sma/${pathSegment(symbol)}`, {
       timespan,
       'window': window.toString(),
       series_type: 'close',
@@ -222,7 +231,7 @@ export async function getSMA(
 export async function getWeeklySMA200(symbol: string): Promise<number | null> {
   return withCache(`polygon:wma200:${symbol}`, TTL.MACRO, async () => {
     try {
-      const url = polygonUrl(`/v1/indicators/sma/${symbol}`, {
+      const url = polygonUrl(`/v1/indicators/sma/${pathSegment(symbol)}`, {
         timespan: 'week',
         window: '200',
         series_type: 'close',
@@ -245,7 +254,7 @@ export async function getRSI(
   limit = 120
 ): Promise<TechnicalIndicatorPoint[]> {
   return withCache(`polygon:rsi:${symbol}:${window}:${timespan}:${limit}`, TTL.QUOTES, async () => {
-    const url = polygonUrl(`/v1/indicators/rsi/${symbol}`, {
+    const url = polygonUrl(`/v1/indicators/rsi/${pathSegment(symbol)}`, {
       timespan,
       'window': window.toString(),
       series_type: 'close',
@@ -271,7 +280,7 @@ export async function getMACD(
 ): Promise<MACDPoint[]> {
   const cacheKey = `polygon:macd:${symbol}:${shortWindow}:${longWindow}:${signalWindow}:${timespan}:${limit}`;
   return withCache(cacheKey, TTL.QUOTES, async () => {
-    const url = polygonUrl(`/v1/indicators/macd/${symbol}`, {
+    const url = polygonUrl(`/v1/indicators/macd/${pathSegment(symbol)}`, {
       timespan,
       short_window: shortWindow.toString(),
       long_window: longWindow.toString(),
@@ -298,7 +307,7 @@ export async function getEMA(
   limit = 120
 ): Promise<TechnicalIndicatorPoint[]> {
   return withCache(`polygon:ema:${symbol}:${window}:${timespan}:${limit}`, TTL.QUOTES, async () => {
-    const url = polygonUrl(`/v1/indicators/ema/${symbol}`, {
+    const url = polygonUrl(`/v1/indicators/ema/${pathSegment(symbol)}`, {
       timespan,
       'window': window.toString(),
       series_type: 'close',
@@ -403,7 +412,7 @@ export interface TickerDetails {
 
 export async function getTickerDetails(symbol: string): Promise<TickerDetails> {
   return withCache(`polygon:details:${symbol}`, TTL.FILINGS, async () => {
-    const url = polygonUrl(`/v3/reference/tickers/${symbol}`);
+    const url = polygonUrl(`/v3/reference/tickers/${pathSegment(symbol)}`);
     const data = await fetchJson<PolygonTickerDetailsResponse>(url, { provider: 'Polygon' });
     const r = data.results;
     return {

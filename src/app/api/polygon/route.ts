@@ -11,7 +11,37 @@ import {
   getWeeklySMA200,
 } from '@/lib/polygon';
 import { fetchBtcWma200 } from '@/lib/holdings';
-import type { PolygonTimeframe } from '@/lib/polygon';
+import {
+  AGGREGATE_LIMIT,
+  DIVIDEND_LIMIT,
+  INDICATOR_WINDOW,
+  parseBoundedInt,
+  parseIsoDate,
+  parseTicker,
+  parseTickerList,
+  parseTimeframe,
+  parseTimespan,
+} from '@/lib/polygon-bounds';
+import { failedRequest, invalidRequest, logUpstreamError } from '@/lib/api-errors';
+
+function missingField(field: 'symbol' | 'symbols') {
+  return NextResponse.json(
+    { error: field === 'symbol' ? 'Missing symbol' : 'Missing symbols' },
+    { status: 400 }
+  );
+}
+
+function readSymbol(raw: string | null): string | NextResponse {
+  const parsed = parseTicker(raw);
+  if (!parsed.ok) return parsed.reason === 'missing' ? missingField('symbol') : invalidRequest();
+  return parsed.value;
+}
+
+function readSymbols(raw: string | null): string[] | NextResponse {
+  const parsed = parseTickerList(raw);
+  if (!parsed.ok) return parsed.reason === 'missing' ? missingField('symbols') : invalidRequest();
+  return parsed.value;
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -20,34 +50,40 @@ export async function GET(request: NextRequest) {
   try {
     switch (action) {
       case 'aggregates': {
-        const symbol = searchParams.get('symbol');
-        if (!symbol) {
-          return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
-        }
-        const timeframe = (searchParams.get('timeframe') || '1day') as PolygonTimeframe;
-        const from = searchParams.get('from') || undefined;
-        const to = searchParams.get('to') || undefined;
-        const limit = parseInt(searchParams.get('limit') || '500');
+        const symbol = readSymbol(searchParams.get('symbol'));
+        if (symbol instanceof NextResponse) return symbol;
+        const timeframe = parseTimeframe(searchParams.get('timeframe'));
+        const from = parseIsoDate(searchParams.get('from'));
+        const to = parseIsoDate(searchParams.get('to'));
+        const limit = parseBoundedInt(
+          searchParams.get('limit'),
+          AGGREGATE_LIMIT.fallback,
+          AGGREGATE_LIMIT.min,
+          AGGREGATE_LIMIT.max,
+        );
+        if (!timeframe || from === null || to === null || limit == null) return invalidRequest();
         const data = await getAggregates(symbol, timeframe, from, to, limit);
         return NextResponse.json(data);
       }
 
       case 'snapshot': {
-        const symbol = searchParams.get('symbol');
-        if (!symbol) {
-          return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
-        }
+        const symbol = readSymbol(searchParams.get('symbol'));
+        if (symbol instanceof NextResponse) return symbol;
         const data = await getSnapshot(symbol);
         return NextResponse.json(data);
       }
 
       case 'sma': {
-        const symbol = searchParams.get('symbol');
-        if (!symbol) {
-          return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
-        }
-        const window = parseInt(searchParams.get('window') || '50');
-        const timespan = (searchParams.get('timespan') || 'day') as 'day' | 'hour' | 'minute';
+        const symbol = readSymbol(searchParams.get('symbol'));
+        if (symbol instanceof NextResponse) return symbol;
+        const window = parseBoundedInt(
+          searchParams.get('window'),
+          50,
+          INDICATOR_WINDOW.min,
+          INDICATOR_WINDOW.max,
+        );
+        const timespan = parseTimespan(searchParams.get('timespan'));
+        if (window == null || !timespan) return invalidRequest();
         const data = await getSMA(symbol, window, timespan);
         return NextResponse.json(data);
       }
@@ -55,11 +91,8 @@ export async function GET(request: NextRequest) {
       case 'wma200': {
         // Batch: latest 200-week SMA per symbol. BTC is computed from Coinbase
         // weekly closes (Polygon's weekly indicator doesn't cover X:BTCUSD here).
-        const symbolsParam = searchParams.get('symbols');
-        if (!symbolsParam) {
-          return NextResponse.json({ error: 'Missing symbols' }, { status: 400 });
-        }
-        const symbols = symbolsParam.split(',').map((s) => s.trim()).filter(Boolean);
+        const symbols = readSymbols(searchParams.get('symbols'));
+        if (symbols instanceof NextResponse) return symbols;
         const results = await Promise.all(
           symbols.map(async (symbol) => ({
             symbol,
@@ -70,73 +103,86 @@ export async function GET(request: NextRequest) {
       }
 
       case 'ema': {
-        const symbol = searchParams.get('symbol');
-        if (!symbol) {
-          return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
-        }
-        const window = parseInt(searchParams.get('window') || '20');
-        const timespan = (searchParams.get('timespan') || 'day') as 'day' | 'hour' | 'minute';
+        const symbol = readSymbol(searchParams.get('symbol'));
+        if (symbol instanceof NextResponse) return symbol;
+        const window = parseBoundedInt(
+          searchParams.get('window'),
+          20,
+          INDICATOR_WINDOW.min,
+          INDICATOR_WINDOW.max,
+        );
+        const timespan = parseTimespan(searchParams.get('timespan'));
+        if (window == null || !timespan) return invalidRequest();
         const data = await getEMA(symbol, window, timespan);
         return NextResponse.json(data);
       }
 
       case 'rsi': {
-        const symbol = searchParams.get('symbol');
-        if (!symbol) {
-          return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
-        }
-        const window = parseInt(searchParams.get('window') || '14');
-        const timespan = (searchParams.get('timespan') || 'day') as 'day' | 'hour' | 'minute';
+        const symbol = readSymbol(searchParams.get('symbol'));
+        if (symbol instanceof NextResponse) return symbol;
+        const window = parseBoundedInt(
+          searchParams.get('window'),
+          14,
+          INDICATOR_WINDOW.min,
+          INDICATOR_WINDOW.max,
+        );
+        const timespan = parseTimespan(searchParams.get('timespan'));
+        if (window == null || !timespan) return invalidRequest();
         const data = await getRSI(symbol, window, timespan);
         return NextResponse.json(data);
       }
 
       case 'macd': {
-        const symbol = searchParams.get('symbol');
-        if (!symbol) {
-          return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
-        }
-        const timespan = (searchParams.get('timespan') || 'day') as 'day' | 'hour' | 'minute';
+        const symbol = readSymbol(searchParams.get('symbol'));
+        if (symbol instanceof NextResponse) return symbol;
+        const timespan = parseTimespan(searchParams.get('timespan'));
+        if (!timespan) return invalidRequest();
         const data = await getMACD(symbol, 12, 26, 9, timespan);
         return NextResponse.json(data);
       }
 
       case 'dividends': {
-        const symbol = searchParams.get('symbol');
-        if (!symbol) {
-          return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
-        }
-        const limit = parseInt(searchParams.get('limit') || '12');
+        const symbol = readSymbol(searchParams.get('symbol'));
+        if (symbol instanceof NextResponse) return symbol;
+        const limit = parseBoundedInt(
+          searchParams.get('limit'),
+          DIVIDEND_LIMIT.fallback,
+          DIVIDEND_LIMIT.min,
+          DIVIDEND_LIMIT.max,
+        );
+        if (limit == null) return invalidRequest();
         const data = await getDividends(symbol, limit);
         return NextResponse.json(data);
       }
 
       case 'details': {
-        const symbol = searchParams.get('symbol');
-        if (!symbol) {
-          return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
-        }
+        const symbol = readSymbol(searchParams.get('symbol'));
+        if (symbol instanceof NextResponse) return symbol;
         const data = await getTickerDetails(symbol);
         return NextResponse.json(data);
       }
 
       case 'multi-aggregates': {
         // Fetch aggregates for multiple symbols at once — used for overlays, sector heatmaps, etc.
-        const symbols = searchParams.get('symbols')?.split(',') || [];
-        if (symbols.length === 0) {
-          return NextResponse.json({ error: 'Missing symbols' }, { status: 400 });
-        }
-        const timeframe = (searchParams.get('timeframe') || '1day') as PolygonTimeframe;
-        const from = searchParams.get('from') || undefined;
-        const to = searchParams.get('to') || undefined;
-        const limit = parseInt(searchParams.get('limit') || '500');
+        const symbols = readSymbols(searchParams.get('symbols'));
+        if (symbols instanceof NextResponse) return symbols;
+        const timeframe = parseTimeframe(searchParams.get('timeframe'));
+        const from = parseIsoDate(searchParams.get('from'));
+        const to = parseIsoDate(searchParams.get('to'));
+        const limit = parseBoundedInt(
+          searchParams.get('limit'),
+          AGGREGATE_LIMIT.fallback,
+          AGGREGATE_LIMIT.min,
+          AGGREGATE_LIMIT.max,
+        );
+        if (!timeframe || from === null || to === null || limit == null) return invalidRequest();
         const results = await Promise.all(
-          symbols.map(async (sym) => {
+          symbols.map(async (symbol) => {
             try {
-              const data = await getAggregates(sym.trim(), timeframe, from, to, limit);
-              return { symbol: sym.trim(), data };
+              const data = await getAggregates(symbol, timeframe, from, to, limit);
+              return { symbol, data };
             } catch {
-              return { symbol: sym.trim(), data: [] };
+              return { symbol, data: [] };
             }
           })
         );
@@ -145,15 +191,12 @@ export async function GET(request: NextRequest) {
 
       case 'portfolio-dividends': {
         // Fetch dividends for multiple symbols at once
-        const symbols = searchParams.get('symbols')?.split(',') || [];
-        if (symbols.length === 0) {
-          return NextResponse.json({ error: 'Missing symbols' }, { status: 400 });
-        }
+        const symbols = readSymbols(searchParams.get('symbols'));
+        if (symbols instanceof NextResponse) return symbols;
         const results = await Promise.all(
-          symbols.map(async (sym) => {
+          symbols.map(async (symbol) => {
             try {
-              const divs = await getDividends(sym, 4);
-              return divs;
+              return await getDividends(symbol, 4);
             } catch {
               return [];
             }
@@ -171,10 +214,7 @@ export async function GET(request: NextRequest) {
         );
     }
   } catch (error) {
-    console.error('Polygon API error:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Polygon API error' },
-      { status: 500 }
-    );
+    logUpstreamError('Polygon API error', error);
+    return failedRequest();
   }
 }

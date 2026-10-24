@@ -2,7 +2,7 @@
 // Docs: https://finnhub.io/docs/api
 
 import { config } from './config';
-import { fetchJson } from './fetcher';
+import { encodeUpstreamPath, fetchJson } from './fetcher';
 import { withCache, TTL } from './cache';
 
 function finnhubUrl(path: string, params: Record<string, string> = {}) {
@@ -10,7 +10,7 @@ function finnhubUrl(path: string, params: Record<string, string> = {}) {
     ...params,
     token: config.finnhub.apiKey,
   });
-  return `${config.finnhub.baseUrl}${path}?${searchParams}`;
+  return `${config.finnhub.baseUrl}${encodeUpstreamPath(path)}?${searchParams}`;
 }
 
 // ─── Quote ───
