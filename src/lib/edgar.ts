@@ -80,7 +80,8 @@ interface FactEntry {
 }
 
 export interface FundamentalDataPoint {
-  period: string; // e.g., "2023-Q4"
+  period: string; // fiscal label: "2026-Q1" … "2026-Q4", or "2026-FY"
+  startDate?: string; // income-statement figures only (balance-sheet values are point-in-time)
   endDate: string;
   value: number;
   form: string;
@@ -169,50 +170,97 @@ const IFRS_TAGS = {
 // Accepted SEC form types (includes foreign private issuer forms)
 const ACCEPTED_FORMS = new Set(['10-K', '10-Q', '20-F', '6-K']);
 
+const DAY_MS = 86400000;
+const daysBetween = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / DAY_MS);
+const addDays = (date: string, days: number) => new Date(Date.parse(date) + days * DAY_MS).toISOString().slice(0, 10);
+
+interface FactRow { start?: string; end: string; val: number; form: string; filed: string; rank: number }
+
+/**
+ * One series per concept, keyed by the dates each figure covers — never by the
+ * row's fy/fp, which describe the FILING: a single 10-Q repeats last year's
+ * comparatives and year-to-date totals under its own fy/fp. Candidate tags are
+ * merged (companies switch tags over time; the earlier tag wins when both cover
+ * the same dates) and the latest filing of a period wins, so restatements apply.
+ * Income-statement figures keep only true quarters (80–100 days) and fiscal
+ * years (350–380 days); Q4 is derived as the year minus its three quarters.
+ */
 function extractFactDataFromNamespace(
   namespace: Record<string, FactEntry> | undefined,
   tags: readonly string[]
 ): FundamentalDataPoint[] {
   if (!namespace) return [];
 
-  for (const tag of tags) {
+  const byDates = new Map<string, FactRow>();
+  tags.forEach((tag, rank) => {
     const entry = namespace[tag];
-    if (!entry) continue;
-
+    if (!entry) return;
     // Prefer USD units
     const units = entry.units['USD'] || Object.values(entry.units)[0];
-    if (!units || units.length === 0) continue;
-
-    // Filter to accepted SEC form types, deduplicate by period
-    const seen = new Set<string>();
-    const results: FundamentalDataPoint[] = [];
-
-    for (const u of units) {
+    for (const u of units ?? []) {
       if (!ACCEPTED_FORMS.has(u.form)) continue;
-      const period = `${u.fy}-${u.fp}`;
-      if (seen.has(period)) continue;
-      seen.add(period);
-
-      // Normalize foreign forms to domestic equivalents for downstream logic
-      const normalizedForm = u.form === '20-F' ? '10-K' : u.form === '6-K' ? '10-Q' : u.form;
-
-      results.push({
-        period,
-        endDate: u.end,
-        value: u.val,
-        form: normalizedForm,
-        filed: u.filed,
-      });
+      const key = u.start ? `${u.start}..${u.end}` : u.end;
+      const cur = byDates.get(key);
+      if (!cur || rank < cur.rank || (rank === cur.rank && u.filed > cur.filed)) {
+        byDates.set(key, { start: u.start, end: u.end, val: u.val, form: u.form, filed: u.filed, rank });
+      }
     }
+  });
+  const rows = Array.from(byDates.values());
+  if (rows.length === 0) return [];
 
-    if (results.length > 0) {
-      return results.sort(
-        (a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime()
-      );
-    }
+  const flows = rows.filter((r) => r.start);
+  const isFlow = flows.length > 0;
+  const span = (r: FactRow) => daysBetween(r.start!, r.end);
+  const annuals = flows.filter((r) => span(r) >= 350 && span(r) <= 380).sort((a, b) => a.end.localeCompare(b.end));
+  const quarters = flows.filter((r) => span(r) >= 80 && span(r) <= 100);
+
+  // Q4 is rarely reported on its own: fiscal year minus the three quarters inside it.
+  for (const year of annuals) {
+    const inside = quarters.filter((q) => q.start! >= year.start! && q.end <= year.end);
+    if (inside.length !== 3 || inside.some((q) => Math.abs(daysBetween(q.end, year.end)) <= 7)) continue;
+    const lastEnd = inside.map((q) => q.end).sort().at(-1)!;
+    quarters.push({
+      start: addDays(lastEnd, 1),
+      end: year.end,
+      val: year.val - inside.reduce((sum, q) => sum + q.val, 0),
+      form: year.form,
+      filed: year.filed,
+      rank: year.rank,
+    });
   }
 
-  return [];
+  // Fiscal labels from the company's own year ends; a year still in progress is
+  // projected forward from the latest one (calendar years when none are filed).
+  const yearEnds = annuals.map((r) => r.end);
+  const fiscalYearEnd = (date: string): string => {
+    const known = yearEnds.find((e) => e >= addDays(date, -7) && daysBetween(date, e) < 366);
+    if (known) return known;
+    let e = yearEnds.at(-1) ?? `${date.slice(0, 4)}-12-31`;
+    while (daysBetween(date, e) < -7) e = `${Number(e.slice(0, 4)) + 1}${e.slice(4)}`;
+    return e;
+  };
+  const label = (end: string, annual: boolean) => {
+    const fyEnd = fiscalYearEnd(end);
+    if (annual) return `${fyEnd.slice(0, 4)}-FY`;
+    const q = Math.min(4, Math.max(1, 4 - Math.round(daysBetween(end, fyEnd) / 91.3)));
+    return `${fyEnd.slice(0, 4)}-Q${q}`;
+  };
+  const annualForm = (form: string) => (form === '10-K' || form === '20-F' ? '10-K' : '10-Q');
+
+  const points: FundamentalDataPoint[] = isFlow
+    ? [
+        ...quarters.map((r) => ({ period: label(r.end, false), startDate: r.start, endDate: r.end, value: r.val, form: '10-Q', filed: r.filed })),
+        ...annuals.map((r) => ({ period: label(r.end, true), startDate: r.start, endDate: r.end, value: r.val, form: '10-K', filed: r.filed })),
+      ]
+    : rows.map((r) => {
+        const yearEnd = fiscalYearEnd(r.end);
+        const atYearEnd = annualForm(r.form) === '10-K' && Math.abs(daysBetween(r.end, yearEnd)) <= 7;
+        return { period: label(r.end, atYearEnd), endDate: r.end, value: r.val, form: annualForm(r.form), filed: r.filed };
+      });
+
+  // Oldest first; at a shared end date the quarter precedes its fiscal year.
+  return points.sort((a, b) => a.endDate.localeCompare(b.endDate) || (a.form === '10-K' ? 1 : 0) - (b.form === '10-K' ? 1 : 0));
 }
 
 function extractFactData(
@@ -381,45 +429,19 @@ export interface EdgarScoringMetrics {
  * can't assemble 4 quarters.
  */
 function computeTTM(data: FundamentalDataPoint[]): number | null {
-  const fyOf = (d: FundamentalDataPoint) => d.period.split('-')[0];
-  const fpOf = (d: FundamentalDataPoint) => d.period.split('-')[1];
+  const byEnd = (x: FundamentalDataPoint, y: FundamentalDataPoint) => x.endDate.localeCompare(y.endDate);
+  const quarters = data.filter((d) => d.startDate && /-Q[1-4]$/.test(d.period)).sort(byEnd);
+  const latestAnnual = data.filter((d) => /-FY$/.test(d.period)).sort(byEnd).at(-1) ?? null;
 
-  const latestAnnual = (() => {
-    const annuals = data.filter((d) => d.form === '10-K');
-    return annuals.length > 0 ? annuals[annuals.length - 1].value : null;
-  })();
-
-  // True 3-month quarters: dedupe by fiscal period, keep endDate for ordering.
-  const quarters: Array<{ endDate: string; value: number }> = [];
-
-  // Q1–Q3 come straight from 10-Q (already 3-month figures).
-  for (const d of data) {
-    if (d.form === '10-Q' && /^Q[1-3]$/.test(fpOf(d))) {
-      quarters.push({ endDate: d.endDate, value: d.value });
-    }
+  // Trailing four quarters, only when they are back-to-back and at least as
+  // recent as the latest fiscal year; otherwise that fiscal year itself.
+  const last4 = quarters.slice(-4);
+  const backToBack = last4.length === 4 &&
+    last4.every((q, i) => i === 0 || Math.abs(daysBetween(last4[i - 1].endDate, q.startDate!)) <= 7);
+  if (backToBack && (!latestAnnual || last4[3].endDate >= latestAnnual.endDate)) {
+    return last4.reduce((sum, q) => sum + q.value, 0);
   }
-
-  // Derive Q4 = FY − (Q1 + Q2 + Q3) for each fiscal year where all parts exist.
-  const annualByFy = new Map<string, FundamentalDataPoint>();
-  for (const d of data) {
-    if (d.form === '10-K') annualByFy.set(fyOf(d), d);
-  }
-  Array.from(annualByFy.entries()).forEach(([fy, annual]) => {
-    const q1 = data.find((d) => fyOf(d) === fy && fpOf(d) === 'Q1');
-    const q2 = data.find((d) => fyOf(d) === fy && fpOf(d) === 'Q2');
-    const q3 = data.find((d) => fyOf(d) === fy && fpOf(d) === 'Q3');
-    if (q1 && q2 && q3) {
-      quarters.push({
-        endDate: annual.endDate,
-        value: annual.value - (q1.value + q2.value + q3.value),
-      });
-    }
-  });
-
-  if (quarters.length < 4) return latestAnnual;
-
-  quarters.sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
-  return quarters.slice(-4).reduce((sum, q) => sum + q.value, 0);
+  return latestAnnual?.value ?? null;
 }
 
 /**
