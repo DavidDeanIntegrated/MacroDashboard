@@ -15,7 +15,7 @@ export interface Holding {
 }
 
 // Date the quantities below were last reconciled against the brokerage. Update with every holdings change.
-export const HOLDINGS_AS_OF = '2026-10-23';
+export const HOLDINGS_AS_OF = '2026-11-04';
 
 export const HOLDINGS: Holding[] = [
   { symbol: 'BTC',  qty: 0.00716019, category: 'Crypto', costBasis: 93144.18 },
