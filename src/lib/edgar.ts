@@ -80,7 +80,8 @@ interface FactEntry {
 }
 
 export interface FundamentalDataPoint {
-  period: string; // e.g., "2023-Q4"
+  period: string; // fiscal label: "2026-Q1" … "2026-Q4", or "2026-FY"
+  startDate?: string; // income-statement figures only (balance-sheet values are point-in-time)
   endDate: string;
   value: number;
   form: string;
@@ -134,7 +135,8 @@ const GAAP_TAGS = {
     'SalesRevenueNet',
     'RevenueFromContractWithCustomerIncludingAssessedTax',
   ],
-  netIncome: ['NetIncomeLoss'],
+  // Some filers (e.g. AVAV) report net income only under the fallbacks.
+  netIncome: ['NetIncomeLoss', 'NetIncomeLossAvailableToCommonStockholdersBasic', 'ProfitLoss'],
   totalAssets: ['Assets'],
   totalLiabilities: ['Liabilities'],
   stockholdersEquity: [
@@ -169,50 +171,97 @@ const IFRS_TAGS = {
 // Accepted SEC form types (includes foreign private issuer forms)
 const ACCEPTED_FORMS = new Set(['10-K', '10-Q', '20-F', '6-K']);
 
+const DAY_MS = 86400000;
+const daysBetween = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / DAY_MS);
+const addDays = (date: string, days: number) => new Date(Date.parse(date) + days * DAY_MS).toISOString().slice(0, 10);
+
+interface FactRow { start?: string; end: string; val: number; form: string; filed: string; rank: number }
+
+/**
+ * One series per concept, keyed by the dates each figure covers — never by the
+ * row's fy/fp, which describe the FILING: a single 10-Q repeats last year's
+ * comparatives and year-to-date totals under its own fy/fp. Candidate tags are
+ * merged (companies switch tags over time; the earlier tag wins when both cover
+ * the same dates) and the latest filing of a period wins, so restatements apply.
+ * Income-statement figures keep only true quarters (80–100 days) and fiscal
+ * years (350–380 days); Q4 is derived as the year minus its three quarters.
+ */
 function extractFactDataFromNamespace(
   namespace: Record<string, FactEntry> | undefined,
   tags: readonly string[]
 ): FundamentalDataPoint[] {
   if (!namespace) return [];
 
-  for (const tag of tags) {
+  const byDates = new Map<string, FactRow>();
+  tags.forEach((tag, rank) => {
     const entry = namespace[tag];
-    if (!entry) continue;
-
+    if (!entry) return;
     // Prefer USD units
     const units = entry.units['USD'] || Object.values(entry.units)[0];
-    if (!units || units.length === 0) continue;
-
-    // Filter to accepted SEC form types, deduplicate by period
-    const seen = new Set<string>();
-    const results: FundamentalDataPoint[] = [];
-
-    for (const u of units) {
+    for (const u of units ?? []) {
       if (!ACCEPTED_FORMS.has(u.form)) continue;
-      const period = `${u.fy}-${u.fp}`;
-      if (seen.has(period)) continue;
-      seen.add(period);
-
-      // Normalize foreign forms to domestic equivalents for downstream logic
-      const normalizedForm = u.form === '20-F' ? '10-K' : u.form === '6-K' ? '10-Q' : u.form;
-
-      results.push({
-        period,
-        endDate: u.end,
-        value: u.val,
-        form: normalizedForm,
-        filed: u.filed,
-      });
+      const key = u.start ? `${u.start}..${u.end}` : u.end;
+      const cur = byDates.get(key);
+      if (!cur || rank < cur.rank || (rank === cur.rank && u.filed > cur.filed)) {
+        byDates.set(key, { start: u.start, end: u.end, val: u.val, form: u.form, filed: u.filed, rank });
+      }
     }
+  });
+  const rows = Array.from(byDates.values());
+  if (rows.length === 0) return [];
 
-    if (results.length > 0) {
-      return results.sort(
-        (a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime()
-      );
-    }
+  const flows = rows.filter((r) => r.start);
+  const isFlow = flows.length > 0;
+  const span = (r: FactRow) => daysBetween(r.start!, r.end);
+  const annuals = flows.filter((r) => span(r) >= 350 && span(r) <= 380).sort((a, b) => a.end.localeCompare(b.end));
+  const quarters = flows.filter((r) => span(r) >= 80 && span(r) <= 100);
+
+  // Q4 is rarely reported on its own: fiscal year minus the three quarters inside it.
+  for (const year of annuals) {
+    const inside = quarters.filter((q) => q.start! >= year.start! && q.end <= year.end);
+    if (inside.length !== 3 || inside.some((q) => Math.abs(daysBetween(q.end, year.end)) <= 7)) continue;
+    const lastEnd = inside.map((q) => q.end).sort().at(-1)!;
+    quarters.push({
+      start: addDays(lastEnd, 1),
+      end: year.end,
+      val: year.val - inside.reduce((sum, q) => sum + q.val, 0),
+      form: year.form,
+      filed: year.filed,
+      rank: year.rank,
+    });
   }
 
-  return [];
+  // Fiscal labels from the company's own year ends; a year still in progress is
+  // projected forward from the latest one (calendar years when none are filed).
+  const yearEnds = annuals.map((r) => r.end);
+  const fiscalYearEnd = (date: string): string => {
+    const known = yearEnds.find((e) => e >= addDays(date, -7) && daysBetween(date, e) < 366);
+    if (known) return known;
+    let e = yearEnds.at(-1) ?? `${date.slice(0, 4)}-12-31`;
+    while (daysBetween(date, e) < -7) e = `${Number(e.slice(0, 4)) + 1}${e.slice(4)}`;
+    return e;
+  };
+  const label = (end: string, annual: boolean) => {
+    const fyEnd = fiscalYearEnd(end);
+    if (annual) return `${fyEnd.slice(0, 4)}-FY`;
+    const q = Math.min(4, Math.max(1, 4 - Math.round(daysBetween(end, fyEnd) / 91.3)));
+    return `${fyEnd.slice(0, 4)}-Q${q}`;
+  };
+  const annualForm = (form: string) => (form === '10-K' || form === '20-F' ? '10-K' : '10-Q');
+
+  const points: FundamentalDataPoint[] = isFlow
+    ? [
+        ...quarters.map((r) => ({ period: label(r.end, false), startDate: r.start, endDate: r.end, value: r.val, form: '10-Q', filed: r.filed })),
+        ...annuals.map((r) => ({ period: label(r.end, true), startDate: r.start, endDate: r.end, value: r.val, form: '10-K', filed: r.filed })),
+      ]
+    : rows.map((r) => {
+        const yearEnd = fiscalYearEnd(r.end);
+        const atYearEnd = annualForm(r.form) === '10-K' && Math.abs(daysBetween(r.end, yearEnd)) <= 7;
+        return { period: label(r.end, atYearEnd), endDate: r.end, value: r.val, form: annualForm(r.form), filed: r.filed };
+      });
+
+  // Oldest first; at a shared end date the quarter precedes its fiscal year.
+  return points.sort((a, b) => a.endDate.localeCompare(b.endDate) || (a.form === '10-K' ? 1 : 0) - (b.form === '10-K' ? 1 : 0));
 }
 
 function extractFactData(
@@ -232,6 +281,28 @@ function extractFactData(
   return [];
 }
 
+// Holding-company reorganizations start a new SEC filer: the ticker maps to the
+// new CIK, whose companyfacts hold only filings since the switch. The old
+// filer's history is merged in (same-period rows dedupe by filing date).
+const PREDECESSOR_CIKS: Record<string, number[]> = {
+  XOM: [34088], // Exxon Mobil Corp → ExxonMobil Holdings Corp (2026)
+};
+
+function mergeFacts(a: CompanyFactsResponse['facts'], b: CompanyFactsResponse['facts']): CompanyFactsResponse['facts'] {
+  const out: CompanyFactsResponse['facts'] = {};
+  for (const ns of ['us-gaap', 'ifrs-full', 'dei'] as const) {
+    const merged: Record<string, FactEntry> = {};
+    for (const source of [a[ns], b[ns]]) {
+      for (const [tag, entry] of Object.entries(source ?? {})) {
+        const target = merged[tag] ?? (merged[tag] = { ...entry, units: {} });
+        for (const [unit, rows] of Object.entries(entry.units)) target.units[unit] = [...(target.units[unit] ?? []), ...rows];
+      }
+    }
+    if (Object.keys(merged).length > 0) out[ns] = merged;
+  }
+  return out;
+}
+
 export async function getCompanyFundamentals(
   ticker: string
 ): Promise<CompanyFundamentals | null> {
@@ -241,10 +312,15 @@ export async function getCompanyFundamentals(
   const cacheKey = `edgar:facts:${cik}`;
 
   return withCache(cacheKey, TTL.FUNDAMENTALS, async () => {
-    const data = await fetchJson<CompanyFactsResponse>(
-      `${config.edgar.baseUrl}/api/xbrl/companyfacts/CIK${cikSegment(cik)}.json`,
+    const fetchFacts = (id: number) => fetchJson<CompanyFactsResponse>(
+      `${config.edgar.baseUrl}/api/xbrl/companyfacts/CIK${cikSegment(id)}.json`,
       { headers: edgarHeaders(), provider: 'EDGAR', retries: 1 }
     );
+    const data = await fetchFacts(cik);
+    for (const id of PREDECESSOR_CIKS[ticker.toUpperCase()] ?? []) {
+      const earlier = await fetchFacts(id).catch(() => null);
+      if (earlier) data.facts = mergeFacts(earlier.facts, data.facts);
+    }
 
     const shares = latestSharesOutstanding(data.facts);
     return {
@@ -380,46 +456,30 @@ export interface EdgarScoringMetrics {
  * true 3-month quarters by endDate. Falls back to the latest full-year 10-K when we
  * can't assemble 4 quarters.
  */
-function computeTTM(data: FundamentalDataPoint[]): number | null {
-  const fyOf = (d: FundamentalDataPoint) => d.period.split('-')[0];
-  const fpOf = (d: FundamentalDataPoint) => d.period.split('-')[1];
+interface Trailing { value: number; endDate: string }
 
-  const latestAnnual = (() => {
-    const annuals = data.filter((d) => d.form === '10-K');
-    return annuals.length > 0 ? annuals[annuals.length - 1].value : null;
-  })();
+function computeTTM(data: FundamentalDataPoint[]): Trailing | null {
+  const byEnd = (x: FundamentalDataPoint, y: FundamentalDataPoint) => x.endDate.localeCompare(y.endDate);
+  const quarters = data.filter((d) => d.startDate && /-Q[1-4]$/.test(d.period)).sort(byEnd);
+  const latestAnnual = data.filter((d) => /-FY$/.test(d.period)).sort(byEnd).at(-1) ?? null;
 
-  // True 3-month quarters: dedupe by fiscal period, keep endDate for ordering.
-  const quarters: Array<{ endDate: string; value: number }> = [];
-
-  // Q1–Q3 come straight from 10-Q (already 3-month figures).
-  for (const d of data) {
-    if (d.form === '10-Q' && /^Q[1-3]$/.test(fpOf(d))) {
-      quarters.push({ endDate: d.endDate, value: d.value });
-    }
+  // Trailing four quarters, only when they are back-to-back and at least as
+  // recent as the latest fiscal year; otherwise that fiscal year itself.
+  const last4 = quarters.slice(-4);
+  const backToBack = last4.length === 4 &&
+    last4.every((q, i) => i === 0 || Math.abs(daysBetween(last4[i - 1].endDate, q.startDate!)) <= 7);
+  if (backToBack && (!latestAnnual || last4[3].endDate >= latestAnnual.endDate)) {
+    return { value: last4.reduce((sum, q) => sum + q.value, 0), endDate: last4[3].endDate };
   }
+  return latestAnnual ? { value: latestAnnual.value, endDate: latestAnnual.endDate } : null;
+}
 
-  // Derive Q4 = FY − (Q1 + Q2 + Q3) for each fiscal year where all parts exist.
-  const annualByFy = new Map<string, FundamentalDataPoint>();
-  for (const d of data) {
-    if (d.form === '10-K') annualByFy.set(fyOf(d), d);
-  }
-  Array.from(annualByFy.entries()).forEach(([fy, annual]) => {
-    const q1 = data.find((d) => fyOf(d) === fy && fpOf(d) === 'Q1');
-    const q2 = data.find((d) => fyOf(d) === fy && fpOf(d) === 'Q2');
-    const q3 = data.find((d) => fyOf(d) === fy && fpOf(d) === 'Q3');
-    if (q1 && q2 && q3) {
-      quarters.push({
-        endDate: annual.endDate,
-        value: annual.value - (q1.value + q2.value + q3.value),
-      });
-    }
-  });
-
-  if (quarters.length < 4) return latestAnnual;
-
-  quarters.sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
-  return quarters.slice(-4).reduce((sum, q) => sum + q.value, 0);
+// A ratio of two trailing figures only when they cover (nearly) the same
+// months — a tag a company stopped using must not divide into current revenue.
+function trailingRatio(numerator: Trailing | null, denominator: Trailing | null): number | null {
+  if (!numerator || !denominator || !denominator.value) return null;
+  if (Math.abs(daysBetween(numerator.endDate, denominator.endDate)) > 100) return null;
+  return (numerator.value / denominator.value) * 100;
 }
 
 /**
@@ -443,10 +503,11 @@ export function extractScoringMetrics(f: CompanyFundamentals): EdgarScoringMetri
   // TTM = trailing four true 3-month quarters (see computeTTM).
   const getTTM = (data: FundamentalDataPoint[]) => computeTTM(data);
 
-  const ttmRevenue = getTTM(f.revenue);
-  const ttmNetIncome = getTTM(f.netIncome);
-  const ttmGrossProfit = getTTM(f.grossProfit);
-  const ttmEPS = getTTM(f.eps);
+  const revenueTTM = getTTM(f.revenue);
+  const netIncomeTTM = getTTM(f.netIncome);
+  const ttmRevenue = revenueTTM?.value ?? null;
+  const ttmNetIncome = netIncomeTTM?.value ?? null;
+  const ttmEPS = getTTM(f.eps)?.value ?? null;
 
   const latestEquity = getLatest(f.stockholdersEquity);
   const latestDebt = getLatest(f.longTermDebt);
@@ -471,8 +532,8 @@ export function extractScoringMetrics(f: CompanyFundamentals): EdgarScoringMetri
   }
 
   return {
-    netMargin: ttmRevenue && ttmNetIncome ? (ttmNetIncome / ttmRevenue) * 100 : null,
-    grossMargin: ttmRevenue && ttmGrossProfit ? (ttmGrossProfit / ttmRevenue) * 100 : null,
+    netMargin: ttmNetIncome ? trailingRatio(netIncomeTTM, revenueTTM) : null,
+    grossMargin: trailingRatio(getTTM(f.grossProfit), revenueTTM),
     roe: ttmNetIncome !== null && latestEquity && latestEquity > 0
       ? (ttmNetIncome / latestEquity) * 100 : null,
     revenueGrowth,
@@ -514,11 +575,11 @@ export function computeMetrics(fundamentals: CompanyFundamentals): ComputedMetri
   // TTM = trailing four true 3-month quarters (see computeTTM).
   const getTTM = (data: FundamentalDataPoint[]) => computeTTM(data);
 
-  const ttmRevenue = getTTM(fundamentals.revenue);
-  const ttmNetIncome = getTTM(fundamentals.netIncome);
-  const ttmGrossProfit = getTTM(fundamentals.grossProfit);
-  const ttmOperating = getTTM(fundamentals.operatingIncome);
-  const ttmEPS = getTTM(fundamentals.eps);
+  const revenueTTM = getTTM(fundamentals.revenue);
+  const netIncomeTTM = getTTM(fundamentals.netIncome);
+  const ttmRevenue = revenueTTM?.value ?? null;
+  const ttmNetIncome = netIncomeTTM?.value ?? null;
+  const ttmEPS = getTTM(fundamentals.eps)?.value ?? null;
 
   const latestDebt = getLatestAnnual(fundamentals.longTermDebt);
   const latestEquity = getLatestAnnual(fundamentals.stockholdersEquity);
@@ -527,12 +588,9 @@ export function computeMetrics(fundamentals: CompanyFundamentals): ComputedMetri
     ttmRevenue,
     ttmNetIncome,
     ttmEPS,
-    grossMargin:
-      ttmRevenue && ttmGrossProfit ? (ttmGrossProfit / ttmRevenue) * 100 : null,
-    operatingMargin:
-      ttmRevenue && ttmOperating ? (ttmOperating / ttmRevenue) * 100 : null,
-    netMargin:
-      ttmRevenue && ttmNetIncome ? (ttmNetIncome / ttmRevenue) * 100 : null,
+    grossMargin: trailingRatio(getTTM(fundamentals.grossProfit), revenueTTM),
+    operatingMargin: trailingRatio(getTTM(fundamentals.operatingIncome), revenueTTM),
+    netMargin: ttmNetIncome ? trailingRatio(netIncomeTTM, revenueTTM) : null,
     debtToEquity:
       latestDebt !== null && latestEquity ? latestDebt / latestEquity : null,
     currentAssets: getLatestAnnual(fundamentals.totalAssets),
