@@ -19,14 +19,14 @@ const {
   AGGREGATE_LIMIT,
   DIVIDEND_LIMIT,
   INDICATOR_WINDOW,
-} = require('../src/lib/polygon-bounds.ts');
-const route = require('../src/app/api/polygon/route.ts');
+} = require('../src/lib/market-bounds.ts');
+const route = require('../src/app/api/market/route.ts');
 const { getAggregates, getSnapshot } = require('../src/lib/market-data.ts');
 const { getSnapshot: getAlpacaSnapshot } = require('../src/lib/alpaca.ts');
 
 const resetCaches = () => { invalidatePrefix('alpaca:'); invalidatePrefix('market:'); };
 
-const get = (qs) => route.GET(new NextRequest(`https://example.test/api/polygon${qs}`));
+const get = (qs) => route.GET(new NextRequest(`https://example.test/api/market${qs}`));
 
 function ok(body) {
   return {

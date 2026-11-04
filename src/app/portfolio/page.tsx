@@ -9,7 +9,7 @@ import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart';
 import { AllocationPieChart } from '@/components/charts/AllocationPieChart';
 import { FundamentalsScoreSection } from '@/components/FundamentalsScoreCard';
 import { AllWeatherSection } from '@/components/AllWeatherSection';
-import { usePortfolio, usePortfolioChart, usePolygonAggregates, usePolygonRSI, usePortfolioDividends, useWatchlist, useFundamentalsScores, useWma200, useApi } from '@/lib/hooks';
+import { usePortfolio, usePortfolioChart, useMarketAggregates, useMarketRSI, usePortfolioDividends, useWatchlist, useFundamentalsScores, useWma200, useApi } from '@/lib/hooks';
 import type { RegimeKey } from '@/lib/sleeves';
 import type { RegimeHistory } from '@/lib/regime-history';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/format';
@@ -64,12 +64,12 @@ export default function PortfolioPage() {
   const { data: portfolioChartData } = usePortfolioChart(portfolioChartPeriod);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [chartTimeframe, setChartTimeframe] = useState<MarketTimeframe>('1day');
-  const { data: chartData } = usePolygonAggregates(selectedSymbol, chartTimeframe);
-  const { data: rsiData } = usePolygonRSI(selectedSymbol && selectedSymbol !== 'BTC' ? selectedSymbol : null);
+  const { data: chartData } = useMarketAggregates(selectedSymbol, chartTimeframe);
+  const { data: rsiData } = useMarketRSI(selectedSymbol && selectedSymbol !== 'BTC' ? selectedSymbol : null);
   const { data: dividends } = usePortfolioDividends((portfolio?.positions ?? []).filter(p => p.symbol !== 'CASH').map(h => h.symbol));
 
   // SPY drawdown from 3-month peak
-  const { data: spyDailyData } = usePolygonAggregates('SPY', '1day');
+  const { data: spyDailyData } = useMarketAggregates('SPY', '1day');
 
   // Fundamentals scores for portfolio holdings
   const portfolioSymbols = useMemo(() => (portfolio?.positions ?? []).filter(p => p.symbol !== 'CASH').map(h => h.symbol), [portfolio]);
@@ -90,8 +90,8 @@ export default function PortfolioPage() {
   const { data: watchlist } = useWatchlist();
   const [watchSelectedSymbol, setWatchSelectedSymbol] = useState<string | null>(null);
   const [watchChartTimeframe, setWatchChartTimeframe] = useState<MarketTimeframe>('1day');
-  const { data: watchChartData } = usePolygonAggregates(watchSelectedSymbol, watchChartTimeframe);
-  const { data: watchRsiData } = usePolygonRSI(watchSelectedSymbol);
+  const { data: watchChartData } = useMarketAggregates(watchSelectedSymbol, watchChartTimeframe);
+  const { data: watchRsiData } = useMarketRSI(watchSelectedSymbol);
 
   // Fundamentals scores for watchlist stocks
   const watchlistSymbols = useMemo(() => WATCHLIST.map((w) => w.symbol), []);
@@ -400,13 +400,13 @@ export default function PortfolioPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-black/[0.06]">
-                  {['Symbol', 'Category', 'Qty', 'Price', 'vs 200w MA', 'Mkt Value', 'Weight', 'Vol (IEX)', 'Day Chg'].map(
+                  {['Symbol', 'Category', 'Qty', 'Price', 'vs 200w MA', 'Mkt Value', 'Weight', 'Vol (1 exchange)', 'Day Chg'].map(
                     (h) => (
                       <th
                         key={h}
                         className="px-4 py-3 text-left text-xs font-medium text-black/40 uppercase tracking-wider"
                       >
-                        {h}
+                        {h === 'Vol (1 exchange)' ? <Term k="iex-volume">{h}</Term> : h}
                       </th>
                     )
                   )}
@@ -556,7 +556,7 @@ export default function PortfolioPage() {
                 <p className="text-sm font-medium text-black/75 tabular-nums">{formatCurrency(selectedPosition.low)}</p>
               </div>
               <div>
-                <p className="text-xs text-black/40">Volume (IEX)</p>
+                <p className="text-xs text-black/40"><Term k="iex-volume">Volume (one exchange)</Term></p>
                 <p className="text-sm font-medium text-black/75 tabular-nums">{formatNumber(selectedPosition.volume, { compact: true })}</p>
               </div>
             </div>
@@ -696,13 +696,13 @@ export default function PortfolioPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-black/[0.06]">
-                    {['Symbol', 'Category', 'Price', 'Open', 'High', 'Low', 'Vol (IEX)', 'Day Chg'].map(
+                    {['Symbol', 'Category', 'Price', 'Open', 'High', 'Low', 'Vol (1 exchange)', 'Day Chg'].map(
                       (h) => (
                         <th
                           key={h}
                           className="px-4 py-3 text-left text-xs font-medium text-black/40 uppercase tracking-wider"
                         >
-                          {h}
+                          {h === 'Vol (1 exchange)' ? <Term k="iex-volume">{h}</Term> : h}
                         </th>
                       )
                     )}
@@ -800,7 +800,7 @@ export default function PortfolioPage() {
                     <p className="text-sm font-medium text-black/75 tabular-nums">{formatCurrency(watchSelectedPosition.low)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-black/40">Volume (IEX)</p>
+                    <p className="text-xs text-black/40"><Term k="iex-volume">Volume (one exchange)</Term></p>
                     <p className="text-sm font-medium text-black/75 tabular-nums">{formatNumber(watchSelectedPosition.volume, { compact: true })}</p>
                   </div>
                 </div>

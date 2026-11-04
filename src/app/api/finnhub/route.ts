@@ -21,7 +21,7 @@ import {
   parseTicker,
   parseTickerList,
   parseUnixSeconds,
-} from '@/lib/polygon-bounds';
+} from '@/lib/market-bounds';
 
 function missingSymbol() {
   return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });

@@ -9,7 +9,7 @@ import { useMemo } from 'react';
 import { Card, CardTitle, MetricCard } from '@/components/ui/Card';
 import { LoadingPage } from '@/components/ui/Loading';
 import { Badge } from '@/components/ui/Badge';
-import { usePortfolio, usePolygonAggregates, useApi } from '@/lib/hooks';
+import { usePortfolio, useMarketAggregates, useApi } from '@/lib/hooks';
 import { formatCurrency } from '@/lib/format';
 import { Term, Explainer } from '@/components/ui/Term';
 import {
@@ -72,7 +72,7 @@ export default function BriefingPage() {
   const { data: portfolio, loading, error: portfolioError, refreshError: portfolioRefreshError } = usePortfolio();
   const { data: dashboard, error: macroError, refreshError: macroRefreshError } = useApi<DashboardData>('/api/fred?action=dashboard');
   const refreshWarning = portfolioRefreshError || macroRefreshError;
-  const { data: spyDaily } = usePolygonAggregates('SPY', '1day');
+  const { data: spyDaily } = useMarketAggregates('SPY', '1day');
 
   // Sleeve bands are regime-adjusted — the same bands the rebalance engine trades to.
   const sleeveRegime: RegimeKey = dashboard?.regime?.regime ?? 'unknown';

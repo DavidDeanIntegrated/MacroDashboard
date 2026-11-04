@@ -11,7 +11,7 @@ import {
   parseBoundedInt,
   parseIsoDate,
   parseTicker,
-} from '@/lib/polygon-bounds';
+} from '@/lib/market-bounds';
 
 function readSymbol(raw: string | null): string | NextResponse {
   const parsed = parseTicker(raw);

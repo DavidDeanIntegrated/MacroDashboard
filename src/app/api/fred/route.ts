@@ -9,7 +9,7 @@ import {
 } from '@/lib/fred';
 import { invalidatePrefix } from '@/lib/cache';
 import { failedRequest, invalidRequest, logUpstreamError } from '@/lib/api-errors';
-import { FRED_FREQUENCIES, parseAllowlist, parseFredSeriesId, parseIsoDate } from '@/lib/polygon-bounds';
+import { FRED_FREQUENCIES, parseAllowlist, parseFredSeriesId, parseIsoDate } from '@/lib/market-bounds';
 
 // The dashboard action fans out to ~45 FRED series on a cold cache.
 export const maxDuration = 60;
