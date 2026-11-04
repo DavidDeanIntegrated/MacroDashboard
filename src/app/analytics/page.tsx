@@ -210,7 +210,7 @@ export default function AnalyticsPage() {
           </div>
           <h2 className="text-2xl font-semibold text-black/85 tracking-tight">Portfolio Analytics</h2>
           <p className="text-sm text-black/45 mt-1">
-            Relative strength, correlations, and volatility via Polygon.io
+            Relative strength, correlations, and volatility via Alpaca
           </p>
         </div>
         <div className="flex items-center gap-2">

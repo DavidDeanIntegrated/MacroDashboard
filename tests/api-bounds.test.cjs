@@ -1,4 +1,3 @@
-process.env.POLYGON_API_KEY = 'synthetic-polygon-key-0123456789';
 process.env.FRED_API_KEY = 'synthetic-fred-key-0123456789';
 process.env.FINNHUB_API_KEY = 'synthetic-finnhub-key-0123456789';
 process.env.ALPACA_API_KEY = 'synthetic-alpaca-key-0123456789';
@@ -36,7 +35,6 @@ const polygon = require('../src/app/api/polygon/route.ts');
 const risk = require('../src/app/api/risk/route.ts');
 
 const SECRETS = [
-  'synthetic-polygon-key-0123456789',
   'synthetic-fred-key-0123456789',
   'synthetic-finnhub-key-0123456789',
   'synthetic-alpaca-key-0123456789',
@@ -80,7 +78,7 @@ function upstreamFailure() {
   return {
     ok: false,
     status: 500,
-    statusText: 'ERR https://api.polygon.io/v2?apiKey=synthetic-polygon-key-0123456789&api_key=synthetic-fred-key-0123456789 token=synthetic-finnhub-key-0123456789 synthetic-alpaca-secret-0123456789',
+    statusText: 'ERR https://upstream.example/v2?apiKey=synthetic-finnhub-key-0123456789&api_key=synthetic-fred-key-0123456789 token=synthetic-finnhub-key-0123456789 synthetic-alpaca-secret-0123456789',
     headers: { get: () => null },
     json: async () => ({}),
   };
@@ -135,7 +133,6 @@ function dispatch(url, mode) {
   if (url.includes('/v2/stocks/bars')) return ok(alpacaBars('SPY'));
   if (url.includes('/v1beta1/news')) return ok({ news: [] });
   if (url.includes('alpaca.markets')) return ok({});
-  if (url.includes('polygon.io') || url.includes('/v2/aggs/') || url.includes('/v2/snapshot/')) return ok({ results: [] });
   if (url.includes('query1.finance.yahoo.com')) return upstreamFailure();
   if (url.includes('coinbase.com')) return upstreamFailure();
   if (url.includes('sec.gov')) return ok({});
@@ -185,7 +182,7 @@ function clearCaches() {
   invalidatePrefix('fred:');
   invalidatePrefix('alpaca:');
   invalidatePrefix('edgar:');
-  invalidatePrefix('polygon:');
+  invalidatePrefix('market:');
   invalidatePrefix('holdings:');
   invalidatePrefix('fundamentals-score:');
 }
@@ -323,14 +320,14 @@ test.describe('public API bounds and error redaction', { concurrency: 1 }, () =>
   }));
 
   test('fetcher errors and route failures do not return a URL or key', async () => {
-    const key = 'synthetic-polygon-key-0123456789';
-    const leakedUrl = `https://api.polygon.io/v2/aggs?apiKey=${key}&api_key=synthetic-fred-key-0123456789`;
+    const key = 'synthetic-finnhub-key-0123456789';
+    const leakedUrl = `https://upstream.example/v2/aggs?apiKey=${key}&api_key=synthetic-fred-key-0123456789`;
     await withFetch('fail', async () => {
       global.fetch = async () => {
         throw new Error(`socket hang up ${key} synthetic-alpaca-secret-0123456789`);
       };
       await assert.rejects(
-        () => fetchJson(leakedUrl, { retries: 0, backoffMs: 0, timeoutMs: 50, provider: 'Polygon' }),
+        () => fetchJson(leakedUrl, { retries: 0, backoffMs: 0, timeoutMs: 50, provider: 'Finnhub' }),
         (error) => {
           assert.equal(error instanceof Error, true);
           assert.match(error.message, /Failed after 1 attempts/);

@@ -330,7 +330,7 @@ function TickerDetail({
                chartTimeframe === '1hour' ? 'Hourly bars, 30 days' :
                chartTimeframe === '15min' ? '15-min bars, 10 days' :
                chartTimeframe === '5min' ? '5-min bars, 5 days' :
-               '1-min bars, today'} via Polygon.io (15-min delayed)
+               '1-min bars, today'} via Alpaca (15-min delayed)
             </p>
           </Card>
 

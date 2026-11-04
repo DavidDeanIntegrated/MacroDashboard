@@ -102,6 +102,28 @@ export interface CompanyFundamentals {
   longTermDebt: FundamentalDataPoint[];
   currentAssets: FundamentalDataPoint[];
   currentLiabilities: FundamentalDataPoint[];
+  /** Latest reported common shares outstanding (all classes), or null. */
+  sharesOutstanding: number | null;
+  /** Form that reported it — 20-F/40-F means foreign ordinary shares, not US listings. */
+  sharesForm: string | null;
+}
+
+// Cover-page share count (dei) first, balance-sheet count second. Multi-class
+// issuers report one cover-page entry per class in the same filing; sum those.
+function latestSharesOutstanding(facts: CompanyFactsResponse['facts']): { shares: number; form: string } | null {
+  const candidates = [
+    facts.dei?.EntityCommonStockSharesOutstanding,
+    facts['us-gaap']?.CommonStockSharesOutstanding,
+  ];
+  for (const entry of candidates) {
+    const rows = entry?.units?.shares ?? [];
+    if (rows.length === 0) continue;
+    const latest = rows.reduce((a, b) => (b.end > a.end || (b.end === a.end && b.filed > a.filed) ? b : a));
+    const sameFiling = rows.filter((r) => r.end === latest.end && r.accn === latest.accn);
+    const shares = sameFiling.reduce((sum, r) => sum + r.val, 0);
+    if (shares > 0) return { shares, form: latest.form };
+  }
+  return null;
 }
 
 // Core GAAP tags to pull (us-gaap names)
@@ -224,6 +246,7 @@ export async function getCompanyFundamentals(
       { headers: edgarHeaders(), provider: 'EDGAR', retries: 1 }
     );
 
+    const shares = latestSharesOutstanding(data.facts);
     return {
       entityName: data.entityName,
       cik: data.cik,
@@ -239,6 +262,8 @@ export async function getCompanyFundamentals(
       longTermDebt: extractFactData(data.facts, GAAP_TAGS.longTermDebt, IFRS_TAGS.longTermDebt),
       currentAssets: extractFactData(data.facts, GAAP_TAGS.currentAssets, IFRS_TAGS.currentAssets),
       currentLiabilities: extractFactData(data.facts, GAAP_TAGS.currentLiabilities, IFRS_TAGS.currentLiabilities),
+      sharesOutstanding: shares?.shares ?? null,
+      sharesForm: shares?.form ?? null,
     };
   });
 }
@@ -259,6 +284,8 @@ interface SubmissionsResponse {
   cik: string;
   entityType: string;
   name: string;
+  sic?: string;
+  sicDescription?: string;
   filings: {
     recent: {
       accessionNumber: string[];
@@ -308,6 +335,19 @@ export async function getRecentFilings(
     }
 
     return filings;
+  });
+}
+
+/** Standard Industrial Classification code from the company's SEC submissions. */
+export async function getCompanySic(ticker: string): Promise<string | null> {
+  const cik = await tickerToCIK(ticker);
+  if (!cik) return null;
+  return withCache(`edgar:sic:${cik}`, TTL.FILINGS, async () => {
+    const data = await fetchJson<SubmissionsResponse>(
+      `${config.edgar.baseUrl}/submissions/CIK${cikSegment(cik)}.json`,
+      { headers: edgarHeaders(), provider: 'EDGAR', retries: 1 }
+    );
+    return data.sic || null;
   });
 }
 
@@ -384,7 +424,7 @@ function computeTTM(data: FundamentalDataPoint[]): number | null {
 
 /**
  * Extract scoring metrics from EDGAR XBRL data.
- * Used as a third-tier fallback when Polygon and Finnhub lack data.
+ * Used as the filings source for the fundamentals score (Finnhub fills gaps when configured).
  */
 export function extractScoringMetrics(f: CompanyFundamentals): EdgarScoringMetrics {
   const getLatest = (data: FundamentalDataPoint[]) =>

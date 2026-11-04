@@ -1,8 +1,8 @@
 // Static portfolio holdings — manually maintained
 // Update quantities here when rebalancing
 
-import { getSnapshot as getAlpacaSnapshot, getHistoricalBars } from './alpaca';
-import { getAggregates, getSnapshot as getPolygonSnapshot } from './polygon';
+import { getHistoricalBars } from './alpaca';
+import { getAggregates, getQuotes } from './market-data';
 import { config } from './config';
 import { fetchJson, redactSecrets } from './fetcher';
 import { withCache, TTL } from './cache';
@@ -100,10 +100,10 @@ async function fetchBtcPrice(): Promise<{ price: number; prevClose: number }> {
       const prevClose = parseFloat(prevRes.data.amount);
       if (price > 0) return { price, prevClose };
     } catch (err) {
-      console.warn('Coinbase BTC price failed, trying Polygon:', err instanceof Error ? redactSecrets(err.message) : err);
+      console.warn('Coinbase BTC price failed, trying Alpaca:', err instanceof Error ? redactSecrets(err.message) : err);
     }
 
-    // Fallback: Polygon crypto aggregates (X:BTCUSD)
+    // Fallback: Alpaca crypto daily bars (BTC/USD)
     try {
       const now = new Date();
       const to = now.toISOString().split('T')[0];
@@ -111,8 +111,7 @@ async function fetchBtcPrice(): Promise<{ price: number; prevClose: number }> {
       from.setDate(from.getDate() - 5); // Get last 5 days to ensure we have 2 trading days
       const fromStr = from.toISOString().split('T')[0];
 
-      const { getAggregates } = await import('./polygon');
-      const bars = await getAggregates('X:BTCUSD', '1day', fromStr, to);
+      const bars = await getAggregates('BTC', '1day', fromStr, to);
       if (bars.length >= 2) {
         return {
           price: bars[bars.length - 1].close,
@@ -125,7 +124,7 @@ async function fetchBtcPrice(): Promise<{ price: number; prevClose: number }> {
         };
       }
     } catch (err) {
-      console.warn('Polygon BTC price also failed:', err instanceof Error ? redactSecrets(err.message) : err);
+      console.warn('Alpaca BTC price also failed:', err instanceof Error ? redactSecrets(err.message) : err);
     }
 
     return { price: 0, prevClose: 0 };
@@ -147,14 +146,14 @@ export async function fetchPrice(symbol: string): Promise<PriceData> {
   const empty: PriceData = { price: 0, prevClose: 0, open: 0, high: 0, low: 0, volume: 0 };
   if (symbol === 'BTC') {
     const btc = await fetchBtcPrice();
-    return { ...empty, price: btc.price, prevClose: btc.prevClose, source: 'Coinbase / Polygon fallback' };
+    return { ...empty, price: btc.price, prevClose: btc.prevClose, source: 'Coinbase / Alpaca fallback' };
   }
-  // Massive (formerly Polygon) is the primary source; Alpaca is the fallback.
+  // Alpaca: real-time IEX trade, or the latest full-market daily bar when IEX has no print.
   try {
-    const snap = await getPolygonSnapshot(symbol);
-    if (!validQuote(snap.price, snap.prevClose, snap.asOf)) throw new Error('Invalid or stale Massive quote');
+    const snap = (await getQuotes([symbol]))[symbol];
+    if (!snap || !validQuote(snap.price, snap.prevClose, snap.asOf)) return empty;
     return {
-      asOf: snap.asOf ?? undefined, source: 'Massive',
+      asOf: snap.asOf ?? undefined, source: 'Alpaca',
       price: snap.price,
       prevClose: snap.prevClose,
       open: snap.open,
@@ -163,37 +162,17 @@ export async function fetchPrice(symbol: string): Promise<PriceData> {
       volume: snap.volume,
     };
   } catch {
-    try {
-      const snap = await getAlpacaSnapshot(symbol);
-      if (!validQuote(snap.latestTrade.p, snap.prevDailyBar.c, snap.latestTrade.t)) throw new Error('Invalid or stale Alpaca quote');
-      return {
-        asOf: snap.latestTrade.t, source: 'Alpaca',
-        price: snap.latestTrade.p,
-        prevClose: snap.prevDailyBar.c,
-        open: snap.dailyBar?.o || 0,
-        high: snap.dailyBar?.h || 0,
-        low: snap.dailyBar?.l || 0,
-        volume: snap.dailyBar?.v || 0,
-      };
-    } catch {
-      return empty;
-    }
+    return empty;
   }
 }
 
-/** Price bars from Massive, falling back to Alpaca when Massive errors or returns nothing. */
+/** Split-adjusted price bars from Alpaca. */
 export async function fetchBars(
   symbol: string,
   timeframe: '5Min' | '1Day',
   start: string,
   limit: number
 ): Promise<Array<{ date: string; close: number }>> {
-  try {
-    const bars = await getAggregates(symbol, timeframe === '5Min' ? '5min' : '1day', start, undefined, limit);
-    if (bars.length > 0) return bars;
-  } catch {
-    // fall through to Alpaca
-  }
   return getHistoricalBars(symbol, timeframe, start, undefined, limit);
 }
 
@@ -204,8 +183,9 @@ export function validQuote(price: number, previous: number, asOf?: string | null
 }
 
 export async function getHoldingsPortfolio(): Promise<HoldingsPortfolio> {
-  if (!(config.alpaca.apiKey && config.alpaca.apiSecret) && !config.polygon.apiKey) throw new Error('Portfolio unavailable: configure Alpaca or Polygon market-data credentials. No allocation suggestions are generated without verified prices.');
-  // Fetch all prices in parallel
+  if (!(config.alpaca.apiKey && config.alpaca.apiSecret)) throw new Error('Portfolio unavailable: configure Alpaca market-data credentials. No allocation suggestions are generated without verified prices.');
+  // One batched quote request warms the cache; per-symbol lookups then read from it.
+  await getQuotes(HOLDINGS.filter((h) => h.symbol !== 'BTC').map((h) => h.symbol)).catch(() => undefined);
   const prices = await Promise.all(
     HOLDINGS.map((h) => fetchPrice(h.symbol))
   );
@@ -331,6 +311,7 @@ export interface WatchlistPosition {
 }
 
 export async function getWatchlistData(): Promise<WatchlistPosition[]> {
+  await getQuotes(WATCHLIST.filter((w) => w.symbol !== 'BTC').map((w) => w.symbol)).catch(() => undefined);
   const prices = await Promise.all(
     WATCHLIST.map((w) => fetchPrice(w.symbol))
   );
@@ -402,31 +383,29 @@ async function fetchBtcDailyBars(days: number): Promise<Map<string, number>> {
     await Promise.all(fetches);
     if (map.size > 0) return map;
   } catch (err) {
-    console.warn('Coinbase BTC bars failed, trying Polygon:', err instanceof Error ? redactSecrets(err.message) : err);
+    console.warn('Coinbase BTC bars failed, trying Alpaca:', err instanceof Error ? redactSecrets(err.message) : err);
   }
 
-  // Fallback: Polygon crypto aggregates
+  // Fallback: Alpaca crypto daily bars
   try {
-    const { getAggregates } = await import('./polygon');
     const from = new Date();
     from.setDate(from.getDate() - days);
     const fromStr = from.toISOString().split('T')[0];
     const toStr = new Date().toISOString().split('T')[0];
 
-    const bars = await getAggregates('X:BTCUSD', '1day', fromStr, toStr, days + 10);
+    const bars = await getAggregates('BTC', '1day', fromStr, toStr, days + 10);
     for (const bar of bars) {
       const date = bar.date.split('T')[0];
       map.set(date, bar.close);
     }
   } catch (err) {
-    console.warn('Polygon BTC bars also failed:', err instanceof Error ? redactSecrets(err.message) : err);
+    console.warn('Alpaca BTC bars also failed:', err instanceof Error ? redactSecrets(err.message) : err);
   }
 
   return map;
 }
 
-// BTC 200-week moving average — Polygon's weekly SMA indicator doesn't cover
-// X:BTCUSD on the current plan, so compute it from daily candles instead:
+// BTC 200-week moving average — computed from Coinbase daily candles:
 // bucket ~4 years of daily closes into calendar weeks (Monday-keyed), take each
 // week's final close, and average the last 200. Returns null on short data.
 export async function fetchBtcWma200(): Promise<number | null> {
@@ -469,24 +448,23 @@ async function fetchBtcIntradayBars(): Promise<Map<string, number>> {
     }
     if (map.size > 0) return map;
   } catch (err) {
-    console.warn('Coinbase BTC intraday failed, trying Polygon:', err instanceof Error ? redactSecrets(err.message) : err);
+    console.warn('Coinbase BTC intraday failed, trying Alpaca:', err instanceof Error ? redactSecrets(err.message) : err);
   }
 
-  // Fallback: Polygon crypto 5-min bars
+  // Fallback: Alpaca crypto 5-min bars
   try {
-    const { getAggregates } = await import('./polygon');
     const now = new Date();
     const from = new Date(now);
     from.setDate(from.getDate() - 1);
     const fromStr = from.toISOString().split('T')[0];
     const toStr = now.toISOString().split('T')[0];
 
-    const bars = await getAggregates('X:BTCUSD', '5min', fromStr, toStr, 300);
+    const bars = await getAggregates('BTC', '5min', fromStr, toStr, 300);
     for (const bar of bars) {
       map.set(bar.date, bar.close);
     }
   } catch (err) {
-    console.warn('Polygon BTC intraday also failed:', err instanceof Error ? redactSecrets(err.message) : err);
+    console.warn('Alpaca BTC intraday also failed:', err instanceof Error ? redactSecrets(err.message) : err);
   }
 
   return map;
@@ -571,16 +549,12 @@ export async function getPortfolioChart(
 
     const result: Array<{ date: string; value: number }> = [];
 
-    // Prepend previous close as the starting point so chart % matches day change
-    if (prevCloseTotal > 0 && sortedDates.length > 0) {
-      const firstTs = new Date(sortedDates[0]);
-      firstTs.setMinutes(firstTs.getMinutes() - 5);
-      result.push({ date: firstTs.toISOString(), value: Math.round(prevCloseTotal * 100) / 100 });
-    }
-
     for (const ts of sortedDates) {
       const prices = dateMap.get(ts)!;
       prices.forEach((price, symbol) => lastKnown.set(symbol, price));
+      // Start the line once every holding with intraday data has printed —
+      // BTC's 24h bars and pre-market prints otherwise give a partial sum.
+      if (Array.from(intradaySymbolsWithData).some((symbol) => !lastKnown.has(symbol))) continue;
       // Only sum holdings that have intraday data to match the baseline
       let total = 0;
       for (const h of HOLDINGS) {
@@ -588,6 +562,13 @@ export async function getPortfolioChart(
         total += h.qty * (lastKnown.get(h.symbol) || 0);
       }
       if (total > 0) result.push({ date: ts, value: Math.round(total * 100) / 100 });
+    }
+
+    // Prepend previous close as the starting point so chart % matches day change
+    if (prevCloseTotal > 0 && result.length > 0) {
+      const firstTs = new Date(result[0].date);
+      firstTs.setMinutes(firstTs.getMinutes() - 5);
+      result.unshift({ date: firstTs.toISOString(), value: Math.round(prevCloseTotal * 100) / 100 });
     }
 
     // If no intraday bars (weekend/holiday), show a flat line at prev close

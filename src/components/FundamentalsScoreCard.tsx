@@ -41,7 +41,7 @@ function ScoreDetail({ score }: { score: ScoreData }) {
   const ed = b.earningsQualityDetail;
   const trendBasis = ed.basis === 'filings-trend';
   const sources = Array.from(new Set(Object.values(b.meta.sources).filter((s): s is NonNullable<typeof s> => s !== undefined)));
-  const sourceLabel: Record<string, string> = { polygon: 'Polygon filings', finnhub: 'Finnhub', edgar: 'SEC EDGAR' };
+  const sourceLabel: Record<string, string> = { finnhub: 'Finnhub', edgar: 'SEC EDGAR' };
   return (
     <div className="space-y-4 mt-4 pt-4 border-t border-black/[0.06]">
       {score.preRevenue && (
@@ -253,7 +253,7 @@ export function FundamentalsScoreSection({
         <CardTitle>Fundamental Score — Methodology</CardTitle>
         <div className="mt-3 space-y-3 text-xs text-black/55 leading-relaxed">
           <p>
-            Each stock receives a composite score from 0–100, computed across five pillars using data from Polygon filings, SEC EDGAR, Finnhub valuation metrics, and earnings history. Metrics score on smooth piecewise-linear curves (no bucket cliffs), thresholds adapt to the company&apos;s sector (financials and utilities are judged against their own norms, not software norms), and each pillar renormalizes over the metrics that actually have data — with the coverage %% reported per stock. Grades describe fundamentals quality only; buy/sell decisions belong to the rebalance rules.
+            Each stock receives a composite score from 0–100, computed across five pillars using data from SEC EDGAR filings, Finnhub valuation metrics, and earnings history. Metrics score on smooth piecewise-linear curves (no bucket cliffs), thresholds adapt to the company&apos;s sector (financials and utilities are judged against their own norms, not software norms), and each pillar renormalizes over the metrics that actually have data — with the coverage %% reported per stock. Grades describe fundamentals quality only; buy/sell decisions belong to the rebalance rules.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="p-3 bg-black/[0.02] rounded-lg">

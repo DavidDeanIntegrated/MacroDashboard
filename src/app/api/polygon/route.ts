@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+// Route path kept from the Massive (Polygon) era so the pages' hooks are unchanged;
+// every action is now served by Alpaca's free plan via lib/market-data.
 import {
   getAggregates,
+  getMultiAggregates,
   getSnapshot,
   getSMA,
   getEMA,
   getRSI,
   getMACD,
   getDividends,
-  getTickerDetails,
-  getWeeklySMA200,
-} from '@/lib/polygon';
+  getPortfolioDividends,
+  getWeeklySMA200s,
+} from '@/lib/market-data';
 import { fetchBtcWma200 } from '@/lib/holdings';
 import {
   AGGREGATE_LIMIT,
@@ -89,17 +92,16 @@ export async function GET(request: NextRequest) {
       }
 
       case 'wma200': {
-        // Batch: latest 200-week SMA per symbol. BTC is computed from Coinbase
-        // weekly closes (Polygon's weekly indicator doesn't cover X:BTCUSD here).
+        // Batch: latest 200-week SMA per symbol, one weekly-bars request for
+        // the stocks. BTC is computed from Coinbase daily closes.
         const symbols = readSymbols(searchParams.get('symbols'));
         if (symbols instanceof NextResponse) return symbols;
-        const results = await Promise.all(
-          symbols.map(async (symbol) => ({
-            symbol,
-            wma200: symbol === 'BTC' ? await fetchBtcWma200() : await getWeeklySMA200(symbol),
-          }))
-        );
-        return NextResponse.json(results);
+        const stocks = await getWeeklySMA200s(symbols.filter((s) => s !== 'BTC'));
+        const btc = symbols.includes('BTC') ? await fetchBtcWma200() : null;
+        return NextResponse.json(symbols.map((symbol) => ({
+          symbol,
+          wma200: symbol === 'BTC' ? btc : stocks[symbol] ?? null,
+        })));
       }
 
       case 'ema': {
@@ -155,13 +157,6 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(data);
       }
 
-      case 'details': {
-        const symbol = readSymbol(searchParams.get('symbol'));
-        if (symbol instanceof NextResponse) return symbol;
-        const data = await getTickerDetails(symbol);
-        return NextResponse.json(data);
-      }
-
       case 'multi-aggregates': {
         // Fetch aggregates for multiple symbols at once — used for overlays, sector heatmaps, etc.
         const symbols = readSymbols(searchParams.get('symbols'));
@@ -176,45 +171,25 @@ export async function GET(request: NextRequest) {
           AGGREGATE_LIMIT.max,
         );
         if (!timeframe || from === null || to === null || limit == null) return invalidRequest();
-        const results = await Promise.all(
-          symbols.map(async (symbol) => {
-            try {
-              const data = await getAggregates(symbol, timeframe, from, to, limit);
-              return { symbol, data };
-            } catch {
-              return { symbol, data: [] };
-            }
-          })
-        );
+        const results = await getMultiAggregates(symbols, timeframe, from, to, limit);
         return NextResponse.json(results);
       }
 
       case 'portfolio-dividends': {
-        // Fetch dividends for multiple symbols at once
+        // Latest four dividends per symbol, one corporate-actions request
         const symbols = readSymbols(searchParams.get('symbols'));
         if (symbols instanceof NextResponse) return symbols;
-        const results = await Promise.all(
-          symbols.map(async (symbol) => {
-            try {
-              return await getDividends(symbol, 4);
-            } catch {
-              return [];
-            }
-          })
-        );
-        return NextResponse.json(results.flat().sort((a, b) =>
-          new Date(b.exDate).getTime() - new Date(a.exDate).getTime()
-        ));
+        return NextResponse.json(await getPortfolioDividends(symbols, 4));
       }
 
       default:
         return NextResponse.json(
-          { error: 'Invalid action. Use: aggregates, snapshot, sma, wma200, ema, rsi, macd, dividends, details, multi-aggregates, portfolio-dividends' },
+          { error: 'Invalid action. Use: aggregates, snapshot, sma, wma200, ema, rsi, macd, dividends, multi-aggregates, portfolio-dividends' },
           { status: 400 }
         );
     }
   } catch (error) {
-    logUpstreamError('Polygon API error', error);
+    logUpstreamError('Market data API error', error);
     return failedRequest();
   }
 }

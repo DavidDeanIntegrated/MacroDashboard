@@ -1,6 +1,6 @@
 // Fundamental Analysis Scoring Engine
 // Computes a 0–100 composite score across 5 pillars for each stock
-// Data sourced from Polygon.io Stock Financials API + Finnhub earnings + SEC EDGAR
+// Data sourced from SEC EDGAR filings + Finnhub metrics/earnings + Alpaca prices
 //
 // ═══ METHODOLOGY (v2) ═══
 //
@@ -25,7 +25,7 @@
 //     missing metrics count as zero (sparse data shouldn't inflate scores).
 //     The overall data coverage %% is reported in the breakdown.
 //   • Provenance — every metric records which source supplied it
-//     (Polygon filing / Finnhub / EDGAR) so a surprising score is diagnosable.
+//     (Finnhub / EDGAR) so a surprising score is diagnosable.
 //
 // 1. PROFITABILITY (25 pts max)
 //    - Net Margin (10): profit kept per dollar of revenue.
@@ -72,13 +72,13 @@
 // Grades describe fundamentals quality only — they are NOT trade
 // recommendations. Buy/sell decisions belong to the rebalance rules.
 //
-// Scores update automatically: Polygon financials data refreshes hourly,
+// Scores update automatically: filings data refreshes hourly,
 // and earnings data updates after each report.
 // ETFs and crypto receive "N/A" since traditional fundamental analysis doesn't apply.
 
-import { getStockFinancials, getSnapshot, getTickerDetails, type StockFinancials } from './polygon';
+import { getSnapshot } from './market-data';
 import { getEarnings, getBasicFinancials, type EarningsEstimate, type BasicFinancials } from './finnhub';
-import { getCompanyFundamentals, extractScoringMetrics, type EdgarScoringMetrics, type CompanyFundamentals } from './edgar';
+import { getCompanyFundamentals, getCompanySic, extractScoringMetrics, type EdgarScoringMetrics, type CompanyFundamentals } from './edgar';
 import { withCache, TTL } from './cache';
 import { type Anchor, lerpScore, round1 } from './scoring-utils';
 
@@ -171,7 +171,7 @@ export function sectorProfileFor(sicCode: string | null | undefined): SectorProf
 
 // ─── Types ───
 
-export type MetricSource = 'polygon' | 'finnhub' | 'edgar';
+export type MetricSource = 'finnhub' | 'edgar';
 
 export interface FundamentalsBreakdown {
   profitabilityPts: number;
@@ -609,140 +609,24 @@ function isNonScoreable(symbol: string): { skip: boolean; reason?: string } {
   return { skip: false };
 }
 
-// ─── Compute metrics from Polygon financials ───
+// ─── Market cap ───
 
-function computeFromPolygon(
-  annuals: StockFinancials[],
-  quarters: StockFinancials[],
+// US shares per ADR for foreign filers held here. Their SEC share count is in
+// ordinary shares, so price × shares would overstate market cap by this factor.
+const ADR_ORDINARY_SHARES: Record<string, number> = { TSM: 5 };
+
+/** Latest SEC share count × current price; 0 (unknown) for foreign filers without a known ADR ratio. */
+export function marketCapFrom(
+  symbol: string,
   price: number,
-  marketCap: number,
-  sources: Partial<Record<string, MetricSource>>,
-): ComputedMetrics {
-  // Use most recent annual for profitability and health
-  const latest = annuals[0] || quarters[0];
-  const prevAnnual = annuals[1] || null;
-
-  const metrics = emptyMetrics();
-  const mark = (key: string) => { sources[key] = 'polygon'; };
-
-  // Profitability — prefer TTM from the last 4 quarters (fresher than the
-  // latest annual filing), falling back to the latest filing.
-  const recentQuarters = quarters.slice(0, 4);
-  const ttmOf = (get: (q: StockFinancials) => number | null): number | null => {
-    if (recentQuarters.length < 4) return null;
-    let sum = 0;
-    for (const q of recentQuarters) {
-      const v = get(q);
-      if (v === null) return null; // all 4 quarters required — no silent zero-fill
-      sum += v;
-    }
-    return sum;
-  };
-
-  const ttmRevenue = ttmOf((q) => q.revenue);
-  const ttmNetIncome = ttmOf((q) => q.netIncome);
-  const ttmGrossProfit = ttmOf((q) => q.grossProfit);
-  const ttmEps = ttmOf((q) => q.eps);
-  const ttmFcf = ttmOf((q) => q.freeCashFlow);
-
-  const marginRevenue = ttmRevenue ?? (latest?.revenue || null);
-  const marginNetIncome = ttmRevenue !== null ? ttmNetIncome : (latest?.netIncome ?? null);
-  const marginGrossProfit = ttmRevenue !== null ? ttmGrossProfit : (latest?.grossProfit ?? null);
-
-  if (marginRevenue !== null && marginRevenue !== 0) {
-    if (marginNetIncome !== null) { metrics.netMargin = (marginNetIncome / marginRevenue) * 100; mark('netMargin'); }
-    if (marginGrossProfit !== null) { metrics.grossMargin = (marginGrossProfit / marginRevenue) * 100; mark('grossMargin'); }
-  }
-
-  const equity = latest?.stockholdersEquity ?? null;
-  const roeIncome = marginNetIncome ?? latest?.netIncome ?? null;
-  if (roeIncome !== null && equity !== null && equity > 0) {
-    metrics.roe = (roeIncome / equity) * 100; mark('roe');
-  } else if (roeIncome !== null && latest?.totalAssets && latest.totalAssets > 0) {
-    // Negative or missing equity (buyback-heavy balance sheets) — use ROA instead
-    metrics.roa = (roeIncome / latest.totalAssets) * 100; mark('roa');
-  }
-
-  // Growth: compare most recent annual to prior annual
-  if (latest && prevAnnual) {
-    if (latest.revenue !== null && prevAnnual.revenue !== null && prevAnnual.revenue !== 0) {
-      metrics.revenueGrowth = ((latest.revenue - prevAnnual.revenue) / Math.abs(prevAnnual.revenue)) * 100;
-      mark('revenueGrowth');
-    }
-    if (latest.eps !== null && prevAnnual.eps !== null && prevAnnual.eps !== 0) {
-      metrics.epsGrowth = ((latest.eps - prevAnnual.eps) / Math.abs(prevAnnual.eps)) * 100;
-      mark('epsGrowth');
-    }
-  }
-
-  // If no annual growth data, try quarterly YoY (Q vs same Q prior year)
-  if (metrics.revenueGrowth === null && quarters.length >= 5) {
-    const recentQ = quarters[0];
-    const priorYearQ = quarters.find(
-      (q) => q.fiscalPeriod === recentQ.fiscalPeriod && q.fiscalYear !== recentQ.fiscalYear
-    );
-    if (recentQ.revenue !== null && priorYearQ?.revenue !== null && priorYearQ && priorYearQ.revenue !== 0) {
-      metrics.revenueGrowth = ((recentQ.revenue - priorYearQ.revenue) / Math.abs(priorYearQ.revenue)) * 100;
-      mark('revenueGrowth');
-    }
-    if (recentQ.eps !== null && priorYearQ?.eps !== null && priorYearQ && priorYearQ.eps !== 0 && metrics.epsGrowth === null) {
-      metrics.epsGrowth = ((recentQ.eps - priorYearQ.eps) / Math.abs(priorYearQ.eps)) * 100;
-      mark('epsGrowth');
-    }
-  }
-
-  // Valuation: compute from price + financial data
-  if (ttmEps !== null && ttmEps > 0 && price > 0) {
-    metrics.pe = price / ttmEps; mark('pe');
-  } else if (ttmEps === null && latest?.eps && latest.eps > 0 && price > 0) {
-    metrics.pe = price / latest.eps; mark('pe');
-  }
-
-  if (equity !== null && equity > 0 && marketCap > 0) {
-    metrics.pb = marketCap / equity; mark('pb');
-  }
-
-  if (ttmRevenue !== null && ttmRevenue > 0 && marketCap > 0) {
-    metrics.ps = marketCap / ttmRevenue; mark('ps');
-  } else if (ttmRevenue === null && latest?.revenue && latest.revenue > 0 && marketCap > 0) {
-    metrics.ps = marketCap / latest.revenue; mark('ps');
-  }
-
-  // Financial Health
-  const healthSource = quarters[0] || latest;
-  if (healthSource) {
-    if (healthSource.totalDebt !== null && healthSource.stockholdersEquity && healthSource.stockholdersEquity > 0) {
-      metrics.debtToEquity = healthSource.totalDebt / healthSource.stockholdersEquity; mark('debtToEquity');
-    } else if (healthSource.longTermDebt !== null && healthSource.stockholdersEquity && healthSource.stockholdersEquity > 0) {
-      metrics.debtToEquity = healthSource.longTermDebt / healthSource.stockholdersEquity; mark('debtToEquity');
-    } else if (healthSource.totalLiabilities !== null && healthSource.stockholdersEquity && healthSource.stockholdersEquity > 0) {
-      metrics.debtToEquity = healthSource.totalLiabilities / healthSource.stockholdersEquity; mark('debtToEquity');
-    }
-
-    if (healthSource.currentAssets !== null && healthSource.currentLiabilities !== null && healthSource.currentLiabilities > 0) {
-      metrics.currentRatio = healthSource.currentAssets / healthSource.currentLiabilities; mark('currentRatio');
-    }
-
-    const debt = healthSource.totalDebt ?? healthSource.longTermDebt ?? 0;
-    if (healthSource.cash !== null && debt > 0) {
-      metrics.cashToDebt = healthSource.cash / debt; mark('cashToDebt');
-    } else if (healthSource.cash !== null && debt === 0) {
-      metrics.cashToDebt = 10; mark('cashToDebt'); // no debt = excellent
-    }
-  }
-
-  // Cash flow quality — TTM FCF preferred, latest annual as fallback
-  const fcf = ttmFcf ?? latest?.freeCashFlow ?? null;
-  const fcfRevenue = ttmFcf !== null ? ttmRevenue : (latest?.revenue ?? null);
-  const fcfIncome = ttmFcf !== null ? ttmNetIncome : (latest?.netIncome ?? null);
-  if (fcf !== null && fcfRevenue !== null && fcfRevenue > 0) {
-    metrics.fcfMargin = (fcf / fcfRevenue) * 100; mark('fcfMargin');
-  }
-  if (fcf !== null && fcfIncome !== null && fcfIncome > 0) {
-    metrics.fcfConversion = fcf / fcfIncome; mark('fcfConversion');
-  }
-
-  return metrics;
+  edgar: Pick<CompanyFundamentals, 'sharesOutstanding' | 'sharesForm'> | null,
+): number {
+  const shares = edgar?.sharesOutstanding;
+  if (!shares || !(price > 0)) return 0;
+  const foreign = edgar?.sharesForm === '20-F' || edgar?.sharesForm === '40-F';
+  const perAdr = ADR_ORDINARY_SHARES[symbol];
+  if (foreign && !perAdr) return 0;
+  return (shares / (foreign ? perAdr : 1)) * price;
 }
 
 // ─── Metrics type + fallbacks ───
@@ -792,7 +676,7 @@ function backfillFromFinnhub(
 ): void {
   const mark = (key: string) => { sources[key] = 'finnhub'; };
 
-  // Valuation — Finnhub often has these even when Polygon lacks filings
+  // Valuation — Finnhub often has these even when filings lack them
   if (metrics.pe === null && fh.peRatio !== null && fh.peRatio > 0) { metrics.pe = fh.peRatio; mark('pe'); }
   if (metrics.pb === null && fh.pbRatio !== null && fh.pbRatio > 0) { metrics.pb = fh.pbRatio; mark('pb'); }
   if (metrics.ps === null && fh.psRatio !== null && fh.psRatio > 0) { metrics.ps = fh.psRatio; mark('ps'); }
@@ -862,26 +746,23 @@ export async function computeFundamentalsScore(symbol: string): Promise<Fundamen
   }
 
   return withCache(`fundamentals-score:v2:${symbol}`, TTL.FUNDAMENTALS, async () => {
-    // Fetch all data from Polygon + Finnhub + EDGAR in parallel
-    const [annuals, quarters, snapshot, tickerDetails, earnings, finnhubMetrics, edgarFundamentals] = await Promise.all([
-      getStockFinancials(symbol, 'annual', 3).catch(() => []),
-      getStockFinancials(symbol, 'quarterly', 8).catch(() => []),
+    // Fetch price (Alpaca) + Finnhub + EDGAR in parallel
+    const [snapshot, sicCode, earnings, finnhubMetrics, edgarFundamentals] = await Promise.all([
       getSnapshot(symbol).catch(() => null),
-      getTickerDetails(symbol).catch(() => null),
+      getCompanySic(symbol).catch(() => null),
       getEarnings(symbol).catch(() => []),
       getBasicFinancials(symbol).catch(() => null),
       getCompanyFundamentals(symbol).catch(() => null),
     ]);
 
     const price = snapshot?.price ?? 0;
-    const marketCap = tickerDetails?.marketCap ?? 0;
-    const sectorProfile = sectorProfileFor(tickerDetails?.sicCode);
+    const marketCap = marketCapFrom(symbol, price, edgarFundamentals);
+    const sectorProfile = sectorProfileFor(sicCode);
     const anchors = SECTOR_ANCHORS[sectorProfile];
 
-    const hasPolygonFinancials = annuals.length > 0 || quarters.length > 0;
     const edgarMetrics = edgarFundamentals ? extractScoringMetrics(edgarFundamentals) : null;
 
-    if (!hasPolygonFinancials && !finnhubMetrics && !edgarMetrics) {
+    if (!finnhubMetrics && !edgarMetrics) {
       return {
         symbol,
         total: 0,
@@ -895,16 +776,14 @@ export async function computeFundamentalsScore(symbol: string): Promise<Fundamen
     }
 
     const sources: Partial<Record<string, MetricSource>> = {};
-    const metrics = hasPolygonFinancials
-      ? computeFromPolygon(annuals, quarters, price, marketCap, sources)
-      : emptyMetrics();
+    const metrics = emptyMetrics();
 
-    // Fill gaps with Finnhub pre-computed metrics where Polygon data is missing
+    // Finnhub pre-computed metrics first, when the key is configured
     if (finnhubMetrics) {
       backfillFromFinnhub(metrics, finnhubMetrics, sources);
     }
 
-    // Fill remaining gaps from SEC EDGAR XBRL filings (third fallback)
+    // Fill remaining gaps from SEC EDGAR XBRL filings
     if (edgarMetrics) {
       backfillFromEdgar(metrics, edgarMetrics, price, marketCap, sources);
     }
@@ -936,7 +815,7 @@ export async function computeFundamentalsScore(symbol: string): Promise<Fundamen
     const total = Math.round(pProf.pts + pGrow.pts + pVal.pts + pHealth.pts + pEarn.pts);
     const { grade, color } = getGrade(total);
 
-    const dataAsOf = quarters[0]?.endDate ?? annuals[0]?.endDate ?? null;
+    const dataAsOf = null;
 
     const breakdown: FundamentalsBreakdown = {
       profitabilityPts: pProf.pts,

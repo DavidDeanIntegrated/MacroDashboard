@@ -535,7 +535,7 @@ export default function SectorsPage() {
         <div>
           <h2 className="text-2xl font-semibold text-black/85 tracking-tight">Sector Rotation</h2>
           <p className="text-sm text-black/45 mt-1">
-            Performance heatmap across S&P 500 sectors via Polygon.io
+            Performance heatmap across S&P 500 sectors via Alpaca
           </p>
         </div>
         <div className="flex items-center gap-2">

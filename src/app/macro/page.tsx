@@ -738,7 +738,7 @@ export default function MacroPage() {
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold text-black/75 tracking-tight mb-1">Market Context</h3>
-              <p className="text-xs text-black/40">Benchmark performance and moving averages via Polygon.io</p>
+              <p className="text-xs text-black/40">Benchmark performance and moving averages via Alpaca</p>
             </div>
 
             {/* Benchmark metrics */}
