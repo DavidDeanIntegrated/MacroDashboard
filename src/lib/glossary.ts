@@ -230,6 +230,10 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     term: 'Moving average (SMA)',
     def: 'The average closing price over the last N days, drawn as a smooth trend line. Price above its 200-day average = long-term uptrend intact; the 50-day crossing the 200-day marks widely-watched trend changes ("golden/death cross").',
   },
+  'iex-volume': {
+    term: 'Volume on one exchange (IEX)',
+    def: 'How many shares traded today on IEX, the single exchange whose live prices this dashboard gets for free. It is only a small slice of the stock\'s total trading (often around 2–3%), so compare it across days for the same stock rather than reading it as the market-wide number. Prices are unaffected: they track the whole market closely.',
+  },
   '200-wma': {
     term: '200-week moving average',
     def: 'The average closing price over the last 200 weeks (~4 years) — a slow anchor for what an asset has "normally" cost across a full market cycle. Major bear-market bottoms in quality assets (SPY, BTC) have historically landed near it, so price near or below it flags a rare accumulation zone, while price far above it (say, +80%+) signals a stretched run. Caveats for single stocks: trading below it can also mean genuine business decline; recent IPOs don\'t have enough history; and for smaller names, a reused ticker symbol can splice a prior company\'s price history into the average — sanity-check any surprising reading before acting on it.',

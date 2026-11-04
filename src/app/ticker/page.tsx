@@ -13,10 +13,10 @@ import {
   useCompanyFundamentals,
   useCompanyFilings,
   useEarnings,
-  usePolygonAggregates,
-  usePolygonRSI,
-  usePolygonMACD,
-  usePolygonSMA,
+  useMarketAggregates,
+  useMarketRSI,
+  useMarketMACD,
+  useMarketSMA,
 } from '@/lib/hooks';
 import { HOLDINGS, WATCHLIST } from '@/lib/holdings';
 import { formatCurrency, formatPercent, formatDate, timeAgo } from '@/lib/format';
@@ -159,11 +159,11 @@ function TickerDetail({
 
   const { data: quote, loading: quoteLoading } = useFinnhubQuote(symbol);
   const { data: profile, loading: profileLoading } = useCompanyProfile(symbol);
-  const { data: chartData } = usePolygonAggregates(symbol, chartTimeframe);
-  const { data: rsiData } = usePolygonRSI(showTechnicals ? symbol : null);
-  const { data: macdData } = usePolygonMACD(showTechnicals ? symbol : null);
-  const { data: sma50Data } = usePolygonSMA(showTechnicals ? symbol : null, 50);
-  const { data: sma200Data } = usePolygonSMA(showTechnicals ? symbol : null, 200);
+  const { data: chartData } = useMarketAggregates(symbol, chartTimeframe);
+  const { data: rsiData } = useMarketRSI(showTechnicals ? symbol : null);
+  const { data: macdData } = useMarketMACD(showTechnicals ? symbol : null);
+  const { data: sma50Data } = useMarketSMA(showTechnicals ? symbol : null, 50);
+  const { data: sma200Data } = useMarketSMA(showTechnicals ? symbol : null, 200);
   const { data: fundamentals, loading: fundLoading } = useCompanyFundamentals(symbol);
   const { data: filings, loading: filingsLoading } = useCompanyFilings(symbol);
   const { data: news, loading: newsLoading } = useCompanyNews(symbol);

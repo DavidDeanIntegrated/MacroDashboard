@@ -11,7 +11,7 @@ import { LoadingPage, ErrorState } from '@/components/ui/Loading';
 import { Badge, RegimeBadge } from '@/components/ui/Badge';
 import { TimeSeriesChart, MultiSeriesChart } from '@/components/charts/TimeSeriesChart';
 import { YieldCurveChart } from '@/components/charts/YieldCurveChart';
-import { useApi, useYieldCurve, useReleaseCalendar, useMultiAggregates, usePolygonSMA } from '@/lib/hooks';
+import { useApi, useYieldCurve, useReleaseCalendar, useMultiAggregates, useMarketSMA } from '@/lib/hooks';
 import { formatPercent, formatNumber, formatCurrency } from '@/lib/format';
 import { FRED_SERIES_NAMES } from '@/lib/fred';
 import { Term, Explainer } from '@/components/ui/Term';
@@ -317,8 +317,8 @@ export default function MacroPage() {
     return d.toISOString().split('T')[0];
   })();
   const { data: benchmarkData } = useMultiAggregates(['SPY', 'QQQ'], '1day', fromDate);
-  const { data: spySma50 } = usePolygonSMA('SPY', 50);
-  const { data: spySma200 } = usePolygonSMA('SPY', 200);
+  const { data: spySma50 } = useMarketSMA('SPY', 50);
+  const { data: spySma200 } = useMarketSMA('SPY', 200);
 
   // Release calendar
   const { data: releaseCalendar } = useReleaseCalendar();

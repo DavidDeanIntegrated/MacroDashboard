@@ -253,9 +253,9 @@ export function usePortfolioChart(period: string = '1Y') {
   );
 }
 
-// ─── Market Data Hooks (Alpaca, served from /api/polygon) ───
+// ─── Market Data Hooks (Alpaca, via /api/market) ───
 
-export function usePolygonAggregates(
+export function useMarketAggregates(
   symbol: string | null,
   timeframe: string = '1day'
 ) {
@@ -268,37 +268,37 @@ export function usePolygonAggregates(
     volume: number;
   }>>(
     symbol
-      ? `/api/polygon?action=aggregates&symbol=${symbol}&timeframe=${timeframe}`
+      ? `/api/market?action=aggregates&symbol=${symbol}&timeframe=${timeframe}`
       : null,
     { refreshInterval: timeframe === '1day' ? 0 : 60000 }
   );
 }
 
-export function usePolygonRSI(symbol: string | null) {
+export function useMarketRSI(symbol: string | null) {
   return useApi<Array<{ date: string; value: number }>>(
-    symbol ? `/api/polygon?action=rsi&symbol=${symbol}` : null
+    symbol ? `/api/market?action=rsi&symbol=${symbol}` : null
   );
 }
 
-export function usePolygonMACD(symbol: string | null) {
+export function useMarketMACD(symbol: string | null) {
   return useApi<Array<{
     date: string;
     macd: number;
     signal: number;
     histogram: number;
-  }>>(symbol ? `/api/polygon?action=macd&symbol=${symbol}` : null);
+  }>>(symbol ? `/api/market?action=macd&symbol=${symbol}` : null);
 }
 
 export function useWma200(symbols: string[]) {
   const syms = symbols.length > 0 ? symbols.join(',') : null;
   return useApi<Array<{ symbol: string; wma200: number | null }>>(
-    syms ? `/api/polygon?action=wma200&symbols=${syms}` : null
+    syms ? `/api/market?action=wma200&symbols=${syms}` : null
   );
 }
 
-export function usePolygonSMA(symbol: string | null, window = 50) {
+export function useMarketSMA(symbol: string | null, window = 50) {
   return useApi<Array<{ date: string; value: number }>>(
-    symbol ? `/api/polygon?action=sma&symbol=${symbol}&window=${window}` : null
+    symbol ? `/api/market?action=sma&symbol=${symbol}&window=${window}` : null
   );
 }
 
@@ -315,7 +315,7 @@ export function useMultiAggregates(
   return useApi<Array<{
     symbol: string;
     data: Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }>;
-  }>>(syms ? `/api/polygon?${params.toString()}` : null);
+  }>>(syms ? `/api/market?${params.toString()}` : null);
 }
 
 export function usePortfolioDividends(symbols: string[]) {
@@ -328,7 +328,7 @@ export function usePortfolioDividends(symbols: string[]) {
     declarationDate: string;
     frequency: number;
     type: string;
-  }>>(syms ? `/api/polygon?action=portfolio-dividends&symbols=${syms}` : null);
+  }>>(syms ? `/api/market?action=portfolio-dividends&symbols=${syms}` : null);
 }
 
 // ─── Fundamentals Score ───

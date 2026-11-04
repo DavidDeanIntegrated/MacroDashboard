@@ -23,7 +23,7 @@ const {
   MAX_SYMBOLS,
   TICKER_RE,
   boundedTickers,
-} = require('../src/lib/polygon-bounds.ts');
+} = require('../src/lib/market-bounds.ts');
 const { fetchJson, encodeUpstreamPath, encodeUpstreamRelative, redactSecrets } = require('../src/lib/fetcher.ts');
 const { logUpstreamError } = require('../src/lib/api-errors.ts');
 const { getQuote } = require('../src/lib/finnhub.ts');
@@ -31,7 +31,7 @@ const finnhub = require('../src/app/api/finnhub/route.ts');
 const fred = require('../src/app/api/fred/route.ts');
 const alpaca = require('../src/app/api/alpaca/route.ts');
 const edgar = require('../src/app/api/edgar/route.ts');
-const polygon = require('../src/app/api/polygon/route.ts');
+const market = require('../src/app/api/market/route.ts');
 const risk = require('../src/app/api/risk/route.ts');
 
 const SECRETS = [
@@ -353,7 +353,7 @@ test.describe('public API bounds and error redaction', { concurrency: 1 }, () =>
     assert.equal(redactSecrets(`token=${key}`).includes(key), false);
 
     const routes = [
-      ['polygon', polygon, '/api/polygon', '?action=aggregates&symbol=IWM&timeframe=1day', 500],
+      ['market', market, '/api/market', '?action=aggregates&symbol=IWM&timeframe=1day', 500],
       ['finnhub', finnhub, '/api/finnhub', '?action=quote&symbol=MSFT', 500],
       ['fred', fred, '/api/fred', '?action=series&id=UNRATE', 500],
       ['alpaca', alpaca, '/api/alpaca', '?action=snapshot&symbol=QQQ', 500],

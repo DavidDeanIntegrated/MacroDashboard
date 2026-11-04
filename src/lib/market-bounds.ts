@@ -1,11 +1,11 @@
 // Bounds for the public market-data routes. They are unauthenticated, and several
-// actions fan out to one paid upstream call per symbol or series.
+// actions fan out to upstream requests that count against provider rate limits.
 
 // Watchlist analytics is the largest caller: every WATCHLIST name plus SPY
 // (27 today). 30 stays near a ~25 cap and still accepts that page.
 export const MAX_SYMBOLS = 30;
 
-// Equities, class shares (BRK.B), Polygon prefixes (X:BTCUSD), and caret indexes.
+// Equities, class shares (BRK.B), Polygon-style crypto prefixes (X:BTCUSD), and caret indexes.
 // "." and ".." are rejected: encodeURIComponent leaves dots in place, and a URL
 // parser treats those segments as directory navigation.
 export const TICKER_RE = /^(?!\.)(?!.*\.\.)[A-Za-z0-9.^:=-]{1,15}$/;
@@ -18,8 +18,8 @@ const TIMEFRAMES = new Set(['1min', '5min', '15min', '1hour', '1day']);
 const TIMESPANS = new Set(['day', 'hour', 'minute']);
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-export type PolygonRouteTimeframe = '1min' | '5min' | '15min' | '1hour' | '1day';
-export type PolygonRouteTimespan = 'day' | 'hour' | 'minute';
+export type MarketRouteTimeframe = '1min' | '5min' | '15min' | '1hour' | '1day';
+export type MarketRouteTimespan = 'day' | 'hour' | 'minute';
 
 export type FieldParse<T> =
   | { ok: true; value: T }
@@ -57,14 +57,14 @@ export function parseBoundedInt(
   return n;
 }
 
-export function parseTimeframe(raw: string | null): PolygonRouteTimeframe | null {
+export function parseTimeframe(raw: string | null): MarketRouteTimeframe | null {
   const value = raw == null || raw === '' ? '1day' : raw;
-  return TIMEFRAMES.has(value) ? (value as PolygonRouteTimeframe) : null;
+  return TIMEFRAMES.has(value) ? (value as MarketRouteTimeframe) : null;
 }
 
-export function parseTimespan(raw: string | null): PolygonRouteTimespan | null {
+export function parseTimespan(raw: string | null): MarketRouteTimespan | null {
   const value = raw == null || raw === '' ? 'day' : raw;
-  return TIMESPANS.has(value) ? (value as PolygonRouteTimespan) : null;
+  return TIMESPANS.has(value) ? (value as MarketRouteTimespan) : null;
 }
 
 // undefined = omitted. null = present but not a calendar day the route will forward.

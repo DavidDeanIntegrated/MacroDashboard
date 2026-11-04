@@ -5,7 +5,7 @@ import {
   computeMetrics,
 } from '@/lib/edgar';
 import { failedRequest, invalidRequest, logUpstreamError } from '@/lib/api-errors';
-import { FILING_COUNT, parseBoundedInt, parseFormList, parseTicker } from '@/lib/polygon-bounds';
+import { FILING_COUNT, parseBoundedInt, parseFormList, parseTicker } from '@/lib/market-bounds';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);

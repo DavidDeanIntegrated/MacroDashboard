@@ -5,7 +5,7 @@ import { getFredSeries } from '@/lib/fred';
 import { portfolioRisk, factorSensitivity } from '@/lib/portfolio-risk';
 import type { Observation } from '@/lib/time-series';
 import { failedRequest, invalidRequest, logUpstreamError } from '@/lib/api-errors';
-import { boundedTickers } from '@/lib/polygon-bounds';
+import { boundedTickers } from '@/lib/market-bounds';
 
 // Two years of daily history for every holding plus three FRED factor series.
 export const maxDuration = 60;
