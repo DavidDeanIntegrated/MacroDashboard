@@ -549,16 +549,12 @@ export async function getPortfolioChart(
 
     const result: Array<{ date: string; value: number }> = [];
 
-    // Prepend previous close as the starting point so chart % matches day change
-    if (prevCloseTotal > 0 && sortedDates.length > 0) {
-      const firstTs = new Date(sortedDates[0]);
-      firstTs.setMinutes(firstTs.getMinutes() - 5);
-      result.push({ date: firstTs.toISOString(), value: Math.round(prevCloseTotal * 100) / 100 });
-    }
-
     for (const ts of sortedDates) {
       const prices = dateMap.get(ts)!;
       prices.forEach((price, symbol) => lastKnown.set(symbol, price));
+      // Start the line once every holding with intraday data has printed —
+      // BTC's 24h bars and pre-market prints otherwise give a partial sum.
+      if (Array.from(intradaySymbolsWithData).some((symbol) => !lastKnown.has(symbol))) continue;
       // Only sum holdings that have intraday data to match the baseline
       let total = 0;
       for (const h of HOLDINGS) {
@@ -566,6 +562,13 @@ export async function getPortfolioChart(
         total += h.qty * (lastKnown.get(h.symbol) || 0);
       }
       if (total > 0) result.push({ date: ts, value: Math.round(total * 100) / 100 });
+    }
+
+    // Prepend previous close as the starting point so chart % matches day change
+    if (prevCloseTotal > 0 && result.length > 0) {
+      const firstTs = new Date(result[0].date);
+      firstTs.setMinutes(firstTs.getMinutes() - 5);
+      result.unshift({ date: firstTs.toISOString(), value: Math.round(prevCloseTotal * 100) / 100 });
     }
 
     // If no intraday bars (weekend/holiday), show a flat line at prev close

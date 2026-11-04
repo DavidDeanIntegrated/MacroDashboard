@@ -7,7 +7,7 @@ const { invalidatePrefix } = require('../src/lib/cache.ts');
 const { getBars, historicalEnd } = require('../src/lib/alpaca.ts');
 const { snapshotFromAlpaca, getQuotes, getPortfolioDividends, inferFrequency } = require('../src/lib/market-data.ts');
 const { computeSMA, computeEMA, computeRSI, computeMACD } = require('../src/lib/indicators.ts');
-const { fetchPrice, getHoldingsPortfolio, HOLDINGS } = require('../src/lib/holdings.ts');
+const { fetchPrice, getHoldingsPortfolio, getPortfolioChart, HOLDINGS } = require('../src/lib/holdings.ts');
 const { marketCapFrom } = require('../src/lib/fundamentals-score.ts');
 
 const reset = () => { invalidatePrefix('alpaca:'); invalidatePrefix('market:'); invalidatePrefix('holdings:'); };
@@ -180,4 +180,28 @@ test('market cap: SEC shares × price, ADR ratio for foreign filers, unknown oth
   assert.equal(marketCapFrom('ASML', 900, { sharesOutstanding: 4e8, sharesForm: '20-F' }), 0);
   assert.equal(marketCapFrom('MSFT', 0, { sharesOutstanding: 7e9, sharesForm: '10-Q' }), 0);
   assert.equal(marketCapFrom('MSFT', 500, null), 0);
+});
+
+test('the 1D portfolio line starts only once every holding has an intraday price', async () => {
+  reset();
+  const stocks = HOLDINGS.filter((h) => h.symbol !== 'BTC').map((h) => h.symbol);
+  const open = Date.UTC(2026, 10, 4, 14, 30);
+  const f = stubFetch([
+    ['/v2/stocks/snapshots', () => ({ body: Object.fromEntries(stocks.map((s) => [s, liveSnap(10, 10)])) })],
+    // The first stock prints an hour before the others (pre-market).
+    ['/v2/stocks/bars', (u) => ({ body: { bars: Object.fromEntries(stocks.filter((s) => u.includes(`symbols=${s}&`)).map((s) => [s, [
+      { t: iso(open - (s === stocks[0] ? 3600000 : 0)), o: 10, h: 10, l: 10, c: 10, v: 1 },
+      { t: iso(open + 300000), o: 10, h: 10, l: 10, c: 10, v: 1 },
+    ]])), next_page_token: null } })],
+    // Coinbase candles: [time, low, high, open, close, volume], from the evening before.
+    ['exchange.coinbase.com', () => ({ body: [[Math.floor((open - 12 * 3600000) / 1000), 1, 1, 1, 50000, 1], [Math.floor(open / 1000), 1, 1, 1, 50000, 1]] })],
+    ['api.coinbase.com', () => ({ body: { data: { amount: '50000' } } })],
+  ]);
+  try {
+    const chart = await getPortfolioChart('1D');
+    const full = HOLDINGS.reduce((sum, h) => sum + h.qty * (h.symbol === 'BTC' ? 50000 : 10), 0);
+    const points = chart.slice(1); // first point is the previous-close baseline
+    assert.ok(points.length > 0);
+    for (const p of points) assert.ok(Math.abs(p.value - full) < 0.05, `partial sum ${p.value} at ${p.date}`);
+  } finally { f.restore(); }
 });
