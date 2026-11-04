@@ -85,3 +85,16 @@ test('balance-sheet values keep the latest end date and fiscal-year labels', () 
     assert.deepEqual(f.stockholdersEquity.map((d) => [d.endDate, d.value]), [['2024-06-30', 800], ['2025-06-30', 900], ['2025-09-30', 950]]);
     assert.equal(extractScoringMetrics(f).equity, 950);
   }));
+
+test('a margin is withheld when its two figures cover different periods', () =>
+  withFacts({ 'us-gaap': {
+    RevenueFromContractWithCustomerExcludingAssessedTax: concept(fiscalYear.map((r) => ({ ...r, val: r.val * 3 }))),
+    NetIncomeLoss: concept(fiscalYear),
+    // Gross profit last tagged in 2019 must not divide into 2025 revenue.
+    GrossProfit: concept([row('2018-07-01', '2019-06-30', 500, '10-K', 2019, 'FY', '2019-08-01')]),
+  } }, (f) => {
+    const m = extractScoringMetrics(f);
+    assert.equal(m.grossMargin, null);
+    assert.ok(Math.abs(m.netMargin - 100 / 3) < 1e-9);
+    assert.equal(computeMetrics(f).grossMargin, null);
+  }));

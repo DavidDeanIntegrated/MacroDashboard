@@ -135,7 +135,8 @@ const GAAP_TAGS = {
     'SalesRevenueNet',
     'RevenueFromContractWithCustomerIncludingAssessedTax',
   ],
-  netIncome: ['NetIncomeLoss'],
+  // Some filers (e.g. AVAV) report net income only under the fallbacks.
+  netIncome: ['NetIncomeLoss', 'NetIncomeLossAvailableToCommonStockholdersBasic', 'ProfitLoss'],
   totalAssets: ['Assets'],
   totalLiabilities: ['Liabilities'],
   stockholdersEquity: [
@@ -280,6 +281,28 @@ function extractFactData(
   return [];
 }
 
+// Holding-company reorganizations start a new SEC filer: the ticker maps to the
+// new CIK, whose companyfacts hold only filings since the switch. The old
+// filer's history is merged in (same-period rows dedupe by filing date).
+const PREDECESSOR_CIKS: Record<string, number[]> = {
+  XOM: [34088], // Exxon Mobil Corp → ExxonMobil Holdings Corp (2026)
+};
+
+function mergeFacts(a: CompanyFactsResponse['facts'], b: CompanyFactsResponse['facts']): CompanyFactsResponse['facts'] {
+  const out: CompanyFactsResponse['facts'] = {};
+  for (const ns of ['us-gaap', 'ifrs-full', 'dei'] as const) {
+    const merged: Record<string, FactEntry> = {};
+    for (const source of [a[ns], b[ns]]) {
+      for (const [tag, entry] of Object.entries(source ?? {})) {
+        const target = merged[tag] ?? (merged[tag] = { ...entry, units: {} });
+        for (const [unit, rows] of Object.entries(entry.units)) target.units[unit] = [...(target.units[unit] ?? []), ...rows];
+      }
+    }
+    if (Object.keys(merged).length > 0) out[ns] = merged;
+  }
+  return out;
+}
+
 export async function getCompanyFundamentals(
   ticker: string
 ): Promise<CompanyFundamentals | null> {
@@ -289,10 +312,15 @@ export async function getCompanyFundamentals(
   const cacheKey = `edgar:facts:${cik}`;
 
   return withCache(cacheKey, TTL.FUNDAMENTALS, async () => {
-    const data = await fetchJson<CompanyFactsResponse>(
-      `${config.edgar.baseUrl}/api/xbrl/companyfacts/CIK${cikSegment(cik)}.json`,
+    const fetchFacts = (id: number) => fetchJson<CompanyFactsResponse>(
+      `${config.edgar.baseUrl}/api/xbrl/companyfacts/CIK${cikSegment(id)}.json`,
       { headers: edgarHeaders(), provider: 'EDGAR', retries: 1 }
     );
+    const data = await fetchFacts(cik);
+    for (const id of PREDECESSOR_CIKS[ticker.toUpperCase()] ?? []) {
+      const earlier = await fetchFacts(id).catch(() => null);
+      if (earlier) data.facts = mergeFacts(earlier.facts, data.facts);
+    }
 
     const shares = latestSharesOutstanding(data.facts);
     return {
@@ -428,7 +456,9 @@ export interface EdgarScoringMetrics {
  * true 3-month quarters by endDate. Falls back to the latest full-year 10-K when we
  * can't assemble 4 quarters.
  */
-function computeTTM(data: FundamentalDataPoint[]): number | null {
+interface Trailing { value: number; endDate: string }
+
+function computeTTM(data: FundamentalDataPoint[]): Trailing | null {
   const byEnd = (x: FundamentalDataPoint, y: FundamentalDataPoint) => x.endDate.localeCompare(y.endDate);
   const quarters = data.filter((d) => d.startDate && /-Q[1-4]$/.test(d.period)).sort(byEnd);
   const latestAnnual = data.filter((d) => /-FY$/.test(d.period)).sort(byEnd).at(-1) ?? null;
@@ -439,9 +469,17 @@ function computeTTM(data: FundamentalDataPoint[]): number | null {
   const backToBack = last4.length === 4 &&
     last4.every((q, i) => i === 0 || Math.abs(daysBetween(last4[i - 1].endDate, q.startDate!)) <= 7);
   if (backToBack && (!latestAnnual || last4[3].endDate >= latestAnnual.endDate)) {
-    return last4.reduce((sum, q) => sum + q.value, 0);
+    return { value: last4.reduce((sum, q) => sum + q.value, 0), endDate: last4[3].endDate };
   }
-  return latestAnnual?.value ?? null;
+  return latestAnnual ? { value: latestAnnual.value, endDate: latestAnnual.endDate } : null;
+}
+
+// A ratio of two trailing figures only when they cover (nearly) the same
+// months — a tag a company stopped using must not divide into current revenue.
+function trailingRatio(numerator: Trailing | null, denominator: Trailing | null): number | null {
+  if (!numerator || !denominator || !denominator.value) return null;
+  if (Math.abs(daysBetween(numerator.endDate, denominator.endDate)) > 100) return null;
+  return (numerator.value / denominator.value) * 100;
 }
 
 /**
@@ -465,10 +503,11 @@ export function extractScoringMetrics(f: CompanyFundamentals): EdgarScoringMetri
   // TTM = trailing four true 3-month quarters (see computeTTM).
   const getTTM = (data: FundamentalDataPoint[]) => computeTTM(data);
 
-  const ttmRevenue = getTTM(f.revenue);
-  const ttmNetIncome = getTTM(f.netIncome);
-  const ttmGrossProfit = getTTM(f.grossProfit);
-  const ttmEPS = getTTM(f.eps);
+  const revenueTTM = getTTM(f.revenue);
+  const netIncomeTTM = getTTM(f.netIncome);
+  const ttmRevenue = revenueTTM?.value ?? null;
+  const ttmNetIncome = netIncomeTTM?.value ?? null;
+  const ttmEPS = getTTM(f.eps)?.value ?? null;
 
   const latestEquity = getLatest(f.stockholdersEquity);
   const latestDebt = getLatest(f.longTermDebt);
@@ -493,8 +532,8 @@ export function extractScoringMetrics(f: CompanyFundamentals): EdgarScoringMetri
   }
 
   return {
-    netMargin: ttmRevenue && ttmNetIncome ? (ttmNetIncome / ttmRevenue) * 100 : null,
-    grossMargin: ttmRevenue && ttmGrossProfit ? (ttmGrossProfit / ttmRevenue) * 100 : null,
+    netMargin: ttmNetIncome ? trailingRatio(netIncomeTTM, revenueTTM) : null,
+    grossMargin: trailingRatio(getTTM(f.grossProfit), revenueTTM),
     roe: ttmNetIncome !== null && latestEquity && latestEquity > 0
       ? (ttmNetIncome / latestEquity) * 100 : null,
     revenueGrowth,
@@ -536,11 +575,11 @@ export function computeMetrics(fundamentals: CompanyFundamentals): ComputedMetri
   // TTM = trailing four true 3-month quarters (see computeTTM).
   const getTTM = (data: FundamentalDataPoint[]) => computeTTM(data);
 
-  const ttmRevenue = getTTM(fundamentals.revenue);
-  const ttmNetIncome = getTTM(fundamentals.netIncome);
-  const ttmGrossProfit = getTTM(fundamentals.grossProfit);
-  const ttmOperating = getTTM(fundamentals.operatingIncome);
-  const ttmEPS = getTTM(fundamentals.eps);
+  const revenueTTM = getTTM(fundamentals.revenue);
+  const netIncomeTTM = getTTM(fundamentals.netIncome);
+  const ttmRevenue = revenueTTM?.value ?? null;
+  const ttmNetIncome = netIncomeTTM?.value ?? null;
+  const ttmEPS = getTTM(fundamentals.eps)?.value ?? null;
 
   const latestDebt = getLatestAnnual(fundamentals.longTermDebt);
   const latestEquity = getLatestAnnual(fundamentals.stockholdersEquity);
@@ -549,12 +588,9 @@ export function computeMetrics(fundamentals: CompanyFundamentals): ComputedMetri
     ttmRevenue,
     ttmNetIncome,
     ttmEPS,
-    grossMargin:
-      ttmRevenue && ttmGrossProfit ? (ttmGrossProfit / ttmRevenue) * 100 : null,
-    operatingMargin:
-      ttmRevenue && ttmOperating ? (ttmOperating / ttmRevenue) * 100 : null,
-    netMargin:
-      ttmRevenue && ttmNetIncome ? (ttmNetIncome / ttmRevenue) * 100 : null,
+    grossMargin: trailingRatio(getTTM(fundamentals.grossProfit), revenueTTM),
+    operatingMargin: trailingRatio(getTTM(fundamentals.operatingIncome), revenueTTM),
+    netMargin: ttmNetIncome ? trailingRatio(netIncomeTTM, revenueTTM) : null,
     debtToEquity:
       latestDebt !== null && latestEquity ? latestDebt / latestEquity : null,
     currentAssets: getLatestAnnual(fundamentals.totalAssets),
