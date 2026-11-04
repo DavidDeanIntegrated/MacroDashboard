@@ -121,6 +121,17 @@ test('batched bars follow next_page_token and keep each symbol oldest-first', as
   } finally { f.restore(); }
 });
 
+test('a bar cap keeps the most recent bars, so intraday charts reach today', async () => {
+  reset();
+  const bars = Array.from({ length: 30 }, (_, i) => ({ t: iso(Date.UTC(2026, 10, 4, 13, 0) + i * 300000), o: i, h: i, l: i, c: i, v: 1 }));
+  const f = stubFetch([['/v2/stocks/bars', () => ({ body: { bars: { CAP: bars }, next_page_token: null } })]]);
+  try {
+    const kept = (await getBars(['CAP'], '5Min', '2026-11-04', undefined, 10)).CAP;
+    assert.equal(kept.length, 10);
+    assert.deepEqual(kept.map((b) => b.close), [20, 21, 22, 23, 24, 25, 26, 27, 28, 29]);
+  } finally { f.restore(); }
+});
+
 test('historical SIP requests never reach into the latest 15 minutes', () => {
   const now = Date.parse('2026-11-04T18:00:00Z');
   assert.equal(historicalEnd(undefined, now), '2026-11-04T17:44:00.000Z');

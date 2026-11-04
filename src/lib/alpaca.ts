@@ -69,8 +69,9 @@ const MAX_BAR_PAGES = 20;
 
 /**
  * Split-adjusted SIP bars for one or more symbols, following next_page_token
- * (Alpaca's `limit` counts bars across all symbols on a page). `limit` caps the
- * bars kept per symbol, oldest first.
+ * (Alpaca's `limit` counts bars across all symbols on a page). `limit` keeps
+ * the most recent bars per symbol, returned oldest first — intraday windows
+ * include pre/post-market bars, so a cap must never cut off today.
  */
 export async function getBars(
   symbols: string[],
@@ -105,14 +106,12 @@ export async function getBars(
       );
       for (const [symbol, bars] of Object.entries(data.bars ?? {})) {
         const list = out[symbol] ?? (out[symbol] = []);
-        for (const bar of bars) {
-          if (list.length >= limit) break;
-          list.push({ date: bar.t, open: bar.o, high: bar.h, low: bar.l, close: bar.c, volume: bar.v });
-        }
+        for (const bar of bars) list.push({ date: bar.t, open: bar.o, high: bar.h, low: bar.l, close: bar.c, volume: bar.v });
       }
       pageToken = data.next_page_token;
-      if (!pageToken || symbols.every((s) => out[s].length >= limit)) break;
+      if (!pageToken) break;
     }
+    for (const symbol of Object.keys(out)) out[symbol] = out[symbol].slice(-limit);
     return out;
   });
 }
@@ -187,7 +186,7 @@ export async function getCryptoBars(
   return withCache(`alpaca:crypto:${pair}:${timeframe}:${start}:${end}:${limit}`, timeframe === '1Day' ? TTL.MACRO : TTL.QUOTES, async () => {
     const out: OHLCV[] = [];
     let pageToken: string | null = null;
-    for (let page = 0; page < MAX_BAR_PAGES && out.length < limit; page++) {
+    for (let page = 0; page < MAX_BAR_PAGES; page++) {
       const params = new URLSearchParams({ symbols: pair, timeframe, start, limit: '10000', sort: 'asc' });
       if (end) params.set('end', /^\d{4}-\d{2}-\d{2}$/.test(end) ? `${end}T23:59:59Z` : end);
       if (pageToken) params.set('page_token', pageToken);
@@ -195,14 +194,11 @@ export async function getCryptoBars(
         `${config.alpaca.dataUrl}/v1beta3/crypto/us/bars?${params}`,
         { provider: 'Alpaca' }
       );
-      for (const bar of data.bars?.[pair] ?? []) {
-        if (out.length >= limit) break;
-        out.push({ date: bar.t, open: bar.o, high: bar.h, low: bar.l, close: bar.c, volume: bar.v });
-      }
+      for (const bar of data.bars?.[pair] ?? []) out.push({ date: bar.t, open: bar.o, high: bar.h, low: bar.l, close: bar.c, volume: bar.v });
       pageToken = data.next_page_token;
       if (!pageToken) break;
     }
-    return out;
+    return out.slice(-limit);
   });
 }
 
