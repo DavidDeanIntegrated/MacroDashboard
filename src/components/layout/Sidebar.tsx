@@ -204,7 +204,7 @@ export function Sidebar() {
       {/* Footer */}
       <div className="px-6 py-4 border-t border-black/[0.04]">
         <p className="text-xxs text-black/25">
-          Data: FRED, Polygon, Alpaca, Finnhub
+          Data: FRED, Alpaca, SEC EDGAR, Coinbase
         </p>
       </div>
     </aside>

@@ -15,7 +15,7 @@ import type { RegimeHistory } from '@/lib/regime-history';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/format';
 import { Term } from '@/components/ui/Term';
 import { CATEGORY_CONFIG, WATCHLIST, WATCHLIST_CATEGORY_CONFIG } from '@/lib/holdings';
-import type { PolygonTimeframe } from '@/lib/polygon';
+import type { MarketTimeframe } from '@/lib/market-data';
 
 // Map badge variants to hex colors for the pie chart
 const BADGE_COLORS: Record<string, string> = {
@@ -42,7 +42,7 @@ const FREQ_LABELS: Record<number, string> = {
 
 const PORTFOLIO_CHART_PERIODS = ['1D', '1M', '3M', '6M', '1Y'] as const;
 
-const CHART_TIMEFRAMES: { label: string; value: PolygonTimeframe }[] = [
+const CHART_TIMEFRAMES: { label: string; value: MarketTimeframe }[] = [
   { label: '1D', value: '1min' },
   { label: '1W', value: '5min' },
   { label: '1M', value: '15min' },
@@ -63,7 +63,7 @@ export default function PortfolioPage() {
   const [portfolioChartPeriod, setPortfolioChartPeriod] = useState<string>('1D');
   const { data: portfolioChartData } = usePortfolioChart(portfolioChartPeriod);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
-  const [chartTimeframe, setChartTimeframe] = useState<PolygonTimeframe>('1day');
+  const [chartTimeframe, setChartTimeframe] = useState<MarketTimeframe>('1day');
   const { data: chartData } = usePolygonAggregates(selectedSymbol, chartTimeframe);
   const { data: rsiData } = usePolygonRSI(selectedSymbol && selectedSymbol !== 'BTC' ? selectedSymbol : null);
   const { data: dividends } = usePortfolioDividends((portfolio?.positions ?? []).filter(p => p.symbol !== 'CASH').map(h => h.symbol));
@@ -89,7 +89,7 @@ export default function PortfolioPage() {
   // Watchlist
   const { data: watchlist } = useWatchlist();
   const [watchSelectedSymbol, setWatchSelectedSymbol] = useState<string | null>(null);
-  const [watchChartTimeframe, setWatchChartTimeframe] = useState<PolygonTimeframe>('1day');
+  const [watchChartTimeframe, setWatchChartTimeframe] = useState<MarketTimeframe>('1day');
   const { data: watchChartData } = usePolygonAggregates(watchSelectedSymbol, watchChartTimeframe);
   const { data: watchRsiData } = usePolygonRSI(watchSelectedSymbol);
 
@@ -165,7 +165,7 @@ export default function PortfolioPage() {
       {/* Header */}
       <div>
         <h2 className="text-2xl font-semibold text-black/85 tracking-tight">Portfolio</h2>
-        <p className="text-sm text-black/45 mt-1">Holdings, allocation, and live pricing via Polygon.io</p>
+        <p className="text-sm text-black/45 mt-1">Holdings, allocation, and live pricing via Alpaca</p>
       </div>
 
       {/* Summary Cards */}
@@ -400,7 +400,7 @@ export default function PortfolioPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-black/[0.06]">
-                  {['Symbol', 'Category', 'Qty', 'Price', 'vs 200w MA', 'Mkt Value', 'Weight', 'Volume', 'Day Chg'].map(
+                  {['Symbol', 'Category', 'Qty', 'Price', 'vs 200w MA', 'Mkt Value', 'Weight', 'Vol (IEX)', 'Day Chg'].map(
                     (h) => (
                       <th
                         key={h}
@@ -556,7 +556,7 @@ export default function PortfolioPage() {
                 <p className="text-sm font-medium text-black/75 tabular-nums">{formatCurrency(selectedPosition.low)}</p>
               </div>
               <div>
-                <p className="text-xs text-black/40">Volume</p>
+                <p className="text-xs text-black/40">Volume (IEX)</p>
                 <p className="text-sm font-medium text-black/75 tabular-nums">{formatNumber(selectedPosition.volume, { compact: true })}</p>
               </div>
             </div>
@@ -696,7 +696,7 @@ export default function PortfolioPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-black/[0.06]">
-                    {['Symbol', 'Category', 'Price', 'Open', 'High', 'Low', 'Volume', 'Day Chg'].map(
+                    {['Symbol', 'Category', 'Price', 'Open', 'High', 'Low', 'Vol (IEX)', 'Day Chg'].map(
                       (h) => (
                         <th
                           key={h}
@@ -800,7 +800,7 @@ export default function PortfolioPage() {
                     <p className="text-sm font-medium text-black/75 tabular-nums">{formatCurrency(watchSelectedPosition.low)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-black/40">Volume</p>
+                    <p className="text-xs text-black/40">Volume (IEX)</p>
                     <p className="text-sm font-medium text-black/75 tabular-nums">{formatNumber(watchSelectedPosition.volume, { compact: true })}</p>
                   </div>
                 </div>

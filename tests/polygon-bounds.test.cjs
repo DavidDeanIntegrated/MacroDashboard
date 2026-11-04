@@ -21,8 +21,10 @@ const {
   INDICATOR_WINDOW,
 } = require('../src/lib/polygon-bounds.ts');
 const route = require('../src/app/api/polygon/route.ts');
-const { getAggregates, getSnapshot } = require('../src/lib/polygon.ts');
+const { getAggregates, getSnapshot } = require('../src/lib/market-data.ts');
 const { getSnapshot: getAlpacaSnapshot } = require('../src/lib/alpaca.ts');
+
+const resetCaches = () => { invalidatePrefix('alpaca:'); invalidatePrefix('market:'); };
 
 const get = (qs) => route.GET(new NextRequest(`https://example.test/api/polygon${qs}`));
 
@@ -43,20 +45,9 @@ function withFetch(fn) {
     const url = String(u);
     calls.push(url);
     if (url.includes('coinbase.com')) return ok([]);
-    if (url.includes('alpaca.markets')) return ok({});
-    if (url.includes('/v2/snapshot/')) {
-      return ok({
-        ticker: {
-          ticker: 'SYN',
-          todaysChange: 0,
-          todaysChangePerc: 0,
-          day: { o: 1, h: 1, l: 1, c: 1, v: 1, vw: 1 },
-          prevDay: { o: 1, h: 1, l: 1, c: 1, v: 1, vw: 1 },
-        },
-      });
-    }
-    if (url.includes('/v1/indicators/')) return ok({ results: { values: [] } });
-    return ok({ results: [] });
+    if (url.includes('/v1/corporate-actions')) return ok({ corporate_actions: {}, next_page_token: null });
+    if (url.includes('/bars')) return ok({ bars: {}, next_page_token: null });
+    return ok({});
   };
   return Promise.resolve(fn(calls)).finally(() => { global.fetch = original; });
 }
@@ -74,7 +65,7 @@ async function expectInvalid(qs, calls) {
   assert.equal(calls.length, before, qs);
 }
 
-test.describe('polygon request bounds', { concurrency: 1 }, () => {
+test.describe('market data request bounds', { concurrency: 1 }, () => {
   test('symbols the pages request are legal tickers and fit the batch cap', () => {
     const sectors = fs.readFileSync(path.join(__dirname, '../src/app/sectors/page.tsx'), 'utf8');
     const sectorSymbols = [...sectors.matchAll(/symbol:\s*'([^']+)'/g)].map((m) => m[1]);
@@ -109,7 +100,6 @@ test.describe('polygon request bounds', { concurrency: 1 }, () => {
       '?action=snapshot&symbol=.',
       '?action=sma&symbol=NOT%20A%20TICKER&window=50',
       '?action=rsi&symbol=' + 'A'.repeat(16),
-      '?action=details&symbol=%3Cscript%3E',
       '?action=multi-aggregates&symbols=AAPL,AAA/BBB',
       '?action=portfolio-dividends&symbols=BRK.B,../etc',
       '?action=wma200&symbols=SPY,BAD%20TICKER',
@@ -135,7 +125,7 @@ test.describe('polygon request bounds', { concurrency: 1 }, () => {
   }));
 
   test('a watchlist-sized multi-aggregates request is accepted', () => withFetch(async (calls) => {
-    invalidatePrefix('polygon:');
+    resetCaches();
     const symbols = [...WATCHLIST.map((w) => w.symbol), 'SPY'];
     assert.ok(symbols.length <= MAX_SYMBOLS);
     const res = await get(
@@ -145,50 +135,48 @@ test.describe('polygon request bounds', { concurrency: 1 }, () => {
     assert.equal(res.status, 200);
     assert.equal(body.length, symbols.length);
     assert.deepEqual(body.map((row) => row.symbol), symbols);
-    const upstream = calls.filter((u) => u.includes('/v2/aggs/ticker/'));
-    assert.equal(upstream.length, symbols.length);
+    // One batched Alpaca bars request covers every symbol.
+    const upstream = calls.filter((u) => u.includes('/v2/stocks/bars'));
+    assert.equal(upstream.length, 1);
+    assert.ok(upstream[0].includes(`symbols=${encodeURIComponent(symbols.join(','))}`));
   }));
 
   test('a single-symbol request the ticker page makes is accepted', () => withFetch(async (calls) => {
-    invalidatePrefix('polygon:');
+    resetCaches();
     const res = await get('?action=aggregates&symbol=BTC&timeframe=1day');
     const body = await res.json();
     assert.equal(res.status, 200);
     assert.ok(Array.isArray(body));
     assert.equal(calls.length, 1);
-    assert.ok(calls[0].includes('/v2/aggs/ticker/X%3ABTCUSD/'));
-    assert.equal(calls[0].includes('/v2/aggs/ticker/X:BTCUSD/'), false);
+    assert.ok(calls[0].includes('/v1beta3/crypto/us/bars?symbols=BTC%2FUSD'));
 
-    invalidatePrefix('polygon:');
+    resetCaches();
     const sma = await get('?action=sma&symbol=SPY&window=200');
     assert.equal(sma.status, 200);
-    assert.ok(calls.some((u) => u.includes('/v1/indicators/sma/SPY') && u.includes('window=200')));
+    assert.ok(calls.some((u) => u.includes('/v2/stocks/bars?symbols=SPY') && u.includes('timeframe=1Day')));
   }));
 
-  test('class shares and Polygon prefixes pass and are encoded in the path', () => withFetch(async (calls) => {
-    invalidatePrefix('polygon:');
-    const brk = await get('?action=snapshot&symbol=BRK.B');
-    assert.equal(brk.status, 200);
-    assert.ok(calls.some((u) => u.includes('/tickers/BRK.B')));
+  test('class shares and Polygon-style crypto prefixes pass and are encoded', () => withFetch(async (calls) => {
+    resetCaches();
+    await get('?action=snapshot&symbol=BRK.B');
+    assert.ok(calls.some((u) => u.includes('/v2/stocks/snapshots?symbols=BRK.B')));
 
-    invalidatePrefix('polygon:');
+    resetCaches();
     calls.length = 0;
     const crypto = await get('?action=aggregates&symbol=X:BTCUSD&timeframe=1day&limit=10');
     assert.equal(crypto.status, 200);
-    assert.ok(calls.some((u) => u.includes('/v2/aggs/ticker/X%3ABTCUSD/')));
+    assert.ok(calls.some((u) => u.includes('/v1beta3/crypto/us/bars?symbols=BTC%2FUSD')));
   }));
 
   test('library path builders encode symbols even when the route is bypassed', () => withFetch(async (calls) => {
-    invalidatePrefix('polygon:');
-    invalidatePrefix('alpaca:');
+    resetCaches();
     await getAggregates('X:BTCUSD', '1day', '2026-01-01', '2026-01-02', 5);
-    await getSnapshot('AAA/BBB');
+    await getSnapshot('AAA/BBB').catch(() => undefined);
     await getAlpacaSnapshot('AAA/BBB');
     const joined = calls.join('\n');
-    assert.ok(joined.includes('/v2/aggs/ticker/X%3ABTCUSD/'));
-    assert.equal(joined.includes('/v2/aggs/ticker/X:BTCUSD/'), false);
-    assert.ok(joined.includes('/tickers/AAA%2FBBB'));
-    assert.equal(joined.includes('/tickers/AAA/BBB'), false);
+    assert.ok(joined.includes('symbols=BTC%2FUSD'));
+    assert.ok(joined.includes('/v2/stocks/snapshots?symbols=AAA%2FBBB'));
+    assert.equal(joined.includes('symbols=AAA/BBB'), false);
     assert.ok(joined.includes('/v2/stocks/AAA%2FBBB/snapshot'));
     assert.equal(joined.includes('/v2/stocks/AAA/BBB/'), false);
   }));

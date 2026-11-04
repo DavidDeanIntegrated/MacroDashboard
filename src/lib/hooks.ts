@@ -253,7 +253,7 @@ export function usePortfolioChart(period: string = '1Y') {
   );
 }
 
-// ─── Polygon Hooks ───
+// ─── Market Data Hooks (Alpaca, served from /api/polygon) ───
 
 export function usePolygonAggregates(
   symbol: string | null,

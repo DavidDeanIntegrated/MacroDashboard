@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getHoldingsPortfolio } from '@/lib/holdings';
-import { getAggregates } from '@/lib/polygon';
+import { getMultiAggregates, type OHLCV } from '@/lib/market-data';
 import { getFredSeries } from '@/lib/fred';
 import { portfolioRisk, factorSensitivity } from '@/lib/portfolio-risk';
 import type { Observation } from '@/lib/time-series';
-import { config } from '@/lib/config';
 import { failedRequest, invalidRequest, logUpstreamError } from '@/lib/api-errors';
 import { boundedTickers } from '@/lib/polygon-bounds';
 
@@ -14,17 +13,17 @@ export const maxDuration = 60;
 export async function GET() {
   try {
     const portfolio = await getHoldingsPortfolio();
-    if (!config.polygon.apiKey) throw new Error('POLYGON_API_KEY is required for historical risk estimates.');
     const from = new Date(); from.setUTCFullYear(from.getUTCFullYear() - 2);
     const start = from.toISOString().slice(0, 10);
-    const histories: Record<string, Awaited<ReturnType<typeof getAggregates>>> = {};
+    const histories: Record<string, OHLCV[]> = {};
     const errors: string[] = [];
     const symbols = boundedTickers(Array.from(new Set([...portfolio.positions.filter(p => p.symbol !== 'CASH').map(p => p.symbol), 'SPY'])));
     if (!symbols) return invalidRequest();
-    for (let i = 0; i < symbols.length; i += 4) await Promise.all(symbols.slice(i, i + 4).map(async symbol => {
-      try { histories[symbol] = await getAggregates(symbol, '1day', start, undefined, 5000); }
-      catch { histories[symbol] = []; errors.push(`${symbol}: historical prices unavailable`); }
-    }));
+    // One paginated request for every holding; a failure here is a data outage, not a per-symbol gap.
+    for (const { symbol, data } of await getMultiAggregates(symbols, '1day', start, undefined, 5000)) {
+      histories[symbol] = data;
+      if (data.length === 0) errors.push(`${symbol}: historical prices unavailable`);
+    }
     const factorDefinitions = [{ key: 'market', id: null, name: 'SPY return', mode: 'return' as const },
       { key: 'realYield', id: 'DFII10', name: '10Y real yield change', mode: 'difference' as const },
       { key: 'dollar', id: 'DTWEXBGS', name: 'Broad USD return', mode: 'return' as const },

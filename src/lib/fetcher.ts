@@ -12,7 +12,6 @@ interface FetchOptions extends RequestInit {
 export function redactSecrets(value: string): string {
   let out = value.replace(/([?&#](?:api_key|apikey|token|access_token)=)[^&#\s]*/gi, '$1REDACTED');
   const secrets = [
-    config.polygon.apiKey,
     config.fred.apiKey,
     config.finnhub.apiKey,
     config.alpaca.apiKey,
