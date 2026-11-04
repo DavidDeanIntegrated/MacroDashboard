@@ -123,7 +123,7 @@ test('batched bars follow next_page_token and keep each symbol oldest-first', as
 
 test('historical SIP requests never reach into the latest 15 minutes', () => {
   const now = Date.parse('2026-11-04T18:00:00Z');
-  assert.equal(historicalEnd(undefined, now), undefined);
+  assert.equal(historicalEnd(undefined, now), '2026-11-04T17:44:00.000Z');
   assert.equal(historicalEnd('2026-11-04', now), '2026-11-04T17:44:00.000Z');
   assert.equal(historicalEnd('2026-11-01', now), '2026-11-01T23:59:59.000Z');
 });

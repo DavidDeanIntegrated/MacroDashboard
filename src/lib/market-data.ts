@@ -7,7 +7,6 @@ import {
   getCryptoBars,
   getCashDividends,
   getSnapshots,
-  getHistoricalBars,
   type AlpacaSnapshot,
   type AlpacaTimeframe,
   type AlpacaCashDividend,
@@ -142,7 +141,8 @@ export function snapshotFromAlpaca(s: AlpacaSnapshot | undefined): MarketSnapsho
 // Fallback when IEX has no usable print: the last two full-market daily bars
 // (Basic-plan SIP data, at most ~15 minutes behind).
 async function snapshotFromDailyBars(symbol: string): Promise<MarketSnapshot | null> {
-  const bars = await getHistoricalBars(symbol, '1Day', daysAgo(14), undefined, 30);
+  // Quote-length cache: this stands in for a live price.
+  const bars = (await getBars([symbol], '1Day', daysAgo(14), undefined, 30, TTL.QUOTES))[symbol] ?? [];
   if (bars.length < 2) return null;
   const last = bars[bars.length - 1];
   const prevClose = bars[bars.length - 2].close;

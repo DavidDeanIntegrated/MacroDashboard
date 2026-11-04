@@ -56,12 +56,12 @@ export interface OHLCV {
 export type AlpacaTimeframe = '1Min' | '5Min' | '15Min' | '1Hour' | '1Day' | '1Week';
 
 // Basic-plan SIP requests are refused when they reach into the latest 15
-// minutes. Alpaca already defaults `end` to 15 minutes ago; a caller-supplied
-// date is read as the whole day (inclusive, like Massive's `to`) and clamped.
-export function historicalEnd(end?: string, nowMs = Date.now()): string | undefined {
-  if (!end) return undefined;
-  const asked = Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(end) ? `${end}T23:59:59Z` : end);
+// minutes, so `end` is always sent: 16 minutes ago, or a caller-supplied date
+// read as the whole day (inclusive, like Massive's `to`) and clamped to that.
+export function historicalEnd(end?: string, nowMs = Date.now()): string {
   const latest = nowMs - 16 * 60 * 1000;
+  if (!end) return new Date(latest).toISOString();
+  const asked = Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(end) ? `${end}T23:59:59Z` : end);
   return new Date(Math.min(Number.isFinite(asked) ? asked : latest, latest)).toISOString();
 }
 
@@ -77,10 +77,10 @@ export async function getBars(
   timeframe: AlpacaTimeframe,
   start: string,
   end?: string,
-  limit = 10000
+  limit = 10000,
+  ttl: number = timeframe === '1Day' || timeframe === '1Week' ? TTL.MACRO : TTL.QUOTES
 ): Promise<Record<string, OHLCV[]>> {
-  const cacheKey = `alpaca:bars:${symbols.join(',')}:${timeframe}:${start}:${end}:${limit}`;
-  const ttl = timeframe === '1Day' || timeframe === '1Week' ? TTL.MACRO : TTL.QUOTES;
+  const cacheKey = `alpaca:bars:${symbols.join(',')}:${timeframe}:${start}:${end}:${limit}:${ttl}`;
 
   return withCache(cacheKey, ttl, async () => {
     const out: Record<string, OHLCV[]> = Object.fromEntries(symbols.map((s) => [s, []]));
@@ -95,8 +95,8 @@ export async function getBars(
         adjustment: 'split',
         feed: 'sip',
         sort: 'asc',
+        end: clampedEnd,
       });
-      if (clampedEnd) params.set('end', clampedEnd);
       if (pageToken) params.set('page_token', pageToken);
 
       const data: AlpacaBarsResponse = await fetchJson<AlpacaBarsResponse>(
