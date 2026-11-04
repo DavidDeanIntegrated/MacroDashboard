@@ -235,7 +235,7 @@ export default function RiskPage() {
                 <Link className="text-accent-blue font-medium" href={`/ticker?symbol=${h.symbol}`}>{h.symbol}</Link>
                 <p className="text-xs text-black/60 mt-2 leading-relaxed">{macroSensitivity(h.symbol, h.category).note}</p>
                 <p className="text-xs text-black/60 mt-2 tabular-nums">Revenue growth {fmt(b?.growthDetail.revenueGrowth)}% · net margin {fmt(b?.profitabilityDetail.netMargin)}% · debt/equity {fmt(b?.healthDetail.debtToEquity)} · cash/debt {fmt(b?.healthDetail.cashToDebt)}</p>
-                <p className="text-[11px] text-black/40 mt-2">Latest filing {b?.meta.dataAsOf ?? 'unavailable'} · {fmt(b?.meta.coveragePct)}% of metrics reported.</p>
+                <p className="text-[11px] text-black/40 mt-2">{b?.meta.dataAsOf ? `Filings through ${b.meta.dataAsOf}` : 'No SEC filings found'} · {fmt(b?.meta.coveragePct)}% of metrics reported.</p>
               </div>
             );
           })}
