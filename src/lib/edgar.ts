@@ -427,6 +427,14 @@ export async function getCompanySic(ticker: string): Promise<string | null> {
   });
 }
 
+/** End date of the most recent period in the company's income statement or balance sheet filings. */
+export function latestFilingPeriod(f: CompanyFundamentals): string | null {
+  const ends = [f.revenue, f.netIncome, f.eps, f.stockholdersEquity]
+    .map((series) => series.at(-1)?.endDate)
+    .filter((d): d is string => Boolean(d));
+  return ends.length > 0 ? ends.sort().at(-1)! : null;
+}
+
 // ─── Scoring-compatible metrics for fundamentals-score.ts ───
 
 export interface EdgarScoringMetrics {

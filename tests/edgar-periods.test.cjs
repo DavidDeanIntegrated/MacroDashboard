@@ -98,3 +98,13 @@ test('a margin is withheld when its two figures cover different periods', () =>
     assert.ok(Math.abs(m.netMargin - 100 / 3) < 1e-9);
     assert.equal(computeMetrics(f).grossMargin, null);
   }));
+
+test('the latest filing period is the newest end date across the statements', () =>
+  withFacts({ 'us-gaap': {
+    NetIncomeLoss: concept(fiscalYear),
+    StockholdersEquity: { label: '', description: '', units: { USD: [
+      { end: '2025-09-30', val: 950, form: '10-Q', fy: 2026, fp: 'Q1', filed: '2025-10-29', accn: 'q' },
+    ] } },
+  } }, (f) => {
+    assert.equal(require('../src/lib/edgar.ts').latestFilingPeriod(f), '2025-09-30');
+  }));
