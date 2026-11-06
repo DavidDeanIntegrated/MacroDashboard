@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { Card, CardTitle } from '@/components/ui/Card';
 import { LoadingCard, EmptyState } from '@/components/ui/Loading';
 import { Badge, RegimeBadge } from '@/components/ui/Badge';
-import { useMacroRegime, useMarketNews, useApi, usePortfolio } from '@/lib/hooks';
+import { useRegimeContext, useMarketNews, usePortfolio } from '@/lib/hooks';
+import { RegimeStatusNote } from '@/components/RegimeStatusNote';
 import { timeAgo } from '@/lib/format';
 import { HOLDINGS, WATCHLIST, type HoldingPosition } from '@/lib/holdings';
 import { computeSleeveData, getSleeveStatus, type RegimeKey } from '@/lib/sleeves';
@@ -24,7 +25,10 @@ const DEFAULT_WATCHLIST: WatchlistItem[] = Array.from(
   .map((symbol) => ({ symbol }));
 
 export default function AlertsPage() {
-  const { data: regime, loading: regimeLoading } = useMacroRegime();
+  // One small regime request feeds both the signal card and the compound alerts.
+  const regimeContext = useRegimeContext();
+  const regime = regimeContext.assessment;
+  const regimeLoading = regimeContext.status === 'loading';
   const { data: marketNews, loading: newsLoading } = useMarketNews();
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>(DEFAULT_WATCHLIST);
   const [newSymbol, setNewSymbol] = useState('');
@@ -93,9 +97,8 @@ export default function AlertsPage() {
     : [];
 
   // Regime-aware compound alerts (macro regime × portfolio sleeve drift)
-  const { data: dashboard } = useApi<DashboardData>('/api/fred?action=dashboard');
   const { data: portfolio } = usePortfolio();
-  const compoundAlerts = getCompoundAlerts(dashboard?.regime, portfolio?.positions);
+  const compoundAlerts = getCompoundAlerts(regime ?? undefined, portfolio?.positions);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -199,7 +202,9 @@ export default function AlertsPage() {
               </div>
             )}
           </div>
-        ) : null}
+        ) : (
+          <RegimeStatusNote status={regimeContext.status} error={regimeContext.error} onRetry={regimeContext.retry} />
+        )}
       </Card>
 
       {/* Regime-Aware Signals — macro regime combined with portfolio sleeve drift */}
@@ -208,7 +213,9 @@ export default function AlertsPage() {
         <p className="text-sm text-black/45 mt-1">
           Compound alerts that only fire when two things line up: the macro <Term k="regime">regime</Term> creates a risk, <em>and</em> your <Term k="sleeve">sleeve</Term> allocation is exposed to it. Either condition alone is unremarkable — the combination is what deserves attention.
         </p>
-        {compoundAlerts.length === 0 ? (
+        {!regime ? (
+          <RegimeStatusNote status={regimeContext.status} error={regimeContext.error} onRetry={regimeContext.retry} />
+        ) : compoundAlerts.length === 0 ? (
           <div className="mt-4 p-3 bg-black/[0.02] rounded-xl">
             <p className="text-sm text-black/55">
               No compound macro/portfolio signals — sleeves aligned with the current regime.
@@ -394,10 +401,6 @@ interface DashboardRegime {
   growthTrend: string;
   latestInflation: number | null;
   latestUnemployment: number | null;
-}
-
-interface DashboardData {
-  regime?: DashboardRegime;
 }
 
 interface CompoundAlert {
