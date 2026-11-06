@@ -1,7 +1,6 @@
 'use client';
 
 import { EconomicEvidence, EconomicOutlook } from '@/components/EconomicAssessment';
-import type { EconomicAssessment as Assessment } from '@/lib/economy';
 
 import Link from 'next/link';
 import { buildRebalancePlan } from '@/lib/rebalance';
@@ -9,7 +8,8 @@ import { useMemo } from 'react';
 import { Card, CardTitle, MetricCard } from '@/components/ui/Card';
 import { LoadingPage } from '@/components/ui/Loading';
 import { Badge } from '@/components/ui/Badge';
-import { usePortfolio, useMarketAggregates, useApi } from '@/lib/hooks';
+import { usePortfolio, useMarketAggregates, useRegimeContext } from '@/lib/hooks';
+import { RegimeStatusNote } from '@/components/RegimeStatusNote';
 import { formatCurrency } from '@/lib/format';
 import { Term, Explainer } from '@/components/ui/Term';
 import {
@@ -20,25 +20,6 @@ import {
   type SleeveLean,
 } from '@/lib/sleeves';
 
-interface RegimeResult {
-  regime: RegimeKey;
-  label: string;
-  description: string;
-  inflationTrend: 'rising' | 'falling' | 'stable';
-  growthTrend: 'accelerating' | 'decelerating' | 'stable';
-  latestInflation: number | null;
-  latestUnemployment: number | null;
-}
-
-type Obs = { date: string; value: number | null };
-
-interface DashboardData {
-  assessment?: Assessment;
-  regime?: RegimeResult;
-  t10y2y?: Obs[];
-  vix?: Obs[];
-  fedFunds?: Obs[];
-}
 
 const REGIME_STYLE: Record<RegimeKey, { bg: string; text: string; badge: 'green' | 'orange' | 'red' | 'blue' | 'neutral' }> = {
   goldilocks:  { bg: 'bg-accent-green/[0.06]', text: 'text-accent-green', badge: 'green' },
@@ -54,14 +35,6 @@ const LEAN_STYLE: Record<SleeveLean, { label: string; badge: 'green' | 'orange' 
   neutral: { label: 'Neutral', badge: 'neutral' },
 };
 
-function latest(arr?: Obs[]): number | null {
-  if (!arr || arr.length === 0) return null;
-  for (let i = arr.length - 1; i >= 0; i--) {
-    if (arr[i].value != null) return arr[i].value;
-  }
-  return null;
-}
-
 function trendArrow(t?: string): string {
   if (t === 'rising' || t === 'accelerating') return '↑';
   if (t === 'falling' || t === 'decelerating') return '↓';
@@ -70,12 +43,15 @@ function trendArrow(t?: string): string {
 
 export default function BriefingPage() {
   const { data: portfolio, loading, error: portfolioError, refreshError: portfolioRefreshError } = usePortfolio();
-  const { data: dashboard, error: macroError, refreshError: macroRefreshError } = useApi<DashboardData>('/api/fred?action=dashboard');
-  const refreshWarning = portfolioRefreshError || macroRefreshError;
+  // Regime call fetched by this page itself — the Briefing never depends on another page loading first.
+  const regimeContext = useRegimeContext();
+  const macroError = regimeContext.error;
+  const regimeReady = regimeContext.status === 'ready';
+  const refreshWarning = portfolioRefreshError;
   const { data: spyDaily } = useMarketAggregates('SPY', '1day');
 
   // Sleeve bands are regime-adjusted — the same bands the rebalance engine trades to.
-  const sleeveRegime: RegimeKey = dashboard?.regime?.regime ?? 'unknown';
+  const sleeveRegime: RegimeKey = regimeContext.regimeKey;
   const sleeves = useMemo(
     () => (portfolio ? computeSleeveData(portfolio.positions, sleeveRegime) : []),
     [portfolio, sleeveRegime]
@@ -98,21 +74,22 @@ export default function BriefingPage() {
 
   if (loading) return <LoadingPage />;
 
-  const regime = dashboard?.regime;
-  const regimeKey: RegimeKey = regime?.regime ?? 'unknown';
+  const regime = regimeContext.assessment;
+  const regimeKey: RegimeKey = regimeContext.regimeKey;
   const style = REGIME_STYLE[regimeKey];
   const guidance = REGIME_SLEEVE_GUIDANCE[regimeKey];
 
-  const t10y2y = latest(dashboard?.t10y2y);
-  const vix = latest(dashboard?.vix);
+  const t10y2y = regimeContext.latest?.t10y2y?.value ?? null;
+  const vix = regimeContext.latest?.vix?.value ?? null;
 
   // Build the action queue: off-target sleeves + drawdown ladder cue.
   // Each action carries a `why` so the reasoning is visible, not just the instruction.
   const actions: Array<{ tone: 'sell' | 'buy' | 'info'; text: string; why: string }> = [];
-  const plan = portfolio ? buildRebalancePlan(portfolio.positions, portfolio.portfolioValue, regimeKey) : null;
+  // Trades are sized to regime-adjusted bands, so none are queued until the regime has loaded.
+  const plan = portfolio && regimeReady ? buildRebalancePlan(portfolio.positions, portfolio.portfolioValue, regimeKey) : null;
   if (plan?.blockedReason) actions.push({ tone: 'info', text: 'Strategic suggestions withheld', why: plan.blockedReason });
   else if (plan) for (const recommendation of [...plan.sells, ...plan.buys, ...plan.notes]) actions.push({ tone: recommendation.kind === 'note' ? 'info' : recommendation.kind, text: recommendation.action, why: recommendation.reason });
-  if (portfolio && !plan?.blockedReason && drawdown && drawdown.pct <= -10) {
+  if (plan && !plan.blockedReason && drawdown && drawdown.pct <= -10) {
     actions.push({
       tone: 'info',
       text: drawdown.pct <= -25
@@ -145,21 +122,22 @@ export default function BriefingPage() {
         )}
       </div>
 
-      {(portfolioError || macroError) && <Card><p role="alert" className="text-sm text-accent-red">{[portfolioError, macroError].filter(Boolean).join(' · ')} — suggestions are withheld until the data loads.</p></Card>}
-      {!portfolioError && !macroError && refreshWarning && <Card><p role="status" className="text-sm text-accent-orange">Latest refresh failed ({refreshWarning}). Showing the last successful data.</p></Card>}
+      {portfolioError && <Card><p role="alert" className="text-sm text-accent-red">{portfolioError} — suggestions are withheld until the data loads.</p></Card>}
+      {!portfolioError && refreshWarning && <Card><p role="status" className="text-sm text-accent-orange">Latest refresh failed ({refreshWarning}). Showing the last successful data.</p></Card>}
       {/* Regime verdict */}
       <Card className={style.bg}>
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div className="max-w-2xl">
             <div className="flex items-center gap-3 mb-1.5">
               <CardTitle>Macro Regime</CardTitle>
-              <Badge variant={style.badge}>{regime?.label ?? 'Loading…'}</Badge>
+              <Badge variant={style.badge}>{regime?.label ?? (regimeContext.status === 'loading' ? 'Loading…' : 'Unavailable')}</Badge>
             </div>
-            <p className="text-sm text-black/55 leading-relaxed">{regime?.description ?? 'Fetching the latest macro read…'}</p>
+            <p className="text-sm text-black/55 leading-relaxed">{regime?.description ?? (regimeContext.status === 'loading' ? 'Fetching the latest macro read…' : 'The macro read couldn\'t be loaded.')}</p>
+            {regimeContext.status === 'unavailable' && <RegimeStatusNote status="unavailable" error={macroError} onRetry={regimeContext.retry} />}
             <Explainer title="How is this regime determined — and what's the evidence?">
-              <EconomicEvidence assessment={dashboard?.assessment} />
+              <EconomicEvidence assessment={regime ?? undefined} />
             </Explainer>
-            <EconomicOutlook assessment={dashboard?.assessment} />
+            <EconomicOutlook assessment={regime ?? undefined} />
           </div>
           <div className="flex flex-col gap-1.5 shrink-0 text-sm font-medium">
             <Link href="/macro" className="text-accent-blue hover:text-accent-blue/80">Full macro view →</Link>
@@ -213,7 +191,13 @@ export default function BriefingPage() {
         <p className="text-xs text-black/40 mt-1 mb-4">
           Concrete to-dos generated from two mechanical checks: is any <Term k="sleeve">sleeve</Term> outside its target band (<Term k="rebalancing">rebalancing</Term>), and has the market fallen far enough to trigger the <Term k="drawdown-ladder">dry-powder ladder</Term>. No prediction involved — just your own pre-set rules, checked against today&apos;s numbers.
         </p>
-        {actions.length === 0 ? (
+        {!regimeReady ? (
+          <p role="status" className="text-sm text-black/55">
+            {regimeContext.status === 'loading'
+              ? 'Waiting for the current economic regime — trades are sized to the regime-adjusted bands, so none are queued until it loads.'
+              : 'Suggestions withheld until the economic regime loads (see the Macro Regime card above).'}
+          </p>
+        ) : actions.length === 0 ? (
           <div className="flex items-center gap-2 text-sm text-black/55">
             <span className="inline-block w-2 h-2 rounded-full bg-accent-green" />
             All sleeves are inside their target bands and no drawdown trigger is active — no mechanical trades suggested. This does not assess economic suitability.
@@ -243,6 +227,7 @@ export default function BriefingPage() {
             <p className="text-xs text-black/40 mt-1">
               Each <Term k="sleeve">sleeve</Term> is a bucket of holdings with one job — growth, inflation protection, ready cash, or asymmetric upside. The shaded band on each bar is its target range for the current regime (the baseline band shifted by the regime tilt, shown in brackets when it differs); the solid bar is where it sits today. Chips show how the {regime?.label ?? 'current'} regime tilts each sleeve.
             </p>
+            <RegimeStatusNote status={regimeContext.status} error={macroError} onRetry={regimeContext.retry} />
           </div>
           <Link href="/portfolio" className="text-sm font-medium text-accent-blue hover:text-accent-blue/80">
             Holdings & sub-sleeves →
@@ -267,9 +252,11 @@ export default function BriefingPage() {
                       {s.weight.toFixed(1)}% / {s.targetMin}–{s.targetMax}%
                       {s.tilt !== 0 && <span className="text-black/35"> (baseline {s.baseMin}–{s.baseMax}%)</span>}
                     </span>
-                    <Badge variant={status === 'in-range' ? 'green' : status === 'over' ? 'orange' : 'blue'}>
-                      {status === 'in-range' ? 'In Range' : status === 'over' ? 'Over' : 'Under'}
-                    </Badge>
+                    {regimeContext.status !== 'loading' && (
+                      <Badge variant={status === 'in-range' ? 'green' : status === 'over' ? 'orange' : 'blue'}>
+                        {status === 'in-range' ? 'In Range' : status === 'over' ? 'Over' : 'Under'}
+                      </Badge>
+                    )}
                   </div>
                 </div>
                 {/* target band + current bar */}
@@ -289,7 +276,7 @@ export default function BriefingPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <MetricCard label="Portfolio Value" value={formatCurrency(portfolio.portfolioValue)} change={`${portfolio.dayChange >= 0 ? '+' : ''}${formatCurrency(portfolio.dayChange)}`} changeLabel="today" trend={portfolio.dayChange >= 0 ? 'up' : 'down'} />
           <MetricCard label="Positions" value={portfolio.positions.length.toString()} />
-          <MetricCard label="Sleeves Off-Target" value={actions.filter((a) => a.tone !== 'info').length.toString()} change={actions.length === 0 ? 'balanced' : 'needs action'} />
+          <MetricCard label="Sleeves Off-Target" value={regimeReady ? actions.filter((a) => a.tone !== 'info').length.toString() : '—'} change={!regimeReady ? '' : actions.length === 0 ? 'balanced' : 'needs action'} />
           <MetricCard label="SPY vs 3-Mo High" value={drawdown ? `${drawdown.pct.toFixed(1)}%` : '—'} change={drawdown ? drawdown.severity : ''} trend={drawdown && drawdown.pct < 0 ? 'down' : 'up'} />
         </div>
       )}

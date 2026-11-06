@@ -12,6 +12,7 @@ import { formatCurrency } from '@/lib/format';
 import type { HoldingPosition } from '@/lib/holdings';
 import { buildRebalancePlan, nextQuarterEnd, type RebalanceRec } from '@/lib/rebalance';
 import { computeSleeveData, type RegimeKey } from '@/lib/sleeves';
+import type { RegimeStatus } from '@/lib/hooks';
 
 const fmtUsd = (v: number) => formatCurrency(v, { decimals: 0 });
 
@@ -54,11 +55,27 @@ export function RecommendedUpdates({
   positions,
   portfolioValue,
   regimeKey = 'unknown',
+  regimeStatus = 'ready',
 }: {
   positions: HoldingPosition[];
   portfolioValue: number;
   regimeKey?: RegimeKey;
+  regimeStatus?: RegimeStatus;
 }) {
+  // Trades are sized to regime-adjusted bands, so none are suggested until the regime itself has loaded —
+  // baseline trades shown in the meantime would change or vanish once it arrives.
+  if (regimeStatus !== 'ready') {
+    return (
+      <Card>
+        <CardTitle>Strategic Rebalance Rules</CardTitle>
+        <p role="status" className="text-sm text-black/55 mt-2">
+          {regimeStatus === 'loading'
+            ? 'Waiting for the current economic regime — trades are sized to the regime-adjusted bands, so none are suggested until it loads.'
+            : 'Suggestions withheld: the current economic regime couldn\'t be loaded, and trades are sized to the regime-adjusted bands. Use “Try again” on the sleeve allocation card above.'}
+        </p>
+      </Card>
+    );
+  }
   const plan = buildRebalancePlan(positions, portfolioValue, regimeKey);
   const tilted = computeSleeveData(positions, regimeKey).filter((s) => s.tilt !== 0);
   const trades = [...plan.sells, ...plan.buys];

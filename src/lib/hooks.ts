@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { HoldingsPortfolio } from './holdings';
 import type { FundamentalsScore } from './fundamentals-score';
 import type { EconomicAssessment } from './economy';
+import type { RegimeKey } from './sleeves';
+import type { RegimeHistory } from './regime-history';
 
 interface UseApiOptions {
   refreshInterval?: number; // ms, 0 = no auto-refresh
@@ -122,6 +124,52 @@ export function useYieldCurve() {
 // The regime action returns the full economic assessment (today's regime + the outlook).
 export function useMacroRegime() {
   return useApi<EconomicAssessment>('/api/fred?action=regime');
+}
+
+export type RegimeStatus = 'loading' | 'ready' | 'unavailable';
+
+export interface RegimeContext {
+  /** 'loading' and 'unavailable' are NOT the same as an unclear regime — only 'ready' carries a real call. */
+  status: RegimeStatus;
+  /** The live regime once loaded; 'unknown' while loading or unavailable (= baseline bands). */
+  regimeKey: RegimeKey;
+  assessment: EconomicAssessment | null;
+  regimeHistory: RegimeHistory | null;
+  /** Latest 10Y–2Y spread and VIX readings, for pages that show them beside the regime. */
+  latest: { t10y2y: { date: string; value: number } | null; vix: { date: string; value: number } | null } | null;
+  error: string | null;
+  retry: () => void;
+}
+
+const REGIME_AUTO_RETRIES = 2;
+const REGIME_RETRY_DELAY_MS = 10000;
+
+// Regime call + history only, fetched by each page itself so no page depends on another
+// having warmed the server cache. A cold server can take ~10–30s to assemble the FRED
+// series, so the timeout is generous and a failed first load retries on its own.
+export function useRegimeContext(): RegimeContext {
+  const { data, error, loading, refresh } = useApi<{ assessment: EconomicAssessment; regimeHistory: RegimeHistory | null; latest?: RegimeContext['latest'] }>(
+    '/api/fred?action=regime-context',
+    { timeoutMs: 90000 }
+  );
+  const [retries, setRetries] = useState(0);
+  useEffect(() => {
+    if (!error || data || loading || retries >= REGIME_AUTO_RETRIES) return;
+    const timer = setTimeout(() => { setRetries((n) => n + 1); refresh(); }, REGIME_RETRY_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [error, data, loading, retries, refresh]);
+
+  const assessment = data?.assessment ?? null;
+  const status: RegimeStatus = assessment ? 'ready' : loading || (error && retries < REGIME_AUTO_RETRIES) ? 'loading' : 'unavailable';
+  return {
+    status,
+    regimeKey: status === 'ready' && assessment ? assessment.regime : 'unknown',
+    assessment,
+    regimeHistory: data?.regimeHistory ?? null,
+    latest: data?.latest ?? null,
+    error: status === 'unavailable' ? error : null,
+    retry: () => { setRetries(0); refresh(); },
+  };
 }
 
 export function usePortfolio() {
