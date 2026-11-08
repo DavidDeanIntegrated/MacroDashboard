@@ -15,13 +15,13 @@ export interface Holding {
 }
 
 // Date the quantities below were last reconciled against the brokerage. Update with every holdings change.
-export const HOLDINGS_AS_OF = '2026-10-23';
+export const HOLDINGS_AS_OF = '2026-11-08';
 
 export const HOLDINGS: Holding[] = [
   { symbol: 'BTC',  qty: 0.00716019, category: 'Crypto', costBasis: 93144.18 },
   { symbol: 'VTI',  qty: 3.1556,     category: 'Broad Market', costBasis: 351.61 },
-  { symbol: 'SGOV', qty: 7.848285,   category: 'Dry Powder', costBasis: 100.47 },
-  { symbol: 'GLD',  qty: 1.542888,   category: 'Gold', costBasis: 444.24 },
+  { symbol: 'SGOV', qty: 7.873959,   category: 'Dry Powder', costBasis: 100.47 },
+  { symbol: 'GLD',  qty: 1.635995,   category: 'Gold', costBasis: 440.35 },
   { symbol: 'VTV',  qty: 2.026699,   category: 'Value', costBasis: 209.22 },
   { symbol: 'VXUS', qty: 3.758219,   category: 'International', costBasis: 83.02 },
   { symbol: 'NVDA', qty: 0.860036,   category: 'Quality Compounder', costBasis: 190.46 },
@@ -32,7 +32,7 @@ export const HOLDINGS: Holding[] = [
   // RKLB sold in full 2026-08-11 @ $77.61 (realized +$40.91)
   // RVI sold in full 2026-08-14 @ $28.51 (realized -$11.50)
   { symbol: 'VST',  qty: 1.26874,    category: 'High Conviction', costBasis: 136.99 },
-  { symbol: 'SPCX', qty: 3.2074,     category: 'Conviction Core', costBasis: 135.94 },
+  { symbol: 'SPCX', qty: 4.2074,     category: 'Conviction Core', costBasis: 133.34 },
 ];
 
 // Category display order and badge variants
