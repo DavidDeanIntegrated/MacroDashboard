@@ -9,9 +9,7 @@ import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart';
 import { AllocationPieChart } from '@/components/charts/AllocationPieChart';
 import { FundamentalsScoreSection } from '@/components/FundamentalsScoreCard';
 import { AllWeatherSection } from '@/components/AllWeatherSection';
-import { usePortfolio, usePortfolioChart, useMarketAggregates, useMarketRSI, usePortfolioDividends, useWatchlist, useFundamentalsScores, useWma200, useApi } from '@/lib/hooks';
-import type { RegimeKey } from '@/lib/sleeves';
-import type { RegimeHistory } from '@/lib/regime-history';
+import { usePortfolio, usePortfolioChart, useMarketAggregates, useMarketRSI, usePortfolioDividends, useWatchlist, useFundamentalsScores, useWma200, useRegimeContext } from '@/lib/hooks';
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/format';
 import { Term } from '@/components/ui/Term';
 import { CATEGORY_CONFIG, WATCHLIST, WATCHLIST_CATEGORY_CONFIG } from '@/lib/holdings';
@@ -82,9 +80,9 @@ export default function PortfolioPage() {
     [wma200Data]
   );
 
-  // Macro regime — drives the regime-adjusted target overlay on the sleeve graph
-  const { data: macroDash } = useApi<{ regime?: { regime?: string }; regimeHistory?: RegimeHistory | null }>('/api/fred?action=dashboard');
-  const regimeKey = (macroDash?.regime?.regime as RegimeKey) ?? 'unknown';
+  // Macro regime — drives the regime-adjusted target overlay on the sleeve graph.
+  // Fetched here (not shared with the Macro page) so Holdings loads on its own.
+  const regime = useRegimeContext();
 
   // Watchlist
   const { data: watchlist } = useWatchlist();
@@ -375,8 +373,11 @@ export default function PortfolioPage() {
       <AllWeatherSection
         positions={portfolio.positions}
         portfolioValue={portfolio.portfolioValue}
-        regimeKey={regimeKey}
-        regimeHistory={macroDash?.regimeHistory}
+        regimeKey={regime.regimeKey}
+        regimeStatus={regime.status}
+        regimeError={regime.error}
+        onRegimeRetry={regime.retry}
+        regimeHistory={regime.regimeHistory}
         scores={portfolioScores ?? undefined}
       />
 

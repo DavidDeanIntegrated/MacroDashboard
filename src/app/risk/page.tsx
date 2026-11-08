@@ -6,14 +6,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useApi, useFundamentalsScores } from '@/lib/hooks';
+import { useApi, useFundamentalsScores, useRegimeContext } from '@/lib/hooks';
 import { type HoldingsPortfolio } from '@/lib/holdings';
 import { Card, CardTitle } from '@/components/ui/Card';
 import { ErrorState, LoadingCard } from '@/components/ui/Loading';
 import { Term, Explainer } from '@/components/ui/Term';
 import { SCENARIOS, scenarioDefaults, stressPortfolio, lookThrough, parseResearchInputs, researchChanges, type Scenario, type ResearchInputs, type RiskEstimate, type Sensitivity } from '@/lib/portfolio-risk';
 import { macroSensitivity } from '@/lib/macro-sensitivity';
-import type { EconomicAssessment } from '@/lib/economy';
 import { formatCurrency } from '@/lib/format';
 
 interface RiskData {
@@ -34,7 +33,7 @@ const SCENARIO_PLAIN: Record<Scenario, string> = {
 
 export default function RiskPage() {
   const { data, loading, error, refresh } = useApi<RiskData>('/api/risk', { timeoutMs: 120000 });
-  const { data: macro } = useApi<{ assessment: EconomicAssessment }>('/api/fred?action=dashboard');
+  const regimeContext = useRegimeContext();
   const symbols = useMemo(() => (data?.portfolio.positions ?? []).filter((p) => p.symbol !== 'CASH').map((p) => p.symbol), [data]);
   const { data: fundamentals, error: fundamentalsError } = useFundamentalsScores(symbols);
   const [scenario, setScenario] = useState<Scenario>('Demand recession');
@@ -53,7 +52,7 @@ export default function RiskPage() {
   const stress = stressPortfolio(positions, shocks);
   const overlap = lookThrough(positions, research.constituents);
   const revisions = researchChanges(research.observations);
-  const assessment = macro?.assessment;
+  const assessment = regimeContext.assessment ?? undefined;
   const top = data?.risk.contributions[0];
   const topRatio = top && top.weight > 0 ? top.varianceShare / top.weight : null;
 
@@ -97,7 +96,7 @@ export default function RiskPage() {
         <>
           <Card>
             <CardTitle>The short version</CardTitle>
-            <p className="mt-2 text-sm text-black/65 leading-relaxed max-w-3xl">{assessment?.description ?? 'The economic assessment is still loading.'}</p>
+            <p className="mt-2 text-sm text-black/65 leading-relaxed max-w-3xl">{assessment?.description ?? (regimeContext.status === 'loading' ? 'The economic assessment is still loading.' : 'The economic assessment couldn\'t be loaded.')}</p>
             <p className="mt-2 text-sm text-black/65 leading-relaxed max-w-3xl">
               {top
                 ? <>Your biggest source of day-to-day swings is <span className="font-medium text-black/80">{top.symbol}</span>: it is {fmt(top.weight)}% of your money but {fmt(top.varianceShare)}% of your portfolio&apos;s variance{topRatio !== null && topRatio > 1.5 ? ` — about ${topRatio.toFixed(1)}× its weight` : ''}.</>

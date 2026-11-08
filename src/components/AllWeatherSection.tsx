@@ -21,6 +21,8 @@ import { Term } from '@/components/ui/Term';
 import { RecommendedUpdates } from '@/components/RecommendedUpdates';
 import { RegimeShiftCard } from '@/components/RegimeShift';
 import type { RegimeHistory } from '@/lib/regime-history';
+import type { RegimeStatus } from '@/lib/hooks';
+import { RegimeStatusNote } from '@/components/RegimeStatusNote';
 
 export interface FundamentalsScoreLite {
   symbol: string;
@@ -90,9 +92,11 @@ function CollapsibleSection({
 function SleeveComparisonBars({
   sleeves,
   regimeKey = 'unknown',
+  regimeStatus = 'ready',
 }: {
   sleeves: ReturnType<typeof computeSleeveData>;
   regimeKey?: RegimeKey;
+  regimeStatus?: RegimeStatus;
 }) {
   return (
     <div className="space-y-4">
@@ -110,7 +114,8 @@ function SleeveComparisonBars({
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-sm tabular-nums text-black/55">{sleeve.weight.toFixed(1)}%</span>
-                {statusBadge(status)}
+                {/* No verdict until the regime band is known — a baseline grade would flip seconds later. */}
+                {regimeStatus !== 'loading' && statusBadge(status)}
               </div>
             </div>
             <div className="relative h-6 bg-black/[0.03] rounded-lg overflow-hidden">
@@ -264,10 +269,12 @@ function RebalanceSimulator({
   sleeves,
   portfolioValue,
   regimeKey = 'unknown',
+  regimeStatus = 'ready',
 }: {
   sleeves: ReturnType<typeof computeSleeveData>;
   portfolioValue: number;
   regimeKey?: RegimeKey;
+  regimeStatus?: RegimeStatus;
 }) {
   const [deltas, setDeltas] = useState<Record<string, number>>({});
   const netCash = Object.values(deltas).reduce((s, v) => s + (v || 0), 0);
@@ -350,7 +357,11 @@ function RebalanceSimulator({
         <span>Projected total: <span className="font-medium text-black/70">{formatCurrency(projTotal)}</span></span>
       </div>
       <p className="mt-2 text-[11px] text-black/40">
-        {regimeKey === 'unknown'
+        {regimeStatus === 'loading'
+          ? 'The economic regime is still loading — the regime-adjusted target appears here once it arrives.'
+          : regimeStatus === 'unavailable'
+          ? 'The economic regime couldn\'t be loaded, so only the baseline target is shown — it is not adjusted for the current season.'
+          : regimeKey === 'unknown'
           ? 'The regime read is unclear right now, so no regime tilt applies — the baseline target is the only target.'
           : <>Status badges grade against the{' '}
               <Term def="The baseline band nudged up or down for the current macro regime — e.g., stagflation shifts weight from equities toward real assets and cash. Tilts across sleeves sum to roughly zero. A green regime band means the projected weight lands inside it.">regime-adjusted target</Term>{' '}
@@ -511,12 +522,18 @@ export function AllWeatherSection({
   positions,
   portfolioValue,
   regimeKey = 'unknown',
+  regimeStatus = 'ready',
+  regimeError,
+  onRegimeRetry,
   regimeHistory,
   scores,
 }: {
   positions: HoldingPosition[];
   portfolioValue: number;
   regimeKey?: RegimeKey;
+  regimeStatus?: RegimeStatus;
+  regimeError?: string | null;
+  onRegimeRetry?: () => void;
   regimeHistory?: RegimeHistory | null;
   scores?: FundamentalsScoreLite[];
 }) {
@@ -579,6 +596,7 @@ export function AllWeatherSection({
         <p className="text-xs text-black/40 mt-1">
           Four sleeves designed to perform across all economic seasons: growth, inflation, deflation, and contraction
         </p>
+        <RegimeStatusNote status={regimeStatus} error={regimeError} onRetry={onRegimeRetry} />
         <div className="mt-6 flex flex-col lg:flex-row gap-8">
           {/* Donut chart */}
           <div className="lg:w-2/5">
@@ -595,7 +613,7 @@ export function AllWeatherSection({
           </div>
           {/* Horizontal bar comparison */}
           <div className="lg:w-3/5">
-            <SleeveComparisonBars sleeves={sleeves} regimeKey={regimeKey} />
+            <SleeveComparisonBars sleeves={sleeves} regimeKey={regimeKey} regimeStatus={regimeStatus} />
           </div>
         </div>
       </Card>
@@ -604,7 +622,7 @@ export function AllWeatherSection({
       <RegimeShiftCard history={regimeHistory} portfolioValue={portfolioValue} />
 
       {/* ─── Recommended Updates (live rebalance suggestions) ─── */}
-      <RecommendedUpdates positions={positions} portfolioValue={portfolioValue} regimeKey={regimeKey} />
+      <RecommendedUpdates positions={positions} portfolioValue={portfolioValue} regimeKey={regimeKey} regimeStatus={regimeStatus} />
 
       {/* ─── Sub-Sleeve Equity Breakdown ─── */}
       <SubSleeveBreakdownCard
@@ -690,7 +708,7 @@ export function AllWeatherSection({
       </CollapsibleSection>
 
       {/* ─── Rebalance Simulator ─── */}
-      <RebalanceSimulator sleeves={sleeves} portfolioValue={portfolioValue} regimeKey={regimeKey} />
+      <RebalanceSimulator sleeves={sleeves} portfolioValue={portfolioValue} regimeKey={regimeKey} regimeStatus={regimeStatus} />
 
       {/* ─── Investment Thesis ─── */}
       <CollapsibleSection
