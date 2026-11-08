@@ -78,7 +78,7 @@
 
 import { getSnapshot } from './market-data';
 import { getEarnings, getBasicFinancials, type EarningsEstimate, type BasicFinancials } from './finnhub';
-import { getCompanyFundamentals, getCompanySic, extractScoringMetrics, type EdgarScoringMetrics, type CompanyFundamentals } from './edgar';
+import { getCompanyFundamentals, getCompanySic, extractScoringMetrics, latestFilingPeriod, type EdgarScoringMetrics, type CompanyFundamentals } from './edgar';
 import { withCache, TTL } from './cache';
 import { type Anchor, lerpScore, round1 } from './scoring-utils';
 
@@ -815,7 +815,7 @@ export async function computeFundamentalsScore(symbol: string): Promise<Fundamen
     const total = Math.round(pProf.pts + pGrow.pts + pVal.pts + pHealth.pts + pEarn.pts);
     const { grade, color } = getGrade(total);
 
-    const dataAsOf = null;
+    const dataAsOf = edgarFundamentals ? latestFilingPeriod(edgarFundamentals) : null;
 
     const breakdown: FundamentalsBreakdown = {
       profitabilityPts: pProf.pts,
