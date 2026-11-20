@@ -11,7 +11,8 @@ export type MacroDriver =
   | 'Inflation'
   | 'Front-end Rates'
   | 'Liquidity / Risk-on'
-  | 'Power demand / Energy';
+  | 'Power demand / Energy'
+  | 'USD peg';
 
 export interface MacroSensitivity {
   driver: MacroDriver;
@@ -20,6 +21,7 @@ export interface MacroSensitivity {
 }
 
 const DRIVER_META: Record<MacroDriver, { badge: MacroSensitivity['badge']; note: string }> = {
+  'USD peg': { badge: 'neutral', note: 'USD stablecoin; value depends on maintaining its dollar peg and issuer reserves.' },
   'Power demand / Energy': { badge: 'orange', note: 'Power demand, electricity prices, fuel costs, hedges, generation reliability and financing costs influence results. Examine company disclosures; a generic growth-stock tag is insufficient.' },
   'Rates / Risk-on':    { badge: 'purple', note: 'Long-duration growth — hurt by rising real rates & tightening liquidity, helped by easing.' },
   'Value / Cyclical':   { badge: 'green',  note: 'Earnings track the cycle; tends to lead in reflation and lag in slowdowns.' },
@@ -35,13 +37,13 @@ const SYMBOL_DRIVER: Record<string, MacroDriver> = {
   // Growth equities / semis / high-conviction → rates & risk appetite
   VST: 'Power demand / Energy',
   NVDA: 'Rates / Risk-on', TSM: 'Rates / Risk-on', MSFT: 'Rates / Risk-on',
-  PLTR: 'Rates / Risk-on', RKLB: 'Rates / Risk-on', RVI: 'Rates / Risk-on', SPCX: 'Rates / Risk-on',
+  PLTR: 'Rates / Risk-on', RKLB: 'Rates / Risk-on', RVI: 'Rates / Risk-on', SPCX: 'Rates / Risk-on', ANT: 'Rates / Risk-on',
   // Core / style / international
   VTI: 'Broad Beta', VTV: 'Value / Cyclical', VXUS: 'Global / USD',
   // Real assets
   GLD: 'Real Rates / USD', BCI: 'Inflation',
   // Cash & crypto
-  SGOV: 'Front-end Rates', BTC: 'Liquidity / Risk-on',
+  SGOV: 'Front-end Rates', BTC: 'Liquidity / Risk-on', SOL: 'Liquidity / Risk-on', ZEC: 'Liquidity / Risk-on', USDC: 'USD peg',
 };
 
 const CATEGORY_DRIVER: Record<string, MacroDriver> = {

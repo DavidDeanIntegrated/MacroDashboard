@@ -1,8 +1,9 @@
-// Static portfolio holdings — manually maintained
+// Static portfolio holdings — reconciled from Robinhood on 2026-11-20
 // Update quantities here when rebalancing
 
 import { getHistoricalBars } from './alpaca';
 import { getAggregates, getQuotes } from './market-data';
+import { isCrypto } from './crypto-symbols';
 import { config } from './config';
 import { fetchJson, redactSecrets } from './fetcher';
 import { withCache, TTL } from './cache';
@@ -15,23 +16,26 @@ export interface Holding {
 }
 
 // Date the quantities below were last reconciled against the brokerage. Update with every holdings change.
-export const HOLDINGS_AS_OF = '2026-11-08';
+export const HOLDINGS_AS_OF = '2026-11-20';
 
 export const HOLDINGS: Holding[] = [
-  { symbol: 'BTC',  qty: 0.00716019, category: 'Crypto', costBasis: 93144.18 },
-  { symbol: 'VTI',  qty: 3.1556,     category: 'Broad Market', costBasis: 351.61 },
-  { symbol: 'SGOV', qty: 7.873959,   category: 'Dry Powder', costBasis: 100.47 },
+  { symbol: 'SOL',  qty: 0.00854, category: 'Crypto', costBasis: 1 / 0.00854 },
+  { symbol: 'ZEC',  qty: 0.00115, category: 'Crypto', costBasis: 1 / 0.00115 },
+  { symbol: 'USDC', qty: 1.02, category: 'Crypto' }, // Robinhood reports no recorded cost basis.
+  { symbol: 'BTC',  qty: 0.00716019, category: 'Crypto', costBasis: 666.93 / 0.00716019 },
+  { symbol: 'VTI',  qty: 3.444809,     category: 'Broad Market', costBasis: 351.12 },
+  { symbol: 'SGOV', qty: 6.582229,   category: 'Dry Powder', costBasis: 100.48 },
   { symbol: 'GLD',  qty: 1.635995,   category: 'Gold', costBasis: 440.35 },
   { symbol: 'VTV',  qty: 2.026699,   category: 'Value', costBasis: 209.22 },
   { symbol: 'VXUS', qty: 3.758219,   category: 'International', costBasis: 83.02 },
-  { symbol: 'NVDA', qty: 0.860036,   category: 'Quality Compounder', costBasis: 190.46 },
-  { symbol: 'TSM',  qty: 0.34034,    category: 'Quality Compounder', costBasis: 311.34 },
+  { symbol: 'NVDA', qty: 1.448760,   category: 'Quality Compounder', costBasis: 175.18 },
+  { symbol: 'TSM',  qty: 0.434296,    category: 'Quality Compounder', costBasis: 313.06 },
   { symbol: 'MSFT', qty: 0.517933,   category: 'Quality Compounder', costBasis: 388.95 },
   { symbol: 'PLTR', qty: 1.212096,   category: 'Quality Compounder', costBasis: 135.02 },
   { symbol: 'BCI',  qty: 8.189264,   category: 'Commodity', costBasis: 22.32 },
   // RKLB sold in full 2026-08-11 @ $77.61 (realized +$40.91)
   // RVI sold in full 2026-08-14 @ $28.51 (realized -$11.50)
-  { symbol: 'VST',  qty: 1.26874,    category: 'High Conviction', costBasis: 136.99 },
+  { symbol: 'ANT',  qty: 2,          category: 'High Conviction', costBasis: 91.02 },
   { symbol: 'SPCX', qty: 4.2074,     category: 'Conviction Core', costBasis: 133.34 },
 ];
 
@@ -77,8 +81,8 @@ export interface HoldingsPortfolio {
   source: string;
 }
 
-async function fetchBtcPrice(): Promise<{ price: number; prevClose: number }> {
-  return withCache('holdings:btc-price', TTL.QUOTES, async () => {
+async function fetchCryptoPrice(symbol: string): Promise<{ price: number; prevClose: number }> {
+  return withCache(`holdings:crypto-price:${symbol}`, TTL.QUOTES, async () => {
     // Try Coinbase first
     try {
       const yesterday = new Date();
@@ -87,11 +91,11 @@ async function fetchBtcPrice(): Promise<{ price: number; prevClose: number }> {
 
       const [spotRes, prevRes] = await Promise.all([
         fetchJson<{ data: { amount: string } }>(
-          'https://api.coinbase.com/v2/prices/BTC-USD/spot',
+          `https://api.coinbase.com/v2/prices/${symbol}-USD/spot`,
           { provider: 'Coinbase' }
         ),
         fetchJson<{ data: { amount: string } }>(
-          `https://api.coinbase.com/v2/prices/BTC-USD/spot?date=${yStr}`,
+          `https://api.coinbase.com/v2/prices/${symbol}-USD/spot?date=${yStr}`,
           { provider: 'Coinbase' }
         ),
       ]);
@@ -100,10 +104,10 @@ async function fetchBtcPrice(): Promise<{ price: number; prevClose: number }> {
       const prevClose = parseFloat(prevRes.data.amount);
       if (price > 0) return { price, prevClose };
     } catch (err) {
-      console.warn('Coinbase BTC price failed, trying Alpaca:', err instanceof Error ? redactSecrets(err.message) : err);
+      console.warn(`Coinbase ${symbol} price failed, trying Alpaca:`, err instanceof Error ? redactSecrets(err.message) : err);
     }
 
-    // Fallback: Alpaca crypto daily bars (BTC/USD)
+    // Fallback: Alpaca crypto daily bars
     try {
       const now = new Date();
       const to = now.toISOString().split('T')[0];
@@ -111,7 +115,7 @@ async function fetchBtcPrice(): Promise<{ price: number; prevClose: number }> {
       from.setDate(from.getDate() - 5); // Get last 5 days to ensure we have 2 trading days
       const fromStr = from.toISOString().split('T')[0];
 
-      const bars = await getAggregates('BTC', '1day', fromStr, to);
+      const bars = await getAggregates(symbol, '1day', fromStr, to);
       if (bars.length >= 2) {
         return {
           price: bars[bars.length - 1].close,
@@ -124,7 +128,7 @@ async function fetchBtcPrice(): Promise<{ price: number; prevClose: number }> {
         };
       }
     } catch (err) {
-      console.warn('Alpaca BTC price also failed:', err instanceof Error ? redactSecrets(err.message) : err);
+      console.warn(`Alpaca ${symbol} price also failed:`, err instanceof Error ? redactSecrets(err.message) : err);
     }
 
     return { price: 0, prevClose: 0 };
@@ -144,9 +148,9 @@ interface PriceData {
 
 export async function fetchPrice(symbol: string): Promise<PriceData> {
   const empty: PriceData = { price: 0, prevClose: 0, open: 0, high: 0, low: 0, volume: 0 };
-  if (symbol === 'BTC') {
-    const btc = await fetchBtcPrice();
-    return { ...empty, price: btc.price, prevClose: btc.prevClose, source: 'Coinbase / Alpaca fallback' };
+  if (isCrypto(symbol)) {
+    const crypto = await fetchCryptoPrice(symbol);
+    return { ...empty, price: crypto.price, prevClose: crypto.prevClose, source: 'Coinbase / Alpaca fallback' };
   }
   // Alpaca: real-time IEX trade, or the latest full-market daily bar when IEX has no print.
   try {
@@ -185,7 +189,7 @@ export function validQuote(price: number, previous: number, asOf?: string | null
 export async function getHoldingsPortfolio(): Promise<HoldingsPortfolio> {
   if (!(config.alpaca.apiKey && config.alpaca.apiSecret)) throw new Error('Portfolio unavailable: configure Alpaca market-data credentials. No allocation suggestions are generated without verified prices.');
   // One batched quote request warms the cache; per-symbol lookups then read from it.
-  await getQuotes(HOLDINGS.filter((h) => h.symbol !== 'BTC').map((h) => h.symbol)).catch(() => undefined);
+  await getQuotes(HOLDINGS.filter((h) => !isCrypto(h.symbol)).map((h) => h.symbol)).catch(() => undefined);
   const prices = await Promise.all(
     HOLDINGS.map((h) => fetchPrice(h.symbol))
   );
@@ -311,7 +315,7 @@ export interface WatchlistPosition {
 }
 
 export async function getWatchlistData(): Promise<WatchlistPosition[]> {
-  await getQuotes(WATCHLIST.filter((w) => w.symbol !== 'BTC').map((w) => w.symbol)).catch(() => undefined);
+  await getQuotes(WATCHLIST.filter((w) => !isCrypto(w.symbol)).map((w) => w.symbol)).catch(() => undefined);
   const prices = await Promise.all(
     WATCHLIST.map((w) => fetchPrice(w.symbol))
   );
@@ -356,7 +360,7 @@ const PERIOD_DAYS: Record<PortfolioChartPeriod, number> = {
   '1Y': 365,
 };
 
-async function fetchBtcDailyBars(days: number): Promise<Map<string, number>> {
+async function fetchCryptoDailyBars(symbol: string, days: number): Promise<Map<string, number>> {
   const map = new Map<string, number>();
 
   // Try Coinbase exchange API first
@@ -369,7 +373,7 @@ async function fetchBtcDailyBars(days: number): Promise<Map<string, number>> {
 
     for (let chunkEnd = now; chunkEnd > earliest; chunkEnd -= maxCandles * granularity) {
       const chunkStart = Math.max(earliest, chunkEnd - maxCandles * granularity);
-      const url = `https://api.exchange.coinbase.com/products/BTC-USD/candles?start=${chunkStart}&end=${chunkEnd}&granularity=${granularity}`;
+      const url = `https://api.exchange.coinbase.com/products/${symbol}-USD/candles?start=${chunkStart}&end=${chunkEnd}&granularity=${granularity}`;
       fetches.push(
         fetchJson<number[][]>(url, { provider: 'Coinbase' }).then((data) => {
           for (const candle of data) {
@@ -383,7 +387,7 @@ async function fetchBtcDailyBars(days: number): Promise<Map<string, number>> {
     await Promise.all(fetches);
     if (map.size > 0) return map;
   } catch (err) {
-    console.warn('Coinbase BTC bars failed, trying Alpaca:', err instanceof Error ? redactSecrets(err.message) : err);
+    console.warn(`Coinbase ${symbol} bars failed, trying Alpaca:`, err instanceof Error ? redactSecrets(err.message) : err);
   }
 
   // Fallback: Alpaca crypto daily bars
@@ -393,13 +397,13 @@ async function fetchBtcDailyBars(days: number): Promise<Map<string, number>> {
     const fromStr = from.toISOString().split('T')[0];
     const toStr = new Date().toISOString().split('T')[0];
 
-    const bars = await getAggregates('BTC', '1day', fromStr, toStr, days + 10);
+    const bars = await getAggregates(symbol, '1day', fromStr, toStr, days + 10);
     for (const bar of bars) {
       const date = bar.date.split('T')[0];
       map.set(date, bar.close);
     }
   } catch (err) {
-    console.warn('Alpaca BTC bars also failed:', err instanceof Error ? redactSecrets(err.message) : err);
+    console.warn(`Alpaca ${symbol} bars also failed:`, err instanceof Error ? redactSecrets(err.message) : err);
   }
 
   return map;
@@ -410,7 +414,7 @@ async function fetchBtcDailyBars(days: number): Promise<Map<string, number>> {
 // week's final close, and average the last 200. Returns null on short data.
 export async function fetchBtcWma200(): Promise<number | null> {
   return withCache('holdings:btc-wma200', TTL.MACRO, async () => {
-    const bars = await fetchBtcDailyBars(200 * 7 + 30);
+    const bars = await fetchCryptoDailyBars('BTC', 200 * 7 + 30);
     if (bars.size < 500) return null;
 
     const weekly = new Map<string, { date: string; close: number }>();
@@ -433,14 +437,14 @@ export async function fetchBtcWma200(): Promise<number | null> {
   });
 }
 
-async function fetchBtcIntradayBars(): Promise<Map<string, number>> {
+async function fetchCryptoIntradayBars(symbol: string): Promise<Map<string, number>> {
   const map = new Map<string, number>();
 
   // Try Coinbase exchange API first
   try {
     const now = Math.floor(Date.now() / 1000);
     const start = now - 86400;
-    const url = `https://api.exchange.coinbase.com/products/BTC-USD/candles?start=${start}&end=${now}&granularity=300`;
+    const url = `https://api.exchange.coinbase.com/products/${symbol}-USD/candles?start=${start}&end=${now}&granularity=300`;
     const data = await fetchJson<number[][]>(url, { provider: 'Coinbase' });
     for (const candle of data) {
       const ts = new Date(candle[0] * 1000).toISOString();
@@ -448,7 +452,7 @@ async function fetchBtcIntradayBars(): Promise<Map<string, number>> {
     }
     if (map.size > 0) return map;
   } catch (err) {
-    console.warn('Coinbase BTC intraday failed, trying Alpaca:', err instanceof Error ? redactSecrets(err.message) : err);
+    console.warn(`Coinbase ${symbol} intraday failed, trying Alpaca:`, err instanceof Error ? redactSecrets(err.message) : err);
   }
 
   // Fallback: Alpaca crypto 5-min bars
@@ -459,12 +463,12 @@ async function fetchBtcIntradayBars(): Promise<Map<string, number>> {
     const fromStr = from.toISOString().split('T')[0];
     const toStr = now.toISOString().split('T')[0];
 
-    const bars = await getAggregates('BTC', '5min', fromStr, toStr, 300);
+    const bars = await getAggregates(symbol, '5min', fromStr, toStr, 300);
     for (const bar of bars) {
       map.set(bar.date, bar.close);
     }
   } catch (err) {
-    console.warn('Alpaca BTC intraday also failed:', err instanceof Error ? redactSecrets(err.message) : err);
+    console.warn(`Alpaca ${symbol} intraday also failed:`, err instanceof Error ? redactSecrets(err.message) : err);
   }
 
   return map;
@@ -476,8 +480,8 @@ export async function getPortfolioChart(
   const days = PERIOD_DAYS[period];
   const isIntraday = period === '1D';
 
-  const stockSymbols = HOLDINGS.filter((h) => h.symbol !== 'BTC');
-  const btcHolding = HOLDINGS.find((h) => h.symbol === 'BTC');
+  const stockSymbols = HOLDINGS.filter((h) => !isCrypto(h.symbol));
+  const cryptoHoldings = HOLDINGS.filter((h) => isCrypto(h.symbol));
 
   if (isIntraday) {
     // On weekends/holidays, fetch the most recent trading day's bars instead of today
@@ -489,7 +493,7 @@ export async function getPortfolioChart(
     const barDateStr = barDate.toISOString().split('T')[0];
 
     // Use 5-minute bars for intraday
-    const [stockBars, btcBars, prevCloses] = await Promise.all([
+    const [stockBars, cryptoBars, prevCloses] = await Promise.all([
       Promise.all(
         stockSymbols.map((h) =>
           fetchBars(h.symbol, '5Min', barDateStr, 200)
@@ -497,7 +501,7 @@ export async function getPortfolioChart(
             .catch(() => ({ symbol: h.symbol, bars: [] as Array<{ date: string; close: number }> }))
         )
       ),
-      btcHolding ? fetchBtcIntradayBars() : Promise.resolve(new Map<string, number>()),
+      Promise.all(cryptoHoldings.map(async (h) => ({ symbol: h.symbol, bars: await fetchCryptoIntradayBars(h.symbol) }))),
       // Fetch previous close for each holding so chart baseline matches day change
       Promise.all(
         HOLDINGS.map((h) =>
@@ -524,14 +528,14 @@ export async function getPortfolioChart(
       }
     }
 
-    if (btcHolding) {
-      if (btcBars.size > 0) intradaySymbolsWithData.add('BTC');
-      btcBars.forEach((close, ts) => {
+    for (const { symbol, bars } of cryptoBars) {
+      if (bars.size > 0) intradaySymbolsWithData.add(symbol);
+      bars.forEach((close, ts) => {
         const d = new Date(ts);
         d.setMinutes(Math.floor(d.getMinutes() / 5) * 5, 0, 0);
         const key = d.toISOString();
         if (!dateMap.has(key)) dateMap.set(key, new Map());
-        dateMap.get(key)!.set('BTC', close);
+        dateMap.get(key)!.set(symbol, close);
       });
     }
 
@@ -553,7 +557,7 @@ export async function getPortfolioChart(
       const prices = dateMap.get(ts)!;
       prices.forEach((price, symbol) => lastKnown.set(symbol, price));
       // Start the line once every holding with intraday data has printed —
-      // BTC's 24h bars and pre-market prints otherwise give a partial sum.
+      // Crypto's 24h bars and pre-market prints otherwise give a partial sum.
       if (Array.from(intradaySymbolsWithData).some((symbol) => !lastKnown.has(symbol))) continue;
       // Only sum holdings that have intraday data to match the baseline
       let total = 0;
@@ -590,7 +594,7 @@ export async function getPortfolioChart(
   const startStr = start.toISOString().split('T')[0];
 
   // Fetch all bars in parallel
-  const [stockBars, btcBars] = await Promise.all([
+  const [stockBars, cryptoBars] = await Promise.all([
     Promise.all(
       stockSymbols.map((h) =>
         fetchBars(h.symbol, '1Day', startStr, days + 10)
@@ -598,7 +602,7 @@ export async function getPortfolioChart(
           .catch(() => ({ symbol: h.symbol, bars: [] as Array<{ date: string; close: number }> }))
       )
     ),
-    btcHolding ? fetchBtcDailyBars(days + 10) : Promise.resolve(new Map<string, number>()),
+    Promise.all(cryptoHoldings.map(async (h) => ({ symbol: h.symbol, bars: await fetchCryptoDailyBars(h.symbol, days + 10) }))),
   ]);
 
   // Build a map: date → { symbol → close }
@@ -619,13 +623,13 @@ export async function getPortfolioChart(
     }
   }
 
-  // Merge BTC
-  if (btcHolding) {
-    Array.from(btcBars.entries()).forEach(([date, close]) => {
+  // Merge every crypto holding
+  for (const { symbol, bars } of cryptoBars) {
+    Array.from(bars.entries()).forEach(([date, close]) => {
       if (!dateMap.has(date)) dateMap.set(date, new Map());
-      dateMap.get(date)!.set('BTC', close);
-      if (!symbolEarliestDate.has('BTC') || date < symbolEarliestDate.get('BTC')!) {
-        symbolEarliestDate.set('BTC', date);
+      dateMap.get(date)!.set(symbol, close);
+      if (!symbolEarliestDate.has(symbol) || date < symbolEarliestDate.get(symbol)!) {
+        symbolEarliestDate.set(symbol, date);
       }
     });
   }

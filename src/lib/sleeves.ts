@@ -72,7 +72,7 @@ export const SUB_SLEEVE_TARGETS: SubSleeveTarget[] = [
   { label: 'VTV (Value)', symbols: ['VTV'], targetMin: 7, targetMax: 9, priority: 'Buy if under' },
   { label: 'VXUS (International)', symbols: ['VXUS'], targetMin: 5.5, targetMax: 6.5, priority: 'Hold / Buy if under' },
   { label: 'Quality Compounders', symbols: ['NVDA', 'TSM', 'MSFT', 'PLTR'], targetMin: 14, targetMax: 16, priority: 'Sell if >17%, Buy if <13%' },
-  { label: 'High Conviction', symbols: ['VST'], targetMin: 0, targetMax: 4, priority: 'Sell first if over' },
+  { label: 'High Conviction', symbols: ['ANT'], targetMin: 0, targetMax: 4, priority: 'Sell first if over' },
   // Added 2026-09-09 at David's request so the equity view is complete. SPCX is
   // still its own Conviction Core sleeve: the rebalance engine looks sub-sleeves up
   // by label and never touches this row — its rules live in CONVICTION_CORE.

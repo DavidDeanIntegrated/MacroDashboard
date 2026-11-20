@@ -14,6 +14,7 @@ import {
 } from './alpaca';
 import { computeSMA, computeEMA, computeRSI, computeMACD, type IndicatorBar } from './indicators';
 import { withCache, TTL } from './cache';
+import { isCrypto, cryptoPair } from './crypto-symbols';
 
 export type { OHLCV } from './alpaca';
 
@@ -37,8 +38,6 @@ const LOOKBACK_DAYS: Record<MarketTimeframe, number> = {
   '1day': 365,
 };
 
-const BTC_PAIR = 'BTC/USD';
-const isBtc = (symbol: string) => symbol === 'BTC' || symbol === 'X:BTCUSD';
 
 function daysAgo(days: number): string {
   return new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
@@ -63,13 +62,13 @@ export async function getAggregates(
 ): Promise<OHLCV[]> {
   const start = from || daysAgo(LOOKBACK_DAYS[timeframe]);
   const tf = ALPACA_TIMEFRAME[timeframe];
-  const bars = isBtc(symbol)
-    ? await getCryptoBars(BTC_PAIR, tf, start, to, limit)
+  const bars = isCrypto(symbol)
+    ? await getCryptoBars(cryptoPair(symbol), tf, start, to, limit)
     : (await getBars([symbol], tf, start, to, limit))[symbol] ?? [];
   return normalize(bars, timeframe);
 }
 
-/** Bars for many symbols with one paginated request (BTC fetched separately). */
+/** Bars for many symbols with one paginated request (crypto fetched separately). */
 export async function getMultiAggregates(
   symbols: string[],
   timeframe: MarketTimeframe = '1day',
@@ -78,18 +77,20 @@ export async function getMultiAggregates(
   limit = 500
 ): Promise<Array<{ symbol: string; data: OHLCV[] }>> {
   const start = from || daysAgo(LOOKBACK_DAYS[timeframe]);
-  const stocks = symbols.filter((s) => !isBtc(s));
-  const [stockBars, btcBars] = await Promise.all([
+  const stocks = symbols.filter((s) => !isCrypto(s));
+  const [stockBars, cryptoBars] = await Promise.all([
     stocks.length > 0
       ? getBars(stocks, ALPACA_TIMEFRAME[timeframe], start, to, limit)
       : Promise.resolve({} as Record<string, OHLCV[]>),
-    symbols.some(isBtc)
-      ? getCryptoBars(BTC_PAIR, ALPACA_TIMEFRAME[timeframe], start, to, limit).catch(() => [])
-      : Promise.resolve([] as OHLCV[]),
+    Promise.all(symbols.filter(isCrypto).map(async (symbol) => ({
+      symbol,
+      bars: await getCryptoBars(cryptoPair(symbol), ALPACA_TIMEFRAME[timeframe], start, to, limit).catch(() => []),
+    }))),
   ]);
+  const cryptoBySymbol = new Map(cryptoBars.map(({ symbol, bars }) => [symbol, bars]));
   return symbols.map((symbol) => ({
     symbol,
-    data: normalize(isBtc(symbol) ? btcBars : stockBars[symbol] ?? [], timeframe),
+    data: normalize(isCrypto(symbol) ? cryptoBySymbol.get(symbol) ?? [] : stockBars[symbol] ?? [], timeframe),
   }));
 }
 
@@ -161,9 +162,9 @@ async function snapshotFromDailyBars(symbol: string): Promise<MarketSnapshot | n
 
 /** Quotes for many symbols: one batched IEX request, daily-bar fallback per gap. */
 export async function getQuotes(symbols: string[]): Promise<Record<string, MarketSnapshot>> {
-  const snaps = await getSnapshots(symbols);
+  const snaps = await getSnapshots(symbols.filter((symbol) => !isCrypto(symbol)));
   const out: Record<string, MarketSnapshot> = {};
-  await Promise.all(symbols.map(async (symbol) => {
+  await Promise.all(symbols.filter((symbol) => !isCrypto(symbol)).map(async (symbol) => {
     const quote = snapshotFromAlpaca(snaps[symbol]) ?? await snapshotFromDailyBars(symbol).catch(() => null);
     if (quote) out[symbol] = quote;
   }));
@@ -203,8 +204,8 @@ async function indicatorBars(symbol: string, timespan: IndicatorTimespan, needed
   const calendarDays = Math.max(Math.ceil((needed / BARS_PER_DAY[timespan]) * 1.5) + 7, timespan === 'day' ? 800 : 0);
   const start = daysAgo(calendarDays);
   const tf = TIMESPAN_TIMEFRAME[timespan];
-  const bars = isBtc(symbol)
-    ? await getCryptoBars(BTC_PAIR, tf, start)
+  const bars = isCrypto(symbol)
+    ? await getCryptoBars(cryptoPair(symbol), tf, start)
     : (await getBars([symbol], tf, start))[symbol] ?? [];
   return bars.map((b) => ({ date: new Date(b.date).toISOString(), close: b.close }));
 }
@@ -249,7 +250,7 @@ export async function getWeeklySMA200s(symbols: string[]): Promise<Record<string
   if (symbols.length === 0) return out;
   return withCache(`market:wma200:${symbols.join(',')}`, TTL.MACRO, async () => {
     try {
-      const weekly = await getBars(symbols, '1Week', daysAgo(210 * 7));
+      const weekly = await getBars(symbols.filter((symbol) => !isCrypto(symbol)), '1Week', daysAgo(210 * 7));
       for (const symbol of symbols) {
         const closes = (weekly[symbol] ?? []).map((b) => b.close);
         if (closes.length < 200) continue;
@@ -318,14 +319,14 @@ function dividendWindow(): { start: string; end: string } {
 
 export async function getDividends(symbol: string, limit = 12): Promise<Dividend[]> {
   const { start, end } = dividendWindow();
-  return toDividends(await getCashDividends([symbol], start, end)).slice(0, limit);
+  return toDividends(await getCashDividends(isCrypto(symbol) ? [] : [symbol], start, end)).slice(0, limit);
 }
 
 /** Most recent `perSymbol` dividends for each symbol, newest first, in one request. */
 export async function getPortfolioDividends(symbols: string[], perSymbol = 4): Promise<Dividend[]> {
   if (symbols.length === 0) return [];
   const { start, end } = dividendWindow();
-  const all = toDividends(await getCashDividends(symbols, start, end));
+  const all = toDividends(await getCashDividends(symbols.filter((symbol) => !isCrypto(symbol)), start, end));
   const counts = new Map<string, number>();
   return all.filter((d) => {
     const n = counts.get(d.ticker) ?? 0;

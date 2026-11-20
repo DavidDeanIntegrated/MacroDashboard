@@ -8,6 +8,7 @@ const { getBars, historicalEnd } = require('../src/lib/alpaca.ts');
 const { snapshotFromAlpaca, getQuotes, getPortfolioDividends, inferFrequency } = require('../src/lib/market-data.ts');
 const { computeSMA, computeEMA, computeRSI, computeMACD } = require('../src/lib/indicators.ts');
 const { fetchPrice, getHoldingsPortfolio, getPortfolioChart, HOLDINGS } = require('../src/lib/holdings.ts');
+const { isCrypto } = require('../src/lib/crypto-symbols.ts');
 const { marketCapFrom } = require('../src/lib/fundamentals-score.ts');
 
 const reset = () => { invalidatePrefix('alpaca:'); invalidatePrefix('market:'); invalidatePrefix('holdings:'); };
@@ -71,18 +72,26 @@ test('a snapshot without a trade or previous close is not a quote', () => {
 
 test('holding prices come from one batched Alpaca request and never call Massive', async () => {
   reset();
-  const stocks = HOLDINGS.filter((h) => h.symbol !== 'BTC').map((h) => h.symbol);
+  const stocks = HOLDINGS.filter((h) => !isCrypto(h.symbol)).map((h) => h.symbol);
   const f = stubFetch([
     ['/v2/stocks/snapshots', () => ({ body: Object.fromEntries(stocks.map((s) => [s, liveSnap(50, 49)])) })],
-    ['coinbase.com', () => ({ body: { data: { amount: '60000' } } })],
+    ['coinbase.com', (u) => ({ body: { data: { amount: String({ BTC: 60000, SOL: 140, ZEC: 500, USDC: 1 }[u.match(/prices\/(\w+)-USD/)[1]]) } } })],
   ]);
   try {
     const portfolio = await getHoldingsPortfolio();
     assert.ok(portfolio.positions.length > 0);
-    for (const p of portfolio.positions.filter((x) => x.symbol !== 'BTC' && x.symbol !== 'CASH')) {
+    for (const p of portfolio.positions.filter((x) => !isCrypto(x.symbol) && x.symbol !== 'CASH')) {
       assert.equal(p.priceSource, 'Alpaca', p.symbol);
       assert.equal(p.currentPrice, 50, p.symbol);
     }
+    for (const [symbol, price] of Object.entries({ BTC: 60000, SOL: 140, ZEC: 500, USDC: 1 })) {
+      const position = portfolio.positions.find((p) => p.symbol === symbol);
+      assert.equal(position.currentPrice, price);
+      assert.equal(position.marketValue, price * position.qty);
+    }
+    assert.equal(portfolio.positions.find((p) => p.symbol === 'USDC').costBasis, undefined);
+    const requestedStocks = new URL(f.calls.find((u) => u.includes('/v2/stocks/snapshots'))).searchParams.get('symbols').split(',');
+    assert.ok(requestedStocks.every((symbol) => !isCrypto(symbol)), 'crypto never enters an equity snapshot batch');
     assert.equal(f.calls.filter((u) => u.includes('/v2/stocks/snapshots')).length, 1);
     assert.equal(f.calls.some((u) => u.includes('polygon.io')), false);
   } finally { f.restore(); }
@@ -184,7 +193,7 @@ test('market cap: SEC shares × price, ADR ratio for foreign filers, unknown oth
 
 test('the 1D portfolio line starts only once every holding has an intraday price', async () => {
   reset();
-  const stocks = HOLDINGS.filter((h) => h.symbol !== 'BTC').map((h) => h.symbol);
+  const stocks = HOLDINGS.filter((h) => !isCrypto(h.symbol)).map((h) => h.symbol);
   const open = Date.UTC(2026, 10, 4, 14, 30);
   const f = stubFetch([
     ['/v2/stocks/snapshots', () => ({ body: Object.fromEntries(stocks.map((s) => [s, liveSnap(10, 10)])) })],
@@ -199,9 +208,29 @@ test('the 1D portfolio line starts only once every holding has an intraday price
   ]);
   try {
     const chart = await getPortfolioChart('1D');
-    const full = HOLDINGS.reduce((sum, h) => sum + h.qty * (h.symbol === 'BTC' ? 50000 : 10), 0);
+    const full = HOLDINGS.reduce((sum, h) => sum + h.qty * (isCrypto(h.symbol) ? 50000 : 10), 0);
     const points = chart.slice(1); // first point is the previous-close baseline
     assert.ok(points.length > 0);
     for (const p of points) assert.ok(Math.abs(p.value - full) < 0.05, `partial sum ${p.value} at ${p.date}`);
+  } finally { f.restore(); }
+});
+
+
+test('daily portfolio history includes each crypto holding without stock requests for coins', async () => {
+  reset();
+  const priceBySymbol = { BTC: 60000, SOL: 140, ZEC: 500, USDC: 1 };
+  const ts = Date.UTC(2026, 10, 19);
+  const f = stubFetch([
+    ['/v2/stocks/bars', (u) => ({ body: { bars: Object.fromEntries(new URL(u).searchParams.get('symbols').split(',').map((s) => [s, [
+      { t: iso(ts), o: 10, h: 10, l: 10, c: 10, v: 1 },
+    ]])), next_page_token: null } })],
+    ['exchange.coinbase.com', (u) => ({ body: [[ts / 1000, 1, 1, 1, priceBySymbol[u.match(/products\/(\w+)-USD/)[1]], 1]] })],
+  ]);
+  try {
+    const chart = await getPortfolioChart('1M');
+    const expected = HOLDINGS.reduce((sum, h) => sum + h.qty * (priceBySymbol[h.symbol] ?? 10), 0);
+    assert.equal(chart.length, 1);
+    assert.equal(chart[0].value, Math.round(expected * 100) / 100);
+    assert.ok(f.calls.filter((u) => u.includes('/v2/stocks/bars')).every((u) => !isCrypto(new URL(u).searchParams.get('symbols'))));
   } finally { f.restore(); }
 });
